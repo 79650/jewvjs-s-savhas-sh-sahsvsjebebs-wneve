@@ -1,5 +1,5 @@
 --[[
-    Qustāh · Shindo Life  ·  V1.29
+    Qustāh · Shindo Life  ·  V1.30
     UI: qustah-ui-lib · sadece Shindo Life'ta açılır (GameId kontrolü)
 
     Sekmeler: Dashboard · Farm · Spin · Combat · Visuals · Player · Teleport · Loadout · Server · Settings
@@ -292,15 +292,44 @@ local function safeStandCF(part)                                  -- zeminin tam
 	local up = part.Size.Y / 2 + 0.15 + ((c and r) and rootToFeet(c, r) or 3)
 	return part.CFrame * CFrame.new(0, up, 0)
 end
+-- Oyunun kendi zemini: oyunun hareket sistemi (wallwalk / tree jump / waterwalk) yeri workspace.map'teki parçalara bakarak
+-- buluyor olabilir; bizim parça workspace'in kökünde, Default collision grubundayken karakter partın içine gömülüyordu.
+-- Bu yüzden güvenli zemin, haritadaki gerçek bir zemin parçasından kopyalanır ve onun yanına (workspace.map) konur.
+local function mapGroundTemplate()
+	local r, c = rootPart(), character()
+	if r then                                                     -- önce ayağının altındaki parça
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = { c, SafePart, Platform }
+		local hit = workspace:Raycast(r.Position, Vector3.new(0, -60, 0), params)
+		local p = hit and hit.Instance
+		if p and p:IsA("Part") and p.Anchored and p.CanCollide and p.Parent and p.Parent ~= workspace.CurrentCamera then return p end
+	end
+	local map = workspace:FindFirstChild("map")                  -- yoksa haritadan düz, büyükçe bir parça
+	if map then
+		for _, p in ipairs(map:GetChildren()) do
+			if p:IsA("Part") and p.Anchored and p.CanCollide and p.Size.X >= 8 and p.Size.Z >= 8 then return p end
+		end
+	end
+end
 local function safePartAt(cf)
 	if not SafePart or not SafePart.Parent then
-		SafePart = Instance.new("Part")
+		local tpl = mapGroundTemplate()
+		local ok, clone = pcall(function() return tpl and tpl:Clone() end)
+		SafePart = (ok and clone) or Instance.new("Part")
+		pcall(function() SafePart:ClearAllChildren() end)           -- doku, script vb. kopyalanmasın
 		SafePart.Name = "QustahSafe"
 		SafePart.Anchored, SafePart.CanCollide, SafePart.Size = true, true, SAFE_SIZE
-		SafePart.Transparency, SafePart.Material = 0.6, Enum.Material.Plastic
-		pcall(function() SafePart.CustomPhysicalProperties = PhysicalProperties.new(0.7, 2, 0, 100, 1) end)   -- yüksek sürtünme
-		SafePart.Color = Color3.fromRGB(120, 125, 140)
-		SafePart.Parent = workspace
+		pcall(function() SafePart.CanQuery, SafePart.CanTouch = true, true end)
+		pcall(function() SafePart.Shape = Enum.PartType.Block end)
+		SafePart.Transparency = 0.6
+		if not (ok and clone) then
+			SafePart.Material = Enum.Material.Plastic
+			SafePart.Color = Color3.fromRGB(120, 125, 140)
+		end
+		SafePart.CFrame = cf
+		local map = workspace:FindFirstChild("map")
+		SafePart.Parent = (tpl and tpl.Parent and tpl.Parent ~= workspace.CurrentCamera and tpl.Parent) or map or workspace
 	end
 	if SafePart.CFrame ~= cf then SafePart.CFrame = cf end
 	return SafePart
@@ -368,7 +397,7 @@ end
 ------------------------------------------------------------------ PENCERE
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.29",
+	Version = "V1.30",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
