@@ -1,5 +1,5 @@
 --[[
-    Qustāh · Shindo Life  ·  V1.30
+    Qustāh · Shindo Life  ·  V1.31
     UI: qustah-ui-lib · sadece Shindo Life'ta açılır (GameId kontrolü)
 
     Sekmeler: Dashboard · Farm · Spin · Combat · Visuals · Player · Teleport · Loadout · Server · Settings
@@ -397,7 +397,7 @@ end
 ------------------------------------------------------------------ PENCERE
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.30",
+	Version = "V1.31",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -2018,7 +2018,9 @@ do
 	end
 	farmToggle(Q, "Green scroll farm", "Scroll", "Green 'defeat' missions")
 	farmToggle(Q, "Boss farm", "Boss", "Boss mission givers")
-	local bossInfoRow = Q:Info({ Title = "Bosses on map", Value = "-" })
+	local bossTotal = 0
+	local bossBar = Q:Progress({ Title = "Bosses on map", Desc = "Ready to fight", Value = 0, Max = 1,
+		Format = function(v, m) return bossTotal > 0 and ("%d / %d ready"):format(v, bossTotal) or "none" end })
 	local function bossDesc(n) return n > 0 and ("Bosses on this map: %d"):format(n) or "No bosses on this map" end
 	local bossList = names(bossGivers())
 	local bossDD = Q:Dropdown({ Title = "Boss", Flag = "farm_bosspick", Items = bossList, Default = "Random", Search = true,
@@ -2039,7 +2041,9 @@ do
 			bTotal += 1
 			if timerReady(g) and not giverTaken(g) then bReady += 1 end
 		end
-		bossInfoRow:Set(bTotal > 0 and ("%d / %d ready"):format(bReady, bTotal) or "none")
+		bossTotal = bTotal
+		bossBar:SetMax(math.max(bTotal, 1))
+		bossBar:Set(bReady)
 		sessionRow:Set(tostring(F.Done.Boss))
 	end
 	pcall(updateCounts)
