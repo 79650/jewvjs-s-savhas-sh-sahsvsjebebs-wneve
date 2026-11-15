@@ -1,5 +1,5 @@
 --[[
-    Qustāh · Shindo Life  ·  V1.24
+    Qustāh · Shindo Life  ·  V1.25
     UI: qustah-ui-lib · sadece Shindo Life'ta açılır (GameId kontrolü)
 
     Sekmeler: Dashboard · Farm · Spin · Combat · Visuals · Player · Teleport · Loadout · Server · Settings
@@ -273,9 +273,31 @@ local function giverTalkPart(giver)
 	local mg = giver and giver:FindFirstChild("missiongiver")
 	return mg and mg:FindFirstChild("HumanoidRootPart")
 end
--- Güvenli bölge: istemci tarafında 40x40'lık bir zemin. Üstünde serbestçe dolaşırsın (sürekli ışınlama yok);
+-- Güvenli bölge: istemci tarafında 85x85'lik bir zemin. Üstünde serbestçe dolaşırsın (sürekli ışınlama yok);
 -- zeminin dışına çıkar ya da düşersen ortasına geri konursun.
-local SAFE_SIZE = Vector3.new(40, 1, 40)
+local SAFE_SIZE = Vector3.new(85, 2, 85)
+-- Kök parçanın ayak tabanına uzaklığı: karakterin en alt noktasından ölçülür (Shindo karakterleri ölçekli olabiliyor,
+-- sabit 3.5 kullanınca zeminin biraz içine giriyordun ve fizik seni dışarı iterken kayıyordun)
+local function rootToFeet(c, r)
+	local lowest
+	for _, p in ipairs(c:GetChildren()) do
+		if p:IsA("BasePart") and p ~= r then
+			local bottom = p.Position.Y - p.Size.Y / 2
+			if not lowest or bottom < lowest then lowest = bottom end
+		end
+	end
+	local h = c:FindFirstChildOfClass("Humanoid")
+	local r15 = h and select(2, pcall(function() return h.RigType == Enum.HumanoidRigType.R15 end)) == true
+	local fallback = r15 and (h.HipHeight + r.Size.Y / 2) or (r.Size.Y / 2 + 2)
+	local d = lowest and (r.Position.Y - lowest) or fallback
+	if d < 1 or d > 15 then d = fallback end                       -- saçma bir değer çıkarsa (ragdoll vb.) yedeği kullan
+	return d
+end
+local function safeStandCF(part)                                  -- zeminin tam üstü (+0.15 pay), içine girmeden
+	local c, r = character(), rootPart()
+	local up = part.Size.Y / 2 + 0.15 + ((c and r) and rootToFeet(c, r) or 3)
+	return part.CFrame * CFrame.new(0, up, 0)
+end
 local function safePartAt(cf)
 	if not SafePart or not SafePart.Parent then
 		SafePart = Instance.new("Part")
@@ -299,7 +321,7 @@ local function goSafe(giver)
 	local part = safePartAt(CFrame.new(talk.Position + Vector3.new(0, SAFE_HEIGHT, 0)))
 	platformFixed = part.CFrame * CFrame.new(0, -12, 0)            -- takip eden platform zeminin altına park edilir (üst üste binip kaydırmasın)
 	local r = rootPart()
-	if r and not onSafePart(r, part) then tpTo(part.CFrame * CFrame.new(0, 3.5, 0)) end
+	if r and not onSafePart(r, part) then tpTo(safeStandCF(part)) r.AssemblyLinearVelocity = Vector3.zero end
 	return true
 end
 local function leaveSafe()
@@ -352,7 +374,7 @@ end
 ------------------------------------------------------------------ PENCERE
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.24",
+	Version = "V1.25",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
