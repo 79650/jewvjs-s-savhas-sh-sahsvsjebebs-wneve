@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.57
+-- Qustāh · Shindo Life · V1.58
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -177,7 +177,7 @@ local function susanooNPCs()                                      -- is there a 
 end
 local function lookAt(pos)
 	local cam = workspace.CurrentCamera
-	cam.CFrame = CFrame.new(cam.CFrame.Position, pos)
+	if cam and (pos - cam.CFrame.Position).Magnitude > 0.001 then cam.CFrame = CFrame.new(cam.CFrame.Position, pos) end
 end
 
 local Window, unloadThis
@@ -192,7 +192,9 @@ end
 local function loop(tag, interval, fn)                          -- interval: a number or a function returning a number
 	task.spawn(function()
 		while hub.Running do
-			task.wait(type(interval) == "function" and interval() or interval)
+			local okDelay, delay = pcall(function() return type(interval) == "function" and interval() or interval end)
+			if not okDelay then hubError(tag .. " interval", delay) end
+			task.wait(okDelay and type(delay) == "number" and delay == delay and delay >= 0 and delay < math.huge and delay or 0.25)
 			if not hub.Running then break end
 			local ok, err = pcall(fn)
 			if not ok then hubError(tag, err) end
@@ -391,7 +393,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.57",
+	Version = "V1.58",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -480,7 +482,6 @@ local settings = {
     Name = true, DisplayName = true, HealthText = true, Distance = true, DistUnit = "Studs", Weapon = true, TextSize = 13,
     Chams = false, ChamsWalls = true, ChamsFill = 0.6, ChamsOutline = rgb(1, 1, 1),
     Tracer = false, TracerFrom = "Bottom", Skeleton = false, LookDir = false, HeadDot = false,
-    Arrows = false, ArrowRadius = 150, ArrowSize = 14,
     ColEnemy = rgb(1, 0.23, 0.23), ColAlly = rgb(0.23, 1, 0.42), ColHidden = rgb(1, 0.69, 0.23), ColTarget = rgb(0.75, 0.45, 1),
     UseTeamColor = false, VisColor = true, Fade = true, Perf = false,
     -- world
@@ -502,7 +503,16 @@ end
 ----- Render: Drawing -----
 -- Everything on screen is drawn with the executor's Drawing API (no Roblox GUI objects).
 local Render = { Available = type(Drawing) == "table" and type(Drawing.new) == "function" }
-function Render.new(kind) return Drawing.new(kind) end
+Render.Unsupported = {}
+function Render.new(kind)
+    if Render.Unsupported[kind] then return nil end
+    local ok, object = pcall(Drawing.new, kind)
+    if not ok or not object then                                -- a shape this executor lacks is skipped, not reported
+        Render.Unsupported[kind] = true
+        return nil
+    end
+    return object
+end
 function Render.remove(o)
     pcall(function() o:Remove() end)
 end
@@ -572,12 +582,12 @@ local VisCache = {}
 local function isVisible(plr, char, part)
     local now = os.clock()
     local c = VisCache[plr]
-    if c and now - c.t < 0.1 then return c.v end
+    if c and c.char == char and c.part == part and c.camera == Camera and now - c.t < 0.1 then return c.v end
     VisParams.FilterDescendantsInstances = { LocalPlayer.Character, Camera }
     local origin = Camera.CFrame.Position
     local hit = Workspace:Raycast(origin, part.Position - origin, VisParams)
     local visible = (hit == nil) or hit.Instance:IsDescendantOf(char)
-    VisCache[plr] = { t = now, v = visible }
+    VisCache[plr] = { t = now, v = visible, char = char, part = part, camera = Camera }
     return visible
 end
 
@@ -763,6 +773,7 @@ local function use(e, key, kind)                                 -- objects are 
     local o = e.Obj[key]
     if not o then
         o = Render.new(kind)
+        if not o then return nil end
         e.Obj[key] = o
     end
     e.Stamp[key] = esp.Frame
@@ -774,8 +785,12 @@ end
 local function hideUnused(e, all)
     for key, o in pairs(e.Obj) do
         if e.Vis[key] and (all or e.Stamp[key] ~= esp.Frame) then
+            local ok = pcall(function() o.Visible = false end)
             e.Vis[key] = false
-            pcall(function() o.Visible = false end)
+            if not ok then
+                Render.remove(o)
+                e.Obj[key], e.Stamp[key] = nil, nil
+            end
         end
     end
 end
@@ -791,13 +806,14 @@ end
 local function drawLine(e, key, a, b, color, thick, alpha)
     if settings.Outline then
         local o = use(e, key .. "_o", "Line")
-        o.From, o.To, o.Color, o.Thickness, o.Transparency, o.ZIndex, o.Visible = a, b, black, thick + 2, alpha, 1, true
+        if o then o.From, o.To, o.Color, o.Thickness, o.Transparency, o.ZIndex, o.Visible = a, b, black, thick + 2, alpha, 1, true end
     end
     local l = use(e, key, "Line")
-    l.From, l.To, l.Color, l.Thickness, l.Transparency, l.ZIndex, l.Visible = a, b, color, thick, alpha, 2, true
+    if l then l.From, l.To, l.Color, l.Thickness, l.Transparency, l.ZIndex, l.Visible = a, b, color, thick, alpha, 2, true end
 end
 local function drawText(e, key, text, pos, color, size, alpha, center)
     local t = use(e, key, "Text")
+    if not t then return nil end
     t.Text, t.Position, t.Color, t.Size, t.Transparency, t.Center, t.Outline, t.ZIndex, t.Visible =
         text, pos, color, size, alpha, center, true, 3, true
     return t
@@ -846,17 +862,23 @@ local function updateChams(e, char, color, alpha)
                     n += 1
                     local key = "cham" .. n
                     local q1 = use(e, key .. "a", "Quad")
-                    q1.PointA, q1.PointB, q1.PointC, q1.PointD = h[1], h[2], h[3], h[4] or h[3]
-                    q1.Color, q1.Filled, q1.Thickness, q1.Transparency, q1.ZIndex, q1.Visible = color, true, 1, fillAlpha, 0, true
+                    if q1 then
+                        q1.PointA, q1.PointB, q1.PointC, q1.PointD = h[1], h[2], h[3], h[4] or h[3]
+                        q1.Color, q1.Filled, q1.Thickness, q1.Transparency, q1.ZIndex, q1.Visible = color, true, 1, fillAlpha, 0, true
+                    end
                     if #h > 4 then
                         local q2 = use(e, key .. "b", "Quad")
-                        q2.PointA, q2.PointB, q2.PointC, q2.PointD = h[1], h[4], h[5], h[6] or h[5]
-                        q2.Color, q2.Filled, q2.Thickness, q2.Transparency, q2.ZIndex, q2.Visible = color, true, 1, fillAlpha, 0, true
+                        if q2 then
+                            q2.PointA, q2.PointB, q2.PointC, q2.PointD = h[1], h[4], h[5], h[6] or h[5]
+                            q2.Color, q2.Filled, q2.Thickness, q2.Transparency, q2.ZIndex, q2.Visible = color, true, 1, fillAlpha, 0, true
+                        end
                     end
                     for i = 1, #h do
                         local l = use(e, key .. "e" .. i, "Line")
-                        l.From, l.To, l.Color, l.Thickness, l.Transparency, l.ZIndex, l.Visible =
-                            h[i], h[i % #h + 1], settings.ChamsOutline, 1, alpha, 1, true
+                        if l then
+                            l.From, l.To, l.Color, l.Thickness, l.Transparency, l.ZIndex, l.Visible =
+                                h[i], h[i % #h + 1], settings.ChamsOutline, 1, alpha, 1, true
+                        end
                     end
                 end
             end
@@ -868,17 +890,15 @@ local function updatePlayer(plr)
     local e = entry(plr)
     local char, hum, root = getCharacter(plr)
     if not (settings.ESP_Enabled and char and isAlive(hum)) or (settings.ESP_TeamCheck and isTeammate(plr)) then
+        e.chamsReady = false
         return hideUnused(e)
     end
     local dist = (root.Position - Camera.CFrame.Position).Magnitude
     if dist > settings.ESP_MaxDist then
+        e.chamsReady = false
         return hideUnused(e)
     end
-    if settings.Perf and dist > 400 and (esp.Frame + plr.UserId) % 2 == 1 then   -- far players every other frame
-        for key in pairs(e.Obj) do e.Stamp[key] = esp.Frame end
-        return
-    end
-
+    if e.char ~= char then e.char, e.chamsReady = char, false end
     local head = char:FindFirstChild("Head") or root
     local enemy = not isTeammate(plr)
     local color = enemy and settings.ColEnemy or settings.ColAlly
@@ -891,27 +911,26 @@ local function updatePlayer(plr)
     if Silent.Target and Silent.Target.Player == plr then color = settings.ColTarget end
     local alpha = settings.Fade and clamp(1 - dist / (settings.ESP_MaxDist * 1.15), 0.35, 1) or 1
 
-    -- without "Through walls" the chams only show while the player is in sight
-    if settings.Chams and (settings.ChamsWalls or isVisible(plr, char, head)) then
-        updateChams(e, char, color, alpha)
-    end
-
     local rootScreen, onScreen = toScreen(root.Position)
-    if not onScreen then
-        if settings.Arrows then                                         -- off-screen arrow
-            local rel = Camera.CFrame:PointToObjectSpace(root.Position)
-            local dir = vec2(rel.X, rel.Z)
-            if dir.Magnitude > 0 then
-                dir = dir.Unit
-                local center = Camera.ViewportSize / 2
-                local r, s = settings.ArrowRadius, settings.ArrowSize
-                local perp = vec2(-dir.Y, dir.X)
-                local base = center + dir * r
-                local tri = use(e, "arrow", "Triangle")
-                tri.PointA, tri.PointB, tri.PointC = base + perp * (s / 2), center + dir * (r + s * 2), base - perp * (s / 2)
-                tri.Color, tri.Filled, tri.Thickness, tri.Transparency, tri.ZIndex, tri.Visible = color, true, 1, alpha, 2, true
+    if onScreen and settings.Chams and (settings.ChamsWalls or isVisible(plr, char, head)) then
+        -- Performance mode only defers the costly hulls; text, bars and visibility always update.
+        if not settings.Perf or dist <= 400 or not e.chamsReady or (esp.Frame + plr.UserId) % 2 == 0 then
+            local ok, err = pcall(updateChams, e, char, color, alpha)
+            e.chamsReady = ok
+            if not ok then
+                for key in pairs(e.Obj) do if key:sub(1, 4) == "cham" then e.Stamp[key] = nil end end
+                hubError("ESP Chams", err)
+            end
+        else
+            for key in pairs(e.Obj) do
+                if key:sub(1, 4) == "cham" and e.Vis[key] then e.Stamp[key] = esp.Frame end
             end
         end
+    else
+        e.chamsReady = false
+    end
+
+    if not onScreen then
         return hideUnused(e)
     end
 
@@ -926,7 +945,7 @@ local function updatePlayer(plr)
     if settings.Box then
         if settings.BoxFill then
             local f = use(e, "fill", "Square")
-            f.Position, f.Size, f.Color, f.Filled, f.Transparency, f.ZIndex, f.Visible = vec2(boxLeft, boxTop), vec2(boxRight - boxLeft, boxBottom - boxTop), color, true, (1 - settings.BoxFillAlpha) * alpha, 0, true
+            if f then f.Position, f.Size, f.Color, f.Filled, f.Transparency, f.ZIndex, f.Visible = vec2(boxLeft, boxTop), vec2(boxRight - boxLeft, boxBottom - boxTop), color, true, (1 - settings.BoxFillAlpha) * alpha, 0, true end
         end
         local frac = settings.BoxStyle == "Full" and 1 or settings.BoxCorner / 100
         local cx, cy = (boxRight - boxLeft) / 2 * frac, (boxBottom - boxTop) / 2 * frac
@@ -945,18 +964,18 @@ local function updatePlayer(plr)
     local barX = boxLeft - 6
     if settings.HealthBar and h >= 18 then
         local bg = use(e, "hb_bg", "Square")
-        bg.Position, bg.Size, bg.Color, bg.Filled, bg.Transparency, bg.ZIndex, bg.Visible = vec2(barX - 1, boxTop - 1), vec2(4, h + 2), black, true, alpha, 1, true
+        if bg then bg.Position, bg.Size, bg.Color, bg.Filled, bg.Transparency, bg.ZIndex, bg.Visible = vec2(barX - 1, boxTop - 1), vec2(4, h + 2), black, true, alpha, 1, true end
         local bar = use(e, "hb", "Square")
-        bar.Position, bar.Size, bar.Color, bar.Filled, bar.Transparency, bar.ZIndex, bar.Visible = vec2(barX, boxTop + h * (1 - hp)), vec2(2, h * hp), healthColor(hp), true, alpha, 2, true
+        if bar then bar.Position, bar.Size, bar.Color, bar.Filled, bar.Transparency, bar.ZIndex, bar.Visible = vec2(barX, boxTop + h * (1 - hp)), vec2(2, h * hp), healthColor(hp), true, alpha, 2, true end
     end
     local leftEdge = settings.HealthBar and h >= 18 and barX - 1 or boxLeft    -- where the next thing on the left may start
     local mode = settings.ModeBar and h >= 18 and modeOf(char)
     if mode then                                                        -- mode meter, just left of the health bar
         local modeX = leftEdge - 5
         local bg = use(e, "mb_bg", "Square")
-        bg.Position, bg.Size, bg.Color, bg.Filled, bg.Transparency, bg.ZIndex, bg.Visible = vec2(modeX - 1, boxTop - 1), vec2(4, h + 2), black, true, alpha, 1, true
+        if bg then bg.Position, bg.Size, bg.Color, bg.Filled, bg.Transparency, bg.ZIndex, bg.Visible = vec2(modeX - 1, boxTop - 1), vec2(4, h + 2), black, true, alpha, 1, true end
         local bar = use(e, "mb", "Square")
-        bar.Position, bar.Size, bar.Color, bar.Filled, bar.Transparency, bar.ZIndex, bar.Visible = vec2(modeX, boxTop + h * (1 - mode)), vec2(2, h * mode), modeColor, true, alpha, 2, true
+        if bar then bar.Position, bar.Size, bar.Color, bar.Filled, bar.Transparency, bar.ZIndex, bar.Visible = vec2(modeX, boxTop + h * (1 - mode)), vec2(2, h * mode), modeColor, true, alpha, 2, true end
         leftEdge = modeX - 1
     end
 
@@ -965,13 +984,28 @@ local function updatePlayer(plr)
         local name = settings.DisplayName and plr.DisplayName or plr.Name
         drawText(e, "name", name, vec2(rootScreen.X, boxTop - size - 4), color, size, alpha, true)
     end
-    if settings.HealthText and hp < 1 then                              -- the health number follows the top of the bar
-        local txt = tostring(floor(health + 0.5))
-        local t = drawText(e, "hp", txt, vec2(0, 0), healthColor(hp), size - 1, alpha, false)
-        local okB, bounds = pcall(function() return t.TextBounds end)  -- some Drawing implementations have no TextBounds
-        local tw = (okB and typeof(bounds) == "Vector2" and bounds.X > 0) and bounds.X or #txt * (size - 1) * 0.55
-        local bx = leftEdge - 2 - tw
-        t.Position = vec2(bx, clamp(boxTop + h * (1 - hp) - size / 2, boxTop - 2, boxBottom - size))
+    if settings.HealthText then
+        local ok, err = pcall(function()
+            local txt = tostring(floor(health + 0.5))
+            local textSize = size - 1
+            local t = use(e, "hp", "Text")
+            if not t then return end
+            t.Text, t.Size, t.Color = txt, textSize, healthColor(hp)
+            t.Center, t.Outline, t.Transparency, t.ZIndex = false, true, alpha, 3
+            local okB, bounds = pcall(function() return t.TextBounds end)
+            local estimate = #txt * textSize * 0.6
+            local tw = okB and typeof(bounds) == "Vector2" and bounds.X > 0 and bounds.X or estimate
+            local yMin = boxTop - 2
+            local yMax = max(yMin, boxBottom - textSize)
+            local y = clamp(boxTop + h * (1 - hp) - textSize / 2, yMin, yMax)
+            t.Position, t.Visible = vec2(leftEdge - 2 - tw, y), true
+        end)
+        if not ok then
+            local broken = e.Obj.hp
+            if broken then Render.remove(broken) end
+            e.Obj.hp, e.Stamp.hp, e.Vis.hp = nil, nil, nil
+            hubError("ESP Health Text", err)
+        end
     end
     local bottomLine = {}
     if settings.Distance then
@@ -991,8 +1025,10 @@ local function updatePlayer(plr)
     if settings.HeadDot then
         local hs = toScreen(head.Position)
         local c = use(e, "head", "Circle")
-        c.Position, c.Radius, c.Color, c.Filled, c.NumSides, c.Thickness, c.Transparency, c.ZIndex, c.Visible =
-            hs, max(2, h / 22), color, true, 12, 1, alpha, 2, true
+        if c then
+            c.Position, c.Radius, c.Color, c.Filled, c.NumSides, c.Thickness, c.Transparency, c.ZIndex, c.Visible =
+                hs, max(2, h / 22), color, true, 12, 1, alpha, 2, true
+        end
     end
     if settings.Tracer then
         local vs = Camera.ViewportSize
@@ -1024,15 +1060,17 @@ local Global = { Obj = {}, Stamp = {}, Vis = {} }
 local function updateGlobal()
     if settings.SA_Enabled and settings.FOV_Show then
         local c = use(Global, "fov", "Circle")
-        c.Position, c.Radius, c.Color, c.NumSides, c.Thickness, c.Filled, c.Transparency, c.ZIndex, c.Visible =
-            fovOrigin(), settings.FOV_Radius, settings.FOV_Color, settings.FOV_Sides, settings.FOV_Thick, settings.FOV_Filled, (1 - settings.FOV_Alpha) * (settings.FOV_Filled and 0.25 or 1), 4, true
+        if c then
+            c.Position, c.Radius, c.Color, c.NumSides, c.Thickness, c.Filled, c.Transparency, c.ZIndex, c.Visible =
+                fovOrigin(), settings.FOV_Radius, settings.FOV_Color, settings.FOV_Sides, settings.FOV_Thick, settings.FOV_Filled, (1 - settings.FOV_Alpha) * (settings.FOV_Filled and 0.25 or 1), 4, true
+        end
     end
     local t = Silent.Target
     if settings.SA_Enabled and settings.FOV_TargetLine and t then
         local sp, on = toScreen(t.Position)
         if on then
             local l = use(Global, "tline", "Line")
-            l.From, l.To, l.Color, l.Thickness, l.Transparency, l.ZIndex, l.Visible = fovOrigin(), sp, settings.ColTarget, 1, 1, 4, true
+            if l then l.From, l.To, l.Color, l.Thickness, l.Transparency, l.ZIndex, l.Visible = fovOrigin(), sp, settings.ColTarget, 1, 1, 4, true end
         end
     end
     hideUnused(Global)
@@ -1228,7 +1266,7 @@ local function checkStaff(plr)
     if not (settings.StaffAlert and settings.StaffGroup > 0) or plr == LocalPlayer then return end
     task.spawn(function()
         local ok, rank = pcall(function() return plr:GetRankInGroup(settings.StaffGroup) end)
-        if not (ok and rank and rank >= settings.StaffRank) then return end
+        if not (Running and settings.StaffAlert and ok and rank and rank >= settings.StaffRank) then return end
         notify("Staff in game", ("%s (rank %d) joined the server"):format(plr.Name, rank), "shield-alert", "danger")
         if settings.StaffAction == "Hop" then serverHop("Random")
         elseif settings.StaffAction == "Leave" then LocalPlayer:Kick("Qustāh: staff joined, left the game") end
@@ -1366,11 +1404,6 @@ Lines:Toggle({ Title = "Skeleton", Flag = "esp_skeleton", Default = false, Callb
 Lines:Toggle({ Title = "Look direction", Desc = "Shows where they are looking", Flag = "esp_look", Default = false, Callback = set("LookDir") })
 Lines:Toggle({ Title = "Head dot", Flag = "esp_headdot", Default = false, Callback = set("HeadDot") })
 
-local Arrows = ExtraPage:Card({ Title = "Offscreen arrows", Icon = "navigation" })
-Arrows:Toggle({ Title = "Arrows", Desc = "Direction of off-screen players", Flag = "esp_arrows", Default = false, Callback = set("Arrows") })
-Arrows:Slider({ Title = "Distance from center", Flag = "esp_arrowrad", Min = 80, Max = 300, Default = 150, Suffix = " px", DependsOn = { Flag = "esp_arrows", Reason = "" }, Callback = set("ArrowRadius") })
-Arrows:Slider({ Title = "Size", Flag = "esp_arrowsize", Min = 8, Max = 28, Default = 14, Suffix = " px", DependsOn = { Flag = "esp_arrows", Reason = "" }, Callback = set("ArrowSize") })
-
 local Colors = StylePage:Card({ Title = "Colors", Icon = "palette" })
 Colors:ColorPicker({ Title = "Enemy", Flag = "col_enemy", Default = settings.ColEnemy, Callback = set("ColEnemy") })
 Colors:ColorPicker({ Title = "Behind wall", Flag = "col_hidden", Default = settings.ColHidden, Callback = set("ColHidden") })
@@ -1380,7 +1413,7 @@ Colors:Toggle({ Title = "Use team color", Flag = "col_team", Default = false, Ca
 local Filters = StylePage:Card({ Title = "Filters", Icon = "sliders-horizontal", Side = "Right" })
 Filters:Toggle({ Title = "Visibility color", Desc = "Different color behind walls", Flag = "esp_viscolor", Default = true, Callback = set("VisColor") })
 Filters:Toggle({ Title = "Fade with distance", Flag = "esp_fade", Default = true, Callback = set("Fade") })
-Filters:Toggle({ Title = "Performance mode", Desc = "Draw players 400+ studs away every other frame", Flag = "esp_perf", Default = false, Callback = set("Perf") })
+Filters:Toggle({ Title = "Performance mode", Desc = "Update distant chams every other frame", Flag = "esp_perf", Default = false, Callback = set("Perf") })
 
 ----- World -----
 local World = Visuals:Page("World")
@@ -1893,9 +1926,11 @@ local function refreshServers()
     SrvCard:SetDesc("Loading…")
     task.spawn(function()
         local ok, list = pcall(fetchServers)
-        srvCache = ok and list or {}
-        pcall(drawServers)
         srvBusy = false
+        if not Running then return end
+        srvCache = ok and list or {}
+        local drawn, err = pcall(drawServers)
+        if not drawn then hubError("Server list", err) end
     end)
 end
 srvCurrent = srvRow(1, { id = game.JobId, playing = #Players:GetPlayers(), maxPlayers = Players.MaxPlayers, ping = myPing() }, true)
@@ -1979,7 +2014,12 @@ Render.safe = safe
 connect(RunService.RenderStepped, function()
     if not Running then return end
     esp.Frame += 1
-    if not Camera then Silent.Target = nil return end
+    if not Camera then
+        Silent.Target = nil
+        hideUnused(Global, true)
+        for _, e in pairs(esp.Entries) do e.chamsReady = false hideUnused(e, true) end
+        return
+    end
     if not safe("Silent Aim", function() Silent.Target = findTarget() end) then Silent.Target = nil end
     if Render.Available then                                     -- no Drawing API: nothing can be drawn
         safe("FOV", updateGlobal)                                -- FOV first: it is drawn whatever happens to the ESP
@@ -2464,8 +2504,26 @@ if Tabs.Spin then                                                 -- main menu o
 	pcall(function()
 		if isfile and isfile(saveFile) then
 			local data = HttpService:JSONDecode(readfile(saveFile))
-			for k, v in pairs(data) do infSpin[k] = v end
-			fromFile = HttpService:JSONDecode(readfile(saveFile))
+			if type(data) ~= "table" then return end
+			local clean = {}
+			for k, default in pairs(infSpin) do
+				local v = data[k]
+				if type(v) == type(default) then
+					if k == "On" then
+						clean.On = {}
+						for name in pairs(default) do clean.On[name] = v[name] == true end
+					elseif type(v) == "table" then
+						clean[k] = {}
+						for _, item in ipairs(v) do if type(item) == "string" then table.insert(clean[k], item) end end
+					elseif type(v) ~= "number" or (v == v and math.abs(v) < math.huge) then
+						clean[k] = v
+					end
+				end
+			end
+			if clean.Delay then clean.Delay = math.clamp(clean.Delay, 0.1, 2) end
+			if clean.ResetAt then clean.ResetAt = math.clamp(math.floor(clean.ResetAt), 0, 100) end
+			for k, v in pairs(clean) do infSpin[k] = v end
+			fromFile = clean
 		end
 	end)
 
@@ -2703,6 +2761,10 @@ if Tabs.Spin then                                                 -- main menu o
 		env.RELLOpening = true
 		env.RELL_BOOT_CANCEL = false
 		local okGet, src = pcall(function() return game:HttpGet(rellLink, true) end)
+		if not hub.Running or env.RELL_BOOT_CANCEL then
+			env.RELLOpening = false
+			return false
+		end
 		local fn = okGet and type(src) == "string" and loadstring(src)
 		if not fn then
 			env.RELLOpening = false
@@ -2829,17 +2891,17 @@ do
 	Aura:Toggle({ Title = "NPC Kill Aura", Flag = "sh_aura", Default = false, Callback = function(v) shindo.Aura = v end })
 	-- Kill aura: hits only the current target. If the farm is attacking a mob it is that mob, otherwise the closest valid NPC.
 	-- The target's "antiexploit" is removed and its health is set to its negative, as NukePlat does (Health = -Health, 5 times; client side).
-	-- NPC check as in DogeHub: Head is read directly, so an NPC without a Head errors for that frame and the rest are skipped.
-	-- That is why a plain connection is used instead of hubConnect (error reporting); an error only cuts that frame short.
 	-- Runs when either Player > NPC kill aura or Farm > Configurations is on.
 	local function isValidNPC(npc)
-		return npc:IsA("Model")
+		if not npc:IsA("Model") then return false end
+		local head = npc:FindFirstChild("Head")
+		local humanoid = npc:FindFirstChildOfClass("Humanoid")
+		local root = npc:FindFirstChild("HumanoidRootPart")
+		return head and head:IsA("BasePart") and humanoid and root and root:IsA("BasePart")
 			and npc:FindFirstChild("npctype")
 			and npc.Name:lower():find("npc")
-			and npc:FindFirstChild("HumanoidRootPart")
-			and npc:FindFirstChild("Humanoid")
-			and npc.Head.CFrame.Y > -1000
-			and npc.Humanoid.Health > 0
+			and head.Position.Y > -1000
+			and humanoid.Health > 0
 	end
 	local function auraTarget(r, folder)
 		local t = hub.AuraTarget                                     -- the farm's target: kept until it dies on the server, even if its health already reads 0 locally
@@ -2854,7 +2916,7 @@ do
 		end
 		return best
 	end
-	hub.Conns[#hub.Conns + 1] = RunService.Heartbeat:Connect(function()
+	hubConnect(RunService.Heartbeat, function()
 		if not (hub.Running and (shindo.Aura or hub.FarmAura)) then return end
 		local r = rootPart()
 		local folder = workspace:FindFirstChild("npc")
