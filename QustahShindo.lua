@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.56
+-- Qustāh · Shindo Life · V1.57
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -391,7 +391,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.56",
+	Version = "V1.57",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -476,7 +476,7 @@ local settings = {
     FOV_Filled = false, FOV_Origin = "Mouse", FOV_TargetLine = false,
     -- esp
     ESP_Enabled = false, ESP_TeamCheck = true, ESP_MaxDist = 1500,
-    Box = true, BoxStyle = "Corner", BoxCorner = 30, BoxFill = false, BoxFillAlpha = 0.85, HealthBar = true, Outline = true,
+    Box = true, BoxStyle = "Corner", BoxCorner = 30, BoxFill = false, BoxFillAlpha = 0.85, HealthBar = true, ModeBar = true, Outline = true,
     Name = true, DisplayName = true, HealthText = true, Distance = true, DistUnit = "Studs", Weapon = true, TextSize = 13,
     Chams = false, ChamsWalls = true, ChamsFill = 0.6, ChamsOutline = rgb(1, 1, 1),
     Tracer = false, TracerFrom = "Bottom", Skeleton = false, LookDir = false, HeadDot = false,
@@ -528,6 +528,18 @@ local function healthOf(hum)                                      -- current, ma
     return hp, math.max(hum.MaxHealth, hp, 1)
 end
 local function isAlive(hum) return hum and healthValue(hum) > 0 end
+-- Shindo's mode meter: character.combat.mode (IntConstrainedValue, normally 0-100). Returns 0-1, or nil without one.
+local function modeOf(char)
+    local combat = FindFirstChild(char, "combat")
+    local mode = combat and FindFirstChild(combat, "mode")
+    if not (mode and mode:IsA("ValueBase")) then return nil end
+    local value = tonumber(mode.Value)
+    if not value then return nil end
+    local okMax, maxValue = pcall(function() return mode.MaxValue end)
+    maxValue = (okMax and tonumber(maxValue) and maxValue > 0) and maxValue or 100
+    return clamp(value / maxValue, 0, 1)
+end
+local modeColor = rgb(0.35, 0.62, 1)
 local function isTeammate(plr)
     if not plr.Team or not LocalPlayer.Team then return false end
     if plr.Neutral or LocalPlayer.Neutral then return false end
@@ -937,6 +949,16 @@ local function updatePlayer(plr)
         local bar = use(e, "hb", "Square")
         bar.Position, bar.Size, bar.Color, bar.Filled, bar.Transparency, bar.ZIndex, bar.Visible = vec2(barX, boxTop + h * (1 - hp)), vec2(2, h * hp), healthColor(hp), true, alpha, 2, true
     end
+    local leftEdge = settings.HealthBar and h >= 18 and barX - 1 or boxLeft    -- where the next thing on the left may start
+    local mode = settings.ModeBar and h >= 18 and modeOf(char)
+    if mode then                                                        -- mode meter, just left of the health bar
+        local modeX = leftEdge - 5
+        local bg = use(e, "mb_bg", "Square")
+        bg.Position, bg.Size, bg.Color, bg.Filled, bg.Transparency, bg.ZIndex, bg.Visible = vec2(modeX - 1, boxTop - 1), vec2(4, h + 2), black, true, alpha, 1, true
+        local bar = use(e, "mb", "Square")
+        bar.Position, bar.Size, bar.Color, bar.Filled, bar.Transparency, bar.ZIndex, bar.Visible = vec2(modeX, boxTop + h * (1 - mode)), vec2(2, h * mode), modeColor, true, alpha, 2, true
+        leftEdge = modeX - 1
+    end
 
     local size = settings.TextSize
     if settings.Name then
@@ -948,7 +970,7 @@ local function updatePlayer(plr)
         local t = drawText(e, "hp", txt, vec2(0, 0), healthColor(hp), size - 1, alpha, false)
         local okB, bounds = pcall(function() return t.TextBounds end)  -- some Drawing implementations have no TextBounds
         local tw = (okB and typeof(bounds) == "Vector2" and bounds.X > 0) and bounds.X or #txt * (size - 1) * 0.55
-        local bx = (settings.HealthBar and barX - 3 or boxLeft - 3) - tw
+        local bx = leftEdge - 2 - tw
         t.Position = vec2(bx, clamp(boxTop + h * (1 - hp) - size / 2, boxTop - 2, boxBottom - size))
     end
     local bottomLine = {}
@@ -1318,6 +1340,7 @@ BoxCard:Toggle({ Title = "Fill", Flag = "esp_fill", Default = false, Callback = 
 BoxCard:Slider({ Title = "Fill transparency", Flag = "esp_fillalpha", Min = 0, Max = 100, Default = 85, Suffix = "%", DependsOn = { Flag = "esp_fill", Reason = "" },
     Callback = function(v) settings.BoxFillAlpha = v / 100 end })
 BoxCard:Toggle({ Title = "Health bar", Flag = "esp_hbar", Default = true, Callback = set("HealthBar") })
+BoxCard:Toggle({ Title = "Mode bar", Desc = "Shindo mode meter, next to the health bar", Flag = "esp_mbar", Default = true, Callback = set("ModeBar") })
 BoxCard:Toggle({ Title = "Outline", Flag = "esp_outline", Default = true, Callback = set("Outline") })
 
 local TextCard = EspPage:Card({ Title = "Text", Icon = "type" })
