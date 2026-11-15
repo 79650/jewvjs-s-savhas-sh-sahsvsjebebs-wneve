@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.53
+-- Qustāh · Shindo Life · V1.54
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -391,7 +391,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.53",
+	Version = "V1.54",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -416,10 +416,11 @@ local Tabs = {
 	Loadout = Window:Tab({ Title = "Loadout", Icon = "dna" }),
 	Server = Window:Tab({ Title = "Server", Icon = "server" }),
 }
--- Player tab: three pages, Player (game features), Movement and Teleports
+-- Player tab: four pages, Player (game features), Movement, Teleports and Colors
 local playerPage = Tabs.Player:Page("Player")
 local movementPage = Tabs.Player:Page("Movement")
 local teleportsPage = Tabs.Player:Page("Teleports")
+local colorsPage = Tabs.Player:Page("Colors")
 
 if placeType == "tournament" then
 	Window:Notify({ Title = "Tournament", Content = "You are in tournament mode. Exploiting here can easily get you banned.", Icon = "triangle-alert", Color = "warning" })
@@ -3355,6 +3356,110 @@ do
 			end })
 		end
 	end
+end
+
+----- Character colors -----
+-- Hair / body / beard colour through the game's own remote: startevent:FireServer(part, "r,g,b") with values 0-1.
+-- Rainbow cycles the hue on a timer; turning it off (or unloading) puts back the colours you had before.
+do
+	local partNames = { Hair = "haircolor", Body = "skin", Beard = "beardcolor" }
+	local groups = { hair = { "haircolor", "beardcolor" }, body = { "skin" } }
+	local rainbow = { hair = false, body = false, sync = true }
+	local interval, hue = 1, 0
+	local selected = "haircolor"
+	local colors, animated, restore, started = {}, {}, {}, {}
+
+	local function parseHex(text)
+		text = type(text) == "string" and text:match("^%s*#?(%x%x%x%x%x%x)%s*$")
+		return text and Color3.fromHex(text)
+	end
+	local function currentColor(part)                             -- the colour the game has saved for this part
+		local s = statz()
+		local character = s and s:FindFirstChild("character")
+		local value = character and character:FindFirstChild(part)
+		local v = value and value:IsA("ValueBase") and value.Value
+		if typeof(v) == "Color3" then return v end
+		if typeof(v) == "BrickColor" then return v.Color end
+		if type(v) ~= "string" then return nil end
+		local a, b, c = v:match("^%s*([^,]+),%s*([^,]+),%s*([^,]+)%s*$")
+		a, b, c = tonumber(a), tonumber(b), tonumber(c)
+		if a and b and c and a >= 0 and a <= 1 and b >= 0 and b <= 1 and c >= 0 and c <= 1 then return Color3.new(a, b, c) end
+		return parseHex(v)
+	end
+	local function send(part, color)
+		local remote = LocalPlayer:FindFirstChild("startevent")
+		if not (remote and remote:IsA("RemoteEvent")) then return false end
+		return pcall(function() remote:FireServer(part, ("%.9f,%.9f,%.9f"):format(color.R, color.G, color.B)) end)
+	end
+	local function groupOf(part) return part == "skin" and "body" or "hair" end
+	local function restoreGroup(group)
+		for _, part in ipairs(groups[group]) do
+			if animated[part] and restore[part] then send(part, restore[part]) end
+			restore[part], animated[part] = nil, nil
+		end
+	end
+
+	local card = colorsPage:Card({ Title = "Character colors", Icon = "palette" })
+	local picker
+	card:Segment({ Title = "Part", Flag = "cc_part", Items = { "Hair", "Body", "Beard" }, Default = "Hair", Callback = function(v)
+		selected = partNames[v] or "haircolor"
+		colors[selected] = colors[selected] or currentColor(selected)
+		if picker then picker:Set(animated[selected] or colors[selected] or Color3.new(1, 1, 1), true) end
+	end })
+	picker = card:ColorPicker({ Title = "Color", Default = currentColor(selected) or Color3.new(1, 1, 1), Callback = function(color)
+		if not rainbow[groupOf(selected)] then colors[selected] = color end
+	end })
+	card:Button({ Title = "Apply", Icon = "check", Style = "Primary", Callback = function()
+		if rainbow[groupOf(selected)] then
+			return notify("Character colors", "Turn the rainbow off for this part first", "rainbow", "warning")
+		end
+		local color = colors[selected] or picker:Get()
+		colors[selected] = color
+		local label = selected == "skin" and "Body" or selected == "beardcolor" and "Beard" or "Hair"
+		if send(selected, color) then notify("Character colors", label .. " color sent", "palette")
+		else notify("Character colors", "Could not send the color", "triangle-alert", "warning") end
+	end })
+
+	local rb = colorsPage:Card({ Title = "Rainbow", Icon = "rainbow", Side = "Right" })
+	local function rainbowToggle(title, group, flag, default)
+		rb:Toggle({ Title = title, Flag = flag, Default = default, Callback = function(on)
+			if group == "sync" then rainbow.sync = on return end
+			if on == rainbow[group] then return end
+			rainbow[group] = on
+			if on then
+				started[group] = os.clock()
+				for _, part in ipairs(groups[group]) do restore[part] = currentColor(part) or false end   -- false: nothing to put back
+			else
+				restoreGroup(group)
+			end
+		end })
+	end
+	rainbowToggle("Hair / beard", "hair", "cc_rb_hair", false)
+	rainbowToggle("Body", "body", "cc_rb_body", false)
+	rainbowToggle("Sync", "sync", "cc_rb_sync", true)
+	rb:Slider({ Title = "Interval", Flag = "cc_rb_interval", Min = 0.25, Max = 5, Step = 0.05, Default = 1, Suffix = " s",
+		Callback = function(v) interval = v end })
+
+	hub.Cleanup[#hub.Cleanup + 1] = function() restoreGroup("hair") restoreGroup("body") end
+	task.spawn(function()
+		while hub.Running do
+			local dt = task.wait(interval)
+			if not hub.Running then break end
+			hue = (hue + dt * 0.18) % 1
+			for group, parts in pairs(groups) do
+				if rainbow[group] then
+					local h = rainbow.sync and hue or ((os.clock() - (started[group] or 0)) * 0.18) % 1
+					local color = Color3.fromHSV(h, 1, 1)
+					for _, part in ipairs(parts) do
+						if restore[part] ~= nil and send(part, color) then
+							animated[part] = color
+							if selected == part then picker:Set(color, true) end
+						end
+					end
+				end
+			end
+		end
+	end)
 end
 
 ----- Loadout -----
