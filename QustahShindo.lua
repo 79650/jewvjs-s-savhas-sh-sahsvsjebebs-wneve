@@ -1,5 +1,5 @@
 --[[
-    Qustāh · Shindo Life  ·  V1.37
+    Qustāh · Shindo Life  ·  V1.38
     UI: qustah-ui-lib · sadece Shindo Life'ta açılır (GameId kontrolü)
 
     Sekmeler: Dashboard · Farm · Spin · Combat · Visuals · Player · Teleport · Loadout · Server · Settings
@@ -397,7 +397,7 @@ end
 ------------------------------------------------------------------ PENCERE
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.37",
+	Version = "V1.38",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -2955,7 +2955,7 @@ do
 	local Aura = P:Card({ Title = "NPC kill aura", Icon = "skull", Side = "Right" })
 	Aura:Toggle({ Title = "NPC Kill Aura", Flag = "sh_aura", Default = false, Callback = function(v) G.Aura = v end })
 	-- DogeHub'ın NPCKEELAURA'sının birebir aynısı: her Heartbeat'te, menzil sınırı yok (KILL_RANGE = 0),
-	-- workspace.npc'deki geçerli her NPC'nin canı 4 kez 0'a çekilir (istemci tarafı).
+	-- workspace.npc'deki geçerli her NPC'nin canı 5 kez 0'a çekilir (istemci tarafı).
 	-- Tek fark: DogeHub'da Misc ve Quests'teki iki toggle'ın İKİSİ de açık olmadan çalışmıyordu (keel and keel2);
 	-- burada ikisinden biri yeterli (Player > NPC kill aura ya da Farm > Configurations).
 	local function isValidNPC(npc)
@@ -2975,6 +2975,7 @@ do
 		for _, npc in ipairs(folder:GetChildren()) do
 			if isValidNPC(npc) then
 				pcall(function()
+					npc.Humanoid.Health = 0
 					npc.Humanoid.Health = 0
 					npc.Humanoid.Health = 0
 					npc.Humanoid.Health = 0
