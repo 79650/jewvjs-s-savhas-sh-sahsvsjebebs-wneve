@@ -1,5 +1,5 @@
 --[[
-    Qustāh · Shindo Life  ·  V1.39
+    Qustāh · Shindo Life  ·  V1.40
     UI: qustah-ui-lib · sadece Shindo Life'ta açılır (GameId kontrolü)
 
     Sekmeler: Dashboard · Farm · Spin · Combat · Visuals · Player · Teleport · Loadout · Server · Settings
@@ -391,13 +391,14 @@ local function attackNPC(v)
 		tpTo(hrp.CFrame * CFrame.new(0, Attack.Height, Attack.Distance))
 		for _ = 1, 3 do combat("key", "e") combat("key", "eend") end
 	end
-	pcall(function() v.Humanoid.Health = 0 end)                -- DogeHub'daki gibi, istemci tarafı
+	pcall(function() v.Humanoid.Health = -v.Humanoid.Health end)   -- NukePlat'taki gibi canı eksiye çek (istemci tarafı)
+	HUB.AuraTarget = v                                           -- kill aura farm'ın o anki hedefine vursun
 end
 
 ------------------------------------------------------------------ PENCERE
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.39",
+	Version = "V1.40",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -2954,12 +2955,11 @@ do
 
 	local Aura = P:Card({ Title = "NPC kill aura", Icon = "skull", Side = "Right" })
 	Aura:Toggle({ Title = "NPC Kill Aura", Flag = "sh_aura", Default = false, Callback = function(v) G.Aura = v end })
-	-- DogeHub'ın NPCKEELAURA'sının birebir aynısı: her Heartbeat'te, menzil sınırı yok (KILL_RANGE = 0),
-	-- workspace.npc'deki geçerli her NPC'nin canı 5 kez 0'a çekilir (istemci tarafı).
-	-- Head kontrolü de DogeHub'daki gibi: Head'i olmayan bir NPC o karede hata verir ve sıradaki NPC'ler atlanır.
+	-- Kill aura: sadece o anki hedefe vurur. Farm bir mob'a saldırıyorsa o mob, değilse sana en yakın geçerli NPC.
+	-- Hedefin "antiexploit"i silinir ve canı NukePlat'taki gibi eksiye çekilir (Health = -Health, 5 kez; istemci tarafı).
+	-- NPC kontrolü DogeHub'daki gibi: Head'e doğrudan bakar, Head'i olmayan NPC o karede hata verip kalanları atlatır.
 	-- Bu yüzden hubConnect (hata raporu) değil, düz bir bağlantı kullanılır; hata sadece o kareyi keser.
-	-- Tek fark: DogeHub'da Misc ve Quests'teki iki toggle'ın İKİSİ de açık olmadan çalışmıyordu (keel and keel2);
-	-- burada ikisinden biri yeterli (Player > NPC kill aura ya da Farm > Configurations).
+	-- Player > NPC kill aura ya da Farm > Configurations'tan biri açıksa çalışır.
 	local function isValidNPC(npc)
 		return npc:IsA("Model")
 			and npc:FindFirstChild("npctype")
@@ -2969,22 +2969,35 @@ do
 			and npc.Head.CFrame.Y > -1000
 			and npc.Humanoid.Health > 0
 	end
+	local function auraTarget(r, folder)
+		local t = HUB.AuraTarget                                     -- farm'ın hedefi: canı istemcide 0 görünse de sunucuda ölene kadar
+		if t and t.Parent == folder and t:FindFirstChild("Humanoid") and t:FindFirstChild("HumanoidRootPart") then return t end
+		HUB.AuraTarget = nil
+		local best, bestD
+		for _, npc in ipairs(folder:GetChildren()) do
+			if isValidNPC(npc) then
+				local d = (npc.HumanoidRootPart.Position - r.Position).Magnitude
+				if not bestD or d < bestD then best, bestD = npc, d end
+			end
+		end
+		return best
+	end
 	HUB.Conns[#HUB.Conns + 1] = RunService.Heartbeat:Connect(function()
 		if not (HUB.Running and (G.Aura or HUB.FarmAura)) then return end
 		local r = rootPart()
 		local folder = workspace:FindFirstChild("npc")
 		if not (r and folder) then return end
-		for _, npc in ipairs(folder:GetChildren()) do
-			if isValidNPC(npc) then
-				pcall(function()
-					npc.Humanoid.Health = 0
-					npc.Humanoid.Health = 0
-					npc.Humanoid.Health = 0
-					npc.Humanoid.Health = 0
-					npc.Humanoid.Health = 0
-				end)
-			end
-		end
+		local npc = auraTarget(r, folder)
+		if not npc then return end
+		pcall(function()
+			local ae = npc:FindFirstChild("antiexploit")
+			if ae then ae:Remove() end
+			npc.Humanoid.Health = -npc.Humanoid.Health
+			npc.Humanoid.Health = -npc.Humanoid.Health
+			npc.Humanoid.Health = -npc.Humanoid.Health
+			npc.Humanoid.Health = -npc.Humanoid.Health
+			npc.Humanoid.Health = -npc.Humanoid.Health
+		end)
 	end)
 
 	local Scroll = P:Card({ Title = "Scroll snipe", Icon = "scroll", Desc = "Grabs scrolls that spawn on the map" })
