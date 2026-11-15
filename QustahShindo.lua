@@ -1,5 +1,5 @@
 --[[
-    Qustāh · Shindo Life  ·  V1.23
+    Qustāh · Shindo Life  ·  V1.24
     UI: qustah-ui-lib · sadece Shindo Life'ta açılır (GameId kontrolü)
 
     Sekmeler: Dashboard · Farm · Spin · Combat · Visuals · Player · Teleport · Loadout · Server · Settings
@@ -13,7 +13,7 @@ local SCRIPT_URL, SELF_SOURCE = ...
 local ENV = (getgenv and getgenv()) or _G
 
 if game.GameId ~= 1511883870 then                               -- sadece Shindo Life
-	warn("Qustāh Shindo: bu oyun Shindo Life değil, script açılmadı")
+	warn("Qustāh Shindo: this game is not Shindo Life, script not loaded")
 	return
 end
 repeat task.wait() until game:IsLoaded()
@@ -47,10 +47,10 @@ local function placeKind()
 end
 local KIND = placeKind()
 local KIND_NAME = {
-	menu = "Ana menü", home = "My Home", dungeonselect = "Dungeon seçimi", tournament = "Turnuva",
-	dungeon = "Dungeon", eventboss = "Event boss", bossbattle = "Boss battle", map = "Harita",
+	menu = "Main menu", home = "My Home", dungeonselect = "Dungeon select", tournament = "Tournament",
+	dungeon = "Dungeon", eventboss = "Event boss", bossbattle = "Boss battle", map = "Map",
 }
-local function placeName() return KIND_NAME[KIND] or "Harita" end
+local function placeName() return KIND_NAME[KIND] or "Map" end
 
 local queue = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
 local hubQueued = false
@@ -222,9 +222,9 @@ local function setValue(getter, value, label)
 	local ok, obj = pcall(getter)
 	if ok and obj then
 		obj.Value = value
-		notify(label, value .. " ayarlandı", "check")
+		notify(label, value .. " set", "check")
 	else
-		notify(label, "Bu yerde bulunamadı (" .. placeName() .. ")", "triangle-alert", "warning")
+		notify(label, "Not found here (" .. placeName() .. ")", "triangle-alert", "warning")
 	end
 end
 
@@ -352,7 +352,7 @@ end
 ------------------------------------------------------------------ PENCERE
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.23",
+	Version = "V1.24",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -364,7 +364,7 @@ Window:DashboardTab({ Info = {
 	{ "Konum", placeName() },
 	{ "Spin", tostring(statz() and statz():FindFirstChild("spins") and statz().spins.Value or "-") },
 	{ "Rank", tostring(statz() and statz():FindFirstChild("prestige") and statz().prestige:FindFirstChild("rank") and statz().prestige.rank.Value or "-") },
-	{ "queue_on_teleport", queue and "Var" or "Yok" },
+	{ "queue_on_teleport", queue and "Yes" or "No" },
 } })
 
 local Tabs = {
@@ -379,7 +379,7 @@ local Tabs = {
 }
 
 if KIND == "tournament" then
-	Window:Notify({ Title = "Turnuva", Content = "Turnuva modundasın. Hile kullanmak burada kolayca ban getirir.", Icon = "triangle-alert", Color = "warning" })
+	Window:Notify({ Title = "Tournament", Content = "You are in tournament mode. Exploiting here can easily get you banned.", Icon = "triangle-alert", Color = "warning" })
 end
 
 ------------------------------------------------------------------ UNIVERSAL (Silent Aim · ESP · World · Player · Server)
@@ -1065,7 +1065,7 @@ local function updatePlayer(plr)
         drawText(e, "info", table.concat(bottomLine, "  ·  "), V2(rootScreen.X, B + 3), C3(0.87, 0.87, 0.87), size - 1, alpha, true)
     end
     if not visible and S.VisColor then
-        drawText(e, "wall", "duvar arkası", V2(rootScreen.X, B + 4 + size), S.ColHidden, size - 2, alpha * 0.9, true)
+        drawText(e, "wall", "behind wall", V2(rootScreen.X, B + 4 + size), S.ColHidden, size - 2, alpha * 0.9, true)
     end
 
     if S.HeadDot then
@@ -1318,7 +1318,7 @@ end
 local function serverHop(mode)
     local list = fetchServers()
     if #list == 0 then
-        notify("Server hop", "Uygun sunucu bulunamadı", "server-off", "warning")
+        notify("Server hop", "No suitable server found", "server-off", "warning")
         return
     end
     local pick
@@ -1331,7 +1331,7 @@ local function serverHop(mode)
     else
         pick = list[math.random(1, #list)]
     end
-    notify("Server hop", ("%d/%d oyunculu sunucuya geçiliyor"):format(pick.playing or 0, pick.maxPlayers or 0), "shuffle")
+    notify("Server hop", ("Joining a server with %d/%d players"):format(pick.playing or 0, pick.maxPlayers or 0), "shuffle")
     TeleportService:TeleportToPlaceInstance(game.PlaceId, pick.id, LocalPlayer)
 end
 
@@ -1340,9 +1340,9 @@ local function checkStaff(plr)
     task.spawn(function()
         local ok, rank = pcall(function() return plr:GetRankInGroup(S.StaffGroup) end)
         if not (ok and rank and rank >= S.StaffRank) then return end
-        notify("Yetkili oyunda", ("%s (rank %d) sunucuya girdi"):format(plr.Name, rank), "shield-alert", "danger")
+        notify("Staff in game", ("%s (rank %d) joined the server"):format(plr.Name, rank), "shield-alert", "danger")
         if S.StaffAction == "Hop" then serverHop("Random")
-        elseif S.StaffAction == "Leave" then LocalPlayer:Kick("Qustāh: yetkili girdi, çıkıldı") end
+        elseif S.StaffAction == "Leave" then LocalPlayer:Kick("Qustāh: staff joined, left the game") end
     end)
 end
 
@@ -1350,9 +1350,9 @@ end
 ------------------------------------------------------------------------ COMBAT
 do
 local Combat = Tabs.Combat
-local Aim = Combat:Card({ Title = "Silent Aim", Icon = "target", Desc = "Kamera oynamadan mermiyi hedefe yönlendirir" })
+local Aim = Combat:Card({ Title = "Silent Aim", Icon = "target", Desc = "Redirects your shots to the target without moving the camera" })
 if not CanHook then
-    Combat.Pages[1]:Warning("Executor'ın hookmetamethod desteklemiyor; Silent Aim çalışmaz.", { Title = "Hook yok", Level = "danger" })
+    Combat.Pages[1]:Warning("Your executor doesn't support hookmetamethod; Silent Aim won't work.", { Title = "No hook", Level = "danger" })
 end
 local function refreshAimStatus()
     local m = S.SA_Methods
@@ -1379,16 +1379,16 @@ local saToggle = Aim:Toggle({ Title = "Enabled", Flag = "sa_enabled", Default = 
         if not on then Silent.Target = nil end
         refreshAimStatus()
     end })
-if not CanHook then saToggle:Lock("Executor hook desteklemiyor") end
+if not CanHook then saToggle:Lock("Executor doesn't support hooks") end
 Aim:Slider({ Title = "Hit chance", Flag = "sa_hitchance", Min = 0, Max = 100, Default = 100, Suffix = "%", Callback = set("SA_HitChance") })
 Aim:Segment({ Title = "Target part", Flag = "sa_part", Items = { "Head", "Torso", "Random", "Closest" }, Default = "Head", Callback = set("SA_Part") })
 Aim:Dropdown({ Title = "Priority", Flag = "sa_priority", Default = "Mouse", Items = {
-    { Title = "Mouse", Icon = "mouse-pointer", Desc = "İmlece en yakın" },
-    { Title = "Distance", Icon = "ruler", Desc = "Sana en yakın" },
-    { Title = "Health", Icon = "heart", Desc = "Canı en düşük" },
+    { Title = "Mouse", Icon = "mouse-pointer", Desc = "Closest to cursor" },
+    { Title = "Distance", Icon = "ruler", Desc = "Closest to you" },
+    { Title = "Health", Icon = "heart", Desc = "Lowest health" },
 }, Callback = set("SA_Priority") })
 Aim:Dropdown({ Title = "Methods", Flag = "sa_methods", Multi = true,
-    Help = "Oyunun ateş ederken kullandığı fonksiyon. Çalışmıyorsa başka birini dene.",
+    Help = "The function the game uses when shooting. If it doesn't work, try another one.",
     Items = { "Raycast", "FindPartOnRay", "ScreenPointToRay", "Mouse.Hit", "Mouse.Target" },
     Default = { "Raycast", "FindPartOnRay", "Mouse.Hit" },
     Callback = function(list)
@@ -1397,10 +1397,10 @@ Aim:Dropdown({ Title = "Methods", Flag = "sa_methods", Multi = true,
     end })
 
 local Checks = Combat:Card({ Title = "Checks", Icon = "shield-check", Side = "Right" })
-Checks:Toggle({ Title = "Visibility check", Desc = "Duvar arkasındakini seçme", Flag = "sa_vischeck", Default = false, Callback = set("SA_VisCheck") })
-Checks:Toggle({ Title = "Safe origin", Desc = "Sadece senden çıkan atışları değiştir", Flag = "sa_safe", Default = true, Callback = set("SA_SafeOrigin") })
+Checks:Toggle({ Title = "Visibility check", Desc = "Don't target players behind walls", Flag = "sa_vischeck", Default = false, Callback = set("SA_VisCheck") })
+Checks:Toggle({ Title = "Safe origin", Desc = "Only change shots that come from you", Flag = "sa_safe", Default = true, Callback = set("SA_SafeOrigin") })
 Checks:Slider({ Title = "Max distance", Flag = "sa_maxdist", Min = 50, Max = 3000, Default = 1000, Step = 10, Suffix = " studs", Callback = set("SA_MaxDist") })
-Checks:Toggle({ Title = "Prediction", Desc = "Koşan hedefin önüne nişan al", Flag = "sa_predict", Default = false, Callback = set("SA_Predict") })
+Checks:Toggle({ Title = "Prediction", Desc = "Aim ahead of moving targets", Flag = "sa_predict", Default = false, Callback = set("SA_Predict") })
 Checks:Slider({ Title = "Prediction strength", Flag = "sa_predstr", Min = 0, Max = 300, Default = 100, Step = 5, Suffix = "%", DependsOn = { Flag = "sa_predict", Reason = "" }, Callback = set("SA_PredStrength") })
 
 local FovCard = Combat:Card({ Title = "FOV", Icon = "circle-dashed" })
@@ -1420,7 +1420,7 @@ FovCard:ColorPicker({ Title = "Color", Flag = "fov_color", Default = WHITE, Alph
     Callback = function(c, t) S.FOV_Color = c S.FOV_Alpha = t or 0 refreshFov() end })
 FovCard:Toggle({ Title = "Filled", Flag = "fov_filled", Default = false, Callback = fovSet("FOV_Filled") })
 FovCard:Segment({ Title = "Origin", Flag = "fov_origin", Items = { "Mouse", "Center" }, Default = "Mouse", Callback = set("FOV_Origin") })
-FovCard:Toggle({ Title = "Target line", Desc = "FOV merkezinden hedefe çizgi", Flag = "fov_tline", Default = false, Callback = set("FOV_TargetLine") })
+FovCard:Toggle({ Title = "Target line", Desc = "Line from FOV center to target", Flag = "fov_tline", Default = false, Callback = set("FOV_TargetLine") })
 local PreviewCard = Combat:Card({ Title = "Preview", Icon = "scan", Side = "Right" })
 fovPreview = PreviewCard:FovPreview({ Height = 140 })
 refreshFov()
@@ -1437,9 +1437,9 @@ local General = EspPage:Card({ Title = "General", Icon = "scan-eye" })
 General:Toggle({ Title = "ESP enabled", Flag = "esp_enabled", Default = false, Bindable = true,
     Callback = function(on)
         S.ESP_Enabled = on
-        Window:SetModule("ESP", on and "On" or "Off", Render.Mode == "GUI" and "GUI modu" or nil, { Icon = "eye", Tab = "Visuals" })
+        Window:SetModule("ESP", on and "On" or "Off", Render.Mode == "GUI" and "GUI mode" or nil, { Icon = "eye", Tab = "Visuals" })
     end })
-General:Toggle({ Title = "Team check", Desc = "Takım arkadaşlarını gösterme", Flag = "esp_team", Default = true, Callback = set("ESP_TeamCheck") })
+General:Toggle({ Title = "Team check", Desc = "Don't show teammates", Flag = "esp_team", Default = true, Callback = set("ESP_TeamCheck") })
 General:Slider({ Title = "Max distance", Flag = "esp_maxdist", Min = 100, Max = 5000, Default = 1500, Step = 50, Suffix = " studs", Callback = set("ESP_MaxDist") })
 General:Info({ Title = "Render mode", Value = "Roblox GUI" })
 
@@ -1460,26 +1460,26 @@ TextCard:Toggle({ Title = "Use display name", Flag = "esp_dname", Default = true
 TextCard:Toggle({ Title = "Health number", Flag = "esp_hptext", Default = true, Callback = set("HealthText") })
 TextCard:Toggle({ Title = "Distance", Flag = "esp_dist", Default = true, Callback = set("Distance") })
 TextCard:Segment({ Title = "Unit", Flag = "esp_unit", Items = { "Studs", "Meters" }, Default = "Studs", DependsOn = { Flag = "esp_dist", Reason = "" }, Callback = set("DistUnit") })
-TextCard:Toggle({ Title = "Weapon", Desc = "Elindeki tool", Flag = "esp_weapon", Default = true, Callback = set("Weapon") })
+TextCard:Toggle({ Title = "Weapon", Desc = "Held tool", Flag = "esp_weapon", Default = true, Callback = set("Weapon") })
 TextCard:Slider({ Title = "Text size", Flag = "esp_tsize", Min = 9, Max = 20, Default = 13, Suffix = " px", Callback = set("TextSize") })
 
 local Chams = ExtraPage:Card({ Title = "Chams", Icon = "paint-bucket" })
-Chams:Toggle({ Title = "Chams", Desc = "Karakteri renkli boyar", Flag = "esp_chams", Default = false, Callback = set("Chams") })
+Chams:Toggle({ Title = "Chams", Desc = "Colors the character", Flag = "esp_chams", Default = false, Callback = set("Chams") })
 Chams:Toggle({ Title = "Through walls", Flag = "esp_chamswalls", Default = true, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsWalls") })
 Chams:Slider({ Title = "Fill transparency", Flag = "esp_chamsfill", Min = 0, Max = 100, Default = 60, Suffix = "%", DependsOn = { Flag = "esp_chams", Reason = "" },
     Callback = function(v) S.ChamsFill = v / 100 end })
 Chams:ColorPicker({ Title = "Outline color", Flag = "esp_chamsout", Default = WHITE, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsOutline") })
-Chams:Paragraph({ Title = "Not", Content = "Roblox aynı anda en fazla 31 Highlight gösterir; kalabalık sunucuda uzaktakiler boyanmayabilir." })
+Chams:Paragraph({ Title = "Note", Content = "Roblox shows at most 31 Highlights at once; in full servers, far players may not be colored." })
 
 local Lines = ExtraPage:Card({ Title = "Lines", Icon = "spline", Side = "Right" })
 Lines:Toggle({ Title = "Tracer", Flag = "esp_tracer", Default = false, Callback = set("Tracer") })
 Lines:Segment({ Title = "Tracer from", Flag = "esp_tracerfrom", Items = { "Bottom", "Center", "Mouse" }, Default = "Bottom", DependsOn = { Flag = "esp_tracer", Reason = "" }, Callback = set("TracerFrom") })
 Lines:Toggle({ Title = "Skeleton", Flag = "esp_skeleton", Default = false, Callback = set("Skeleton") })
-Lines:Toggle({ Title = "Look direction", Desc = "Nereye baktığını gösterir", Flag = "esp_look", Default = false, Callback = set("LookDir") })
+Lines:Toggle({ Title = "Look direction", Desc = "Shows where they are looking", Flag = "esp_look", Default = false, Callback = set("LookDir") })
 Lines:Toggle({ Title = "Head dot", Flag = "esp_headdot", Default = false, Callback = set("HeadDot") })
 
 local Arrows = ExtraPage:Card({ Title = "Offscreen arrows", Icon = "navigation" })
-Arrows:Toggle({ Title = "Arrows", Desc = "Ekran dışındakilerin yönü", Flag = "esp_arrows", Default = false, Callback = set("Arrows") })
+Arrows:Toggle({ Title = "Arrows", Desc = "Direction of off-screen players", Flag = "esp_arrows", Default = false, Callback = set("Arrows") })
 Arrows:Slider({ Title = "Distance from center", Flag = "esp_arrowrad", Min = 80, Max = 300, Default = 150, Suffix = " px", DependsOn = { Flag = "esp_arrows", Reason = "" }, Callback = set("ArrowRadius") })
 Arrows:Slider({ Title = "Size", Flag = "esp_arrowsize", Min = 8, Max = 28, Default = 14, Suffix = " px", DependsOn = { Flag = "esp_arrows", Reason = "" }, Callback = set("ArrowSize") })
 
@@ -1490,9 +1490,9 @@ Colors:ColorPicker({ Title = "Silent aim target", Flag = "col_target", Default =
 Colors:Toggle({ Title = "Use team color", Flag = "col_team", Default = false, Callback = set("UseTeamColor") })
 
 local Filters = StylePage:Card({ Title = "Filters", Icon = "sliders-horizontal", Side = "Right" })
-Filters:Toggle({ Title = "Visibility color", Desc = "Duvar arkasındakiler farklı renk", Flag = "esp_viscolor", Default = true, Callback = set("VisColor") })
+Filters:Toggle({ Title = "Visibility color", Desc = "Different color behind walls", Flag = "esp_viscolor", Default = true, Callback = set("VisColor") })
 Filters:Toggle({ Title = "Fade with distance", Flag = "esp_fade", Default = true, Callback = set("Fade") })
-Filters:Toggle({ Title = "Performance mode", Desc = "400+ studs uzaktakileri iki karede bir çiz", Flag = "esp_perf", Default = false, Callback = set("Perf") })
+Filters:Toggle({ Title = "Performance mode", Desc = "Draw players 400+ studs away every other frame", Flag = "esp_perf", Default = false, Callback = set("Perf") })
 
 ------------------------------------------------------------------------ WORLD
 local World = Visuals:Page("World")
@@ -1520,8 +1520,8 @@ Move:Slider({ Title = "Fly speed", Flag = "p_flyspeed", Min = 10, Max = 300, Def
 Move:Toggle({ Title = "NoClip", Icon = "ghost", Flag = "p_noclip", Default = false, Bind = Enum.KeyCode.N, Bindable = true, Callback = set("NoClip") })
 
 local Misc = PlayerTab:Card({ Title = "Misc", Icon = "wand-sparkles", Side = "Right" })
-Misc:Toggle({ Title = "Anti-AFK", Desc = "20 dakika kick'ini engeller", Flag = "p_antiafk", Default = true, Callback = set("AntiAfk") })
-Misc:Toggle({ Title = "Click TP", Desc = "Ctrl + sol tık", Flag = "p_clicktp", Default = false, Callback = set("ClickTP") })
+Misc:Toggle({ Title = "Anti-AFK", Desc = "Prevents the 20 minute idle kick", Flag = "p_antiafk", Default = true, Callback = set("AntiAfk") })
+Misc:Toggle({ Title = "Click TP", Desc = "Ctrl + left click", Flag = "p_clicktp", Default = false, Callback = set("ClickTP") })
 Misc:Toggle({ Title = "Override FOV", Flag = "p_camfov_on", Default = false, Callback = set("OverrideFOV") })
 Misc:Slider({ Title = "Camera FOV", Flag = "p_camfov", Min = 30, Max = 120, Default = 70,
     DependsOn = { Flag = "p_camfov_on", Reason = "" }, Callback = set("CamFOV") })
@@ -1540,7 +1540,7 @@ end
 ------------------------------------------------------------------------ SERVER
 -- Düzen C: solda sunucu tarayıcı (doluluk çubuğu + ping + tek tık Join), sağda Seçenekler ve Job ID.
 local Server = Tabs.Server
-local SrvCard = Server:Card({ Title = "Sunucular", Icon = "server", Desc = "Doluluk ve ping'e göre seç" })
+local SrvCard = Server:Card({ Title = "Servers", Icon = "server", Desc = "Pick by player count and ping" })
 
 -- ServerList: lib'de yok, kartın gövdesine elle çiziliyor (tema renklerine bağlı)
 local UI_ = Lib.Util
@@ -1594,7 +1594,7 @@ local function srvRow(order, s, current)
     btn.MouseLeave:Connect(function() TH.tweenTo(btn, "BackgroundColor3", "buttonEdge", 0.1) end)
     btn.Activated:Connect(function()
         if current then rejoin() return end
-        notify("Sunucu", ("%d/%d oyunculu sunucuya geçiliyor"):format(s.playing or 0, s.maxPlayers or 0), "log-in")
+        notify("Server", ("Joining a server with %d/%d players"):format(s.playing or 0, s.maxPlayers or 0), "log-in")
         TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, LocalPlayer)
     end)
     return { row = row, cnt = cnt, fill = fill, pl = pl }
@@ -1608,14 +1608,14 @@ local function drawServers()
     if srvSort == "Smallest" then table.sort(list, function(a, b) return (a.playing or 0) < (b.playing or 0) end)
     elseif srvSort == "Ping" then table.sort(list, function(a, b) return (a.ping or 9999) < (b.ping or 9999) end) end
     for i = 1, math.min(#list, SRV_MAX) do srvRows[#srvRows + 1] = srvRow(10 + i, list[i], false) end
-    SrvCard:SetDesc(#srvCache > 0 and ("%d sunucu · %s"):format(#srvCache, srvSort == "Smallest" and "en boş önce" or srvSort == "Ping" and "en düşük ping önce" or "sıralı")
-        or "Sunucu bulunamadı · Yenile'ye bas")
+    SrvCard:SetDesc(#srvCache > 0 and ("Servers: %d · %s"):format(#srvCache, srvSort == "Smallest" and "emptiest first" or srvSort == "Ping" and "lowest ping first" or "default order")
+        or "No servers found · press Refresh")
 end
 local srvBusy = false
 local function refreshServers()
     if srvBusy then return end
     srvBusy = true
-    SrvCard:SetDesc("Yükleniyor…")
+    SrvCard:SetDesc("Loading…")
     task.spawn(function()
         local ok, list = pcall(fetchServers)
         srvCache = ok and list or {}
@@ -1626,10 +1626,10 @@ end
 srvCurrent = srvRow(1, { id = game.JobId, playing = #Players:GetPlayers(), maxPlayers = Players.MaxPlayers, ping = myPing() }, true)
 
 local srvBtns = SrvCard:Row()
-srvBtns:Button({ Title = "Yenile", Icon = "refresh-cw", Cooldown = 3, Callback = refreshServers })
-srvBtns:Button({ Title = "En boş", Icon = "shuffle", Callback = function() srvSort = "Smallest" drawServers() end })
-srvBtns:Button({ Title = "En düşük ping", Icon = "wifi", Callback = function() srvSort = "Ping" drawServers() end })
-SrvCard:Button({ Title = "Rastgele hop", Icon = "shuffle", Style = "Ghost", Cooldown = 5, Callback = function() serverHop("Random") end })
+srvBtns:Button({ Title = "Refresh", Icon = "refresh-cw", Cooldown = 3, Callback = refreshServers })
+srvBtns:Button({ Title = "Emptiest", Icon = "shuffle", Callback = function() srvSort = "Smallest" drawServers() end })
+srvBtns:Button({ Title = "Lowest ping", Icon = "wifi", Callback = function() srvSort = "Ping" drawServers() end })
+SrvCard:Button({ Title = "Random hop", Icon = "shuffle", Style = "Ghost", Cooldown = 5, Callback = function() serverHop("Random") end })
 task.delay(1, function() if Running then refreshServers() end end)
 
 -- eski kodun beklediği "Players" bilgisi → artık listedeki "buradasın" satırını günceller
@@ -1641,27 +1641,27 @@ local playersInfo = { Set = function()
     srvCurrent.pl.Text = p > 0 and (p .. " ms") or "-"
 end }
 
-local Opt = Server:Card({ Title = "Seçenekler", Icon = "settings-2", Side = "Right" })
+local Opt = Server:Card({ Title = "Options", Icon = "settings-2", Side = "Right" })
 Opt:ListItem({ Title = "Staff alert", Icon = "shield-alert", Toggle = true, Flag = "s_staff", Default = false, Callback = function(on)
     S.StaffAlert = on
     if on then for _, p in ipairs(Players:GetPlayers()) do checkStaff(p) end end
 end })
 local STAFF_DEP = { Flag = "s_staff", Mode = "Hide", Reason = "" }
-Opt:Input({ Title = "Group ID", Placeholder = "oyunun grup ID'si", Flag = "s_group", Numeric = true, DependsOn = STAFF_DEP,
+Opt:Input({ Title = "Group ID", Placeholder = "game's group ID", Flag = "s_group", Numeric = true, DependsOn = STAFF_DEP,
     Callback = function(text) S.StaffGroup = tonumber(text) or 0 end })
 Opt:Slider({ Title = "Min rank", Flag = "s_rank", Min = 1, Max = 255, Default = 1, DependsOn = STAFF_DEP, Callback = set("StaffRank") })
 Opt:Segment({ Title = "Action", Flag = "s_action", Items = { "Notify", "Hop", "Leave" }, Default = "Notify", DependsOn = STAFF_DEP, Callback = set("StaffAction") })
 Opt:ListItem({ Title = "Auto rejoin on kick", Icon = "refresh-cw", Toggle = true, Flag = "s_autorejoin", Default = false, Callback = set("AutoRejoin") })
 Opt:ListItem({ Title = "Re-execute after teleport", Icon = "scroll-text", Toggle = true, Flag = "misc_queue", Default = false,
-    Desc = queue and "Teleporttan sonra hub tekrar açılır" or "Executor'da queue_on_teleport yok",
+    Desc = queue and "Hub reopens after teleport" or "Executor doesn't have queue_on_teleport",
     Callback = function(on)
         if on then queueHub() else queuePermission(HUB_QUEUE_STOP, false) end
     end })
 
 local JobCard = Server:Card({ Title = "Job ID", Icon = "hash", Side = "Right" })
-JobCard:Info({ Title = "Bu sunucu", Value = string.sub(game.JobId, 1, 8), Copy = game.JobId })
+JobCard:Info({ Title = "This server", Value = string.sub(game.JobId, 1, 8), Copy = game.JobId })
 JobCard:ActionInput({ Icon = "log-in", Placeholder = "Job ID", Button = "Join",
-    Validate = function(text) if text == "" then return nil end return #text >= 30, #text >= 30 and "Geçerli görünüyor" or "Job ID çok kısa" end,
+    Validate = function(text) if text == "" then return nil end return #text >= 30, #text >= 30 and "Looks valid" or "Job ID is too short" end,
     Callback = function(jobId) TeleportService:TeleportToPlaceInstance(game.PlaceId, jobId, LocalPlayer) end })
 
 local PlayersCard = Server:Card({ Title = "Players", Icon = "users", Wide = "Bottom" })
@@ -1674,8 +1674,8 @@ local playerTable = PlayersCard:Table({ Height = 150, Search = true,
     end })
 
 ------------------------------------------------------------------------ Settings + açılış
-Window:SetModule("ESP", "Off", Render.Mode == "GUI" and "GUI modu" or nil, { Icon = "eye", Tab = "Visuals" })
-Window:SetModule("Silent Aim", CanHook and "Off" or "Limited", not CanHook and "hook yok" or nil, { Icon = "target", Tab = "Combat" })
+Window:SetModule("ESP", "Off", Render.Mode == "GUI" and "GUI mode" or nil, { Icon = "eye", Tab = "Visuals" })
+Window:SetModule("Silent Aim", CanHook and "Off" or "Limited", not CanHook and "no hook" or nil, { Icon = "target", Tab = "Combat" })
 
 Window:OnKick(function()
     if S.AutoRejoin then task.delay(2, function() if Running and S.AutoRejoin then rejoin() end end) end
@@ -1926,13 +1926,13 @@ do
 			if cur then
 				local _, objective = missionInfo(cur)
 				if objective and objective ~= "Mission" then          -- farm'ın yapamayacağı görev tipi
-					if cancelMission() then notify("Auto farm", "Görev tipi '" .. objective .. "', iptal edildi", "circle-x", "warning") end
+					if cancelMission() then notify("Auto farm", "Mission type '" .. objective .. "', cancelled", "circle-x", "warning") end
 					task.wait(1)
 					return
 				end
 			end
 			if inMission() and F.StuckAfter > 0 and os.clock() - progressAt > F.StuckAfter then   -- takıldı
-				if cancelMission() then notify("Auto farm", F.StuckAfter .. " sn ilerleme olmadı, görev iptal edildi", "circle-x", "warning") end
+				if cancelMission() then notify("Auto farm", F.StuckAfter .. "s without progress, mission cancelled", "circle-x", "warning") end
 				progressAt = os.clock()
 				leaveSafe()
 				task.wait(1)
@@ -1955,16 +1955,16 @@ do
 		if not ok then error(err, 0) end
 	end)
 
-	local Q = QuestPage:Card({ Title = "Auto farm", Icon = "scroll-text", Desc = "Görev al, mob'ları kes, tekrarla" })
+	local Q = QuestPage:Card({ Title = "Auto farm", Icon = "scroll-text", Desc = "Take a mission, kill the mobs, repeat" })
 	local function farmToggle(card, title, key, desc)
 		card:Toggle({ Title = title, Desc = desc, Flag = "farm_" .. key:lower(), Default = false, Callback = function(on)
 			if on ~= F[key] then if on then platformOn() else platformOff() end end
 			F[key] = on
 		end })
 	end
-	farmToggle(Q, "Green scroll farm", "Scroll", "Yeşil 'defeat' görevleri")
-	farmToggle(Q, "Boss farm", "Boss", "Boss görev vericileri")
-	local function bossDesc(n) return n > 0 and ("Bu haritada %d boss"):format(n) or "Bu haritada boss yok" end
+	farmToggle(Q, "Green scroll farm", "Scroll", "Green 'defeat' missions")
+	farmToggle(Q, "Boss farm", "Boss", "Boss mission givers")
+	local function bossDesc(n) return n > 0 and ("Bosses on this map: %d"):format(n) or "No bosses on this map" end
 	local bossList = names(bossGivers())
 	local bossDD = Q:Dropdown({ Title = "Boss", Flag = "farm_bosspick", Items = bossList, Default = "Random", Search = true,
 		Desc = bossDesc(#bossList - 1), Callback = function(v) F.BossPick = v end })
@@ -2004,13 +2004,13 @@ do
 		DependsOn = { Flag = "farm_mode", Value = "Jutsu (E)", Reason = "" }, Callback = function(v) Attack.Height = v end })
 	Conf:Slider({ Title = "Distance", Flag = "farm_dist", Min = -10, Max = 10, Default = 10, Suffix = " studs",
 		DependsOn = { Flag = "farm_mode", Value = "Jutsu (E)", Reason = "" }, Callback = function(v) Attack.Distance = v end })
-	Conf:Slider({ Title = "Cancel stuck mission", Desc = "Bu kadar saniye ilerleme olmazsa görevi iptal eder (0 = kapalı)", Flag = "farm_stuck",
+	Conf:Slider({ Title = "Cancel stuck mission", Desc = "Cancels the mission after this many seconds without progress (0 = off)", Flag = "farm_stuck",
 		Min = 0, Max = 300, Step = 5, Default = 60, Suffix = " s", Callback = function(v) F.StuckAfter = v end })
-	Conf:Info({ Title = "Melee distance", Value = "Stile göre (7 / 10)",
+	Conf:Info({ Title = "Melee distance", Value = "By style (7 / 10)",
 		DependsOn = { Flag = "farm_mode", Value = "Jutsu (E)", Not = true, Mode = "Hide", Reason = "" } })
 
 	local Rank = QuestPage:Card({ Title = "Auto rank", Icon = "crown", Side = "Right" })
-	Rank:Toggle({ Title = "Auto rank", Desc = "Level 1000 olunca rank atlar", Flag = "rank_on", Default = false, Callback = function(v) F.AutoRank = v end })
+	Rank:Toggle({ Title = "Auto rank", Desc = "Ranks up at level 1000", Flag = "rank_on", Default = false, Callback = function(v) F.AutoRank = v end })
 	Rank:Toggle({ Title = "Rank up after MAX", Flag = "rank_max", Default = false, Callback = function(v) F.RankAfterMax = v end })
 	Rank:Toggle({ Title = "Use RELL coins", Flag = "rank_rc", Default = false, Callback = function(v) F.RankRC = v end })
 	Rank:Toggle({ Title = "Stop at spins", Flag = "rank_stop", Default = false, Callback = function(v) F.RankStop = v end })
@@ -2022,13 +2022,13 @@ do
 		local spins = s:FindFirstChild("spins")
 		if F.RankStop and spins and spins.Value >= F.RankStopAt then
 			Window:SetFlag("rank_on", false)
-			notify("Auto rank", "Spin hedefine ulaşıldı, durdu", "crown")
+			notify("Auto rank", "Spin target reached, stopped", "crown")
 			return
 		end
 		if F.RankRC then
 			if rellCoinOut() then
 				Window:SetFlag("rank_rc", false)
-				notify("Auto rank", "RELL Coin bitti", "triangle-alert", "warning")
+				notify("Auto rank", "Out of RELL Coins", "triangle-alert", "warning")
 			else
 				fire("maxlvlpres2")
 			end
@@ -2052,30 +2052,30 @@ do
 			end
 		end
 	end)
-	if KIND ~= "map" then QuestPage:Warning("Görevler sadece haritada çalışır (şu an: " .. placeName() .. ").", { Level = "info" }) end
+	if KIND ~= "map" then QuestPage:Warning("Missions only work on a map (now: " .. placeName() .. ").", { Level = "info" }) end
 
 	------------------------------------------------ Mentor
 	local MENTORS = { "Narumaki", "Jiso Seishin", "Shindai Akuma", "Ryuji Kenichi", "Bruce Kenichi" }
 	local rank = statz() and statz():FindFirstChild("prestige") and statz().prestige:FindFirstChild("rank") and statz().prestige.rank.Value or "?"
-	local M = MentorPage:Card({ Title = "Mentor", Icon = "graduation-cap", Desc = "S rank ve üstü gerekir (senin rankın: " .. tostring(rank) .. ")" })
+	local M = MentorPage:Card({ Title = "Mentor", Icon = "graduation-cap", Desc = "Requires S rank or higher (your rank: " .. tostring(rank) .. ")" })
 	M:Button({ Title = "Go to mentor", Icon = "map-pin", Style = "Primary", Callback = function()
 		local sensei = workspace:FindFirstChild("sensei")
 		if sensei and sensei:FindFirstChild("missions") then
 			for _, name in ipairs(MENTORS) do
 				local g = sensei.missions:FindFirstChild(name)
-				if g then talkTo(g) return notify("Mentor", name .. " ile konuşuldu", "graduation-cap") end
+				if g then talkTo(g) return notify("Mentor", name .. " talked to", "graduation-cap") end
 			end
 		end
 		local ken = workspace:FindFirstChild("Ken Mentor")
 		if ken and ken:FindFirstChild("HumanoidRootPart") then
 			tpTo(ken.HumanoidRootPart.CFrame + Vector3.new(-6, 4, 0))
-			return notify("Mentor", "Ken Mentor'a gidildi", "graduation-cap")
+			return notify("Mentor", "Went to Ken Mentor", "graduation-cap")
 		end
-		notify("Mentor", "Bu haritada mentor yok", "triangle-alert", "warning")
+		notify("Mentor", "No mentor on this map", "triangle-alert", "warning")
 	end })
-	M:Toggle({ Title = "Auto punch", Desc = "Punch görevleri", Flag = "mt_punch", Default = false, Callback = function(v) F.PunchM = v end })
-	M:Toggle({ Title = "Auto tree jump", Desc = "Tree jump görevleri", Flag = "mt_tree", Default = false, Callback = function(v) F.TreeM = v end })
-	M:Toggle({ Title = "Auto kunai shoot", Desc = "Hedef tahtası görevleri", Flag = "mt_shoot", Default = false, Callback = function(v) F.Shoot = v end })
+	M:Toggle({ Title = "Auto punch", Desc = "Punch missions", Flag = "mt_punch", Default = false, Callback = function(v) F.PunchM = v end })
+	M:Toggle({ Title = "Auto tree jump", Desc = "Tree jump missions", Flag = "mt_tree", Default = false, Callback = function(v) F.TreeM = v end })
+	M:Toggle({ Title = "Auto kunai shoot", Desc = "Target board missions", Flag = "mt_shoot", Default = false, Callback = function(v) F.Shoot = v end })
 	M:Button({ Title = "Kenjutsu training", Icon = "sword", Callback = function() fire("trainkenmaster") end })
 	loop("Mentor", 0.05, function()
 		if HUB.FarmBusy or HUB.ScrollBusy then return end
@@ -2108,7 +2108,7 @@ do
 				if q then fire("claim2", q) end
 			end
 		end
-		notify("Missions", "Günlük ve ana görev ödülleri istendi", "gift")
+		notify("Missions", "Requested daily and main mission rewards", "gift")
 	end })
 	local DA = DailyPage:Card({ Title = "Auto daily", Icon = "repeat", Side = "Right" })
 	DA:Toggle({ Title = "M1", Flag = "dl_m1", Default = false, Callback = function(v) F.PunchD = v end })
@@ -2227,8 +2227,8 @@ do
 	local function asList(v) return type(v) == "table" and v or {} end
 	local function ready(c)                                     -- açık + listesi dolu
 		if not I.On[c.on] then return false end
-		if #asList(I[c.wanted]) == 0 then return false, "Wanted boş" end
-		if c.slots and #asList(I[c.slots]) == 0 then return false, "Slots boş" end
+		if #asList(I[c.wanted]) == 0 then return false, "Wanted is empty" end
+		if c.slots and #asList(I[c.slots]) == 0 then return false, "Slots is empty" end
 		return true
 	end
 	local warned = {}
@@ -2247,7 +2247,7 @@ do
 			if ok then active[c.on] = true warned[c.on] = nil
 			elseif why and not warned[c.on] then
 				warned[c.on] = true
-				notify("Inf Spin", c.label .. ": " .. why .. ", atlandı", "triangle-alert", "warning")
+				notify("Inf Spin", c.label .. ": " .. why .. ", skipped", "triangle-alert", "warning")
 			end
 		end
 		if not next(active) then return end
@@ -2257,7 +2257,7 @@ do
 			if not HUB.Running or ENV.RELL_RUNNING or ENV.RELLOpening or not I.On[c] then blocked = true return end
 			if not val or not unlocked then
 				blocked = true
-				warning(label, label .. " slotu bulunamadı veya kilitli")
+				warning(label, label .. " slot not found or locked")
 				return
 			end
 			warned[label] = nil
@@ -2299,7 +2299,7 @@ do
 				I.On.Race = false
 				Window:SetFlag("is_race_on", false)
 				persist()
-				notify("Inf Spin", "RELL Coin bitti, Race spini durdu", "triangle-alert", "warning")
+				notify("Inf Spin", "Out of RELL Coins, race spin stopped", "triangle-alert", "warning")
 				active.Race = nil
 				if not next(active) then return end
 			else
@@ -2312,11 +2312,11 @@ do
 				if active[c.on] then I.On[c.on] = false Window:SetFlag(c.flag, false) end
 			end
 			persist()
-			notify("Inf Spin", "İstediklerin geldi" .. (I.AutoSave and ", kaydediliyor" or ""), "sparkles", "success")
+			notify("Inf Spin", "Got what you wanted" .. (I.AutoSave and ", kaydediliyor" or ""), "sparkles", "success")
 			if I.AutoSave then saveAndLeave() end
 		elseif low and not sent then
 			persist()
-			notify("Inf Spin", "Spin bitti, sıfırlanıp yeniden giriliyor", "rotate-ccw")
+			notify("Inf Spin", "Out of spins, resetting and rejoining", "rotate-ccw")
 			resetAndRejoin()
 			task.wait(5)
 		end
@@ -2334,25 +2334,25 @@ do
 		c:Toggle({ Title = "Start spinning", Flag = onFlag, Default = I.On[onKey], Callback = function(on)
 			if on and (ENV.RELL_RUNNING or ENV.RELLOpening) then
 				task.defer(function() Window:SetFlag(onFlag, false) end)
-				return notify("Inf Spin", "Önce Auto Spin RELL'i durdur", "triangle-alert", "warning")
+				return notify("Inf Spin", "Stop Auto Spin RELL first", "triangle-alert", "warning")
 			end
 			I.On[onKey] = on
 			persist()
-			if on and KIND ~= "menu" then notify("Inf Spin", "Sadece ana menüde çalışır", "triangle-alert", "warning") end
+			if on and KIND ~= "menu" then notify("Inf Spin", "Only works in the main menu", "triangle-alert", "warning") end
 		end })
 		return dd
 	end
 	local ddE = category(InfPage, "Left", "Elements", "flame", "Elements", EL, "ElemSlots", { "1", "2", "3", "4" }, "is_elem_on", "Element")
 	local ddB = category(InfPage, "Right", "Bloodlines", "dna", "Bloodlines", KGS, "BlSlots", { "1", "2", "3", "4" }, "is_bl_on", "Bloodline")
-	local ddK = category(InfPage, "Left", "Kenjutsu", "sword", "Kenjutsu", KEN, "KenSlots", { "1", "2" }, "is_ken_on", "Kenjutsu", "Her spin 10 spin harcar")
-	local ddR = category(InfPage, "Right", "Race", "user-round", "Races", RACE, nil, nil, "is_race_on", "Race", "RELL Coin harcar, sıfırlanmaz")
+	local ddK = category(InfPage, "Left", "Kenjutsu", "sword", "Kenjutsu", KEN, "KenSlots", { "1", "2" }, "is_ken_on", "Kenjutsu", "Each spin costs 10 spins")
+	local ddR = category(InfPage, "Right", "Race", "user-round", "Races", RACE, nil, nil, "is_race_on", "Race", "Costs RELL Coins, not reset")
 
 	local Set = InfPage:Card({ Title = "Settings", Icon = "settings-2", Wide = "Bottom" })
-	Set:Slider({ Title = "Reset when spins reach", Desc = "Bu sayıya inince kaydı geri alıp yeniden girer", Flag = "is_reset", Min = 0, Max = 100,
+	Set:Slider({ Title = "Reset when spins reach", Desc = "Rolls back the save and rejoins when spins drop to this", Flag = "is_reset", Min = 0, Max = 100,
 		Default = I.ResetAt, Callback = function(v) I.ResetAt = v persist() end })
 	Set:Slider({ Title = "Spin delay", Flag = "is_delay", Min = 0.1, Max = 2, Step = 0.05, Default = I.Delay, Suffix = " s",
 		Callback = function(v) I.Delay = v persist() end })
-	Set:Toggle({ Title = "Save when done", Desc = "İstenenler gelince kaydedip My Home'a geçer", Flag = "is_autosave", Default = I.AutoSave,
+	Set:Toggle({ Title = "Save when done", Desc = "Saves and goes to My Home when you get what you want", Flag = "is_autosave", Default = I.AutoSave,
 		Callback = function(v) I.AutoSave = v persist() end })
 	local row = Set:Row()
 	row:Button({ Title = "Refresh lists", Icon = "refresh-cw", Callback = function()
@@ -2361,7 +2361,7 @@ do
 	end })
 	row:Button({ Title = "Reset spins", Icon = "rotate-ccw", Confirm = "Sure?", Callback = resetAndRejoin })
 	row:Button({ Title = "Save spins", Icon = "save", Style = "Soft", Confirm = "Sure?", Callback = saveAndLeave })
-	if KIND ~= "menu" then InfPage:Warning("Inf Spin sadece ana menüde çalışır (şu an: " .. placeName() .. "). Seçimlerin kaydedilir.", { Level = "info" }) end
+	if KIND ~= "menu" then InfPage:Warning("Inf Spin only works in the main menu (now: " .. placeName() .. "). Your picks are saved.", { Level = "info" }) end
 	if (I.On.Element or I.On.Bloodline or I.On.Kenjutsu) and KIND == "menu" then queueHub() end
 	-- Ayar profili (AutoLoad) Inf Spin'i kapatmasın: rejoin sonrası json'daki hali geri koy
 	HUB.AfterAutoLoad = HUB.AfterAutoLoad or {}
@@ -2384,7 +2384,7 @@ do
 		if ENV.RELLOpening then return false end
 		for _, c in ipairs(CAT) do
 			if I.On[c.on] then
-				notify("Auto Spin RELL", "Önce Inf Spin'i durdur", "triangle-alert", "warning")
+				notify("Auto Spin RELL", "Stop Inf Spin first", "triangle-alert", "warning")
 				return false
 			end
 		end
@@ -2395,7 +2395,7 @@ do
 		local fn = okGet and type(src) == "string" and loadstring(src)
 		if not fn then
 			ENV.RELLOpening = false
-			notify("Auto Spin RELL", "Script indirilemedi (raw link)", "triangle-alert", "danger")
+			notify("Auto Spin RELL", "Couldn't download the script (raw link)", "triangle-alert", "danger")
 			return false
 		end
 		task.spawn(function()                                  -- açılırken menünün yüklenmesini bekliyor: butonu kilitlemesin
@@ -2413,16 +2413,16 @@ do
 		ENV.RELL_BOOT_CANCEL = true
 		if ENV.RELLStop then ENV.RELLStop() end
 	end
-	local RellCard = RellPage:Card({ Title = "Auto Spin RELL", Icon = "dices", Desc = "RELL gelene kadar bloodline spin'i atar" })
+	local RellCard = RellPage:Card({ Title = "Auto Spin RELL", Icon = "dices", Desc = "Spins bloodlines until you get RELL" })
 	RellCard:Button({ Title = "Open Auto Spin RELL", Icon = "app-window", Style = "Primary", Callback = function()
 		if KIND ~= "menu" then
-			return notify("Auto Spin RELL", "Sadece ana menüde çalışır (şu an: " .. placeName() .. ")", "triangle-alert", "warning")
+			return notify("Auto Spin RELL", "Only works in the main menu (now: " .. placeName() .. ")", "triangle-alert", "warning")
 		end
 		if openRell() then Window:SetModule("Auto Spin RELL", "On", nil, { Icon = "dices", Tab = "Spin" }) end
 	end })
 	RellCard:Slider({ Title = "Spin delay", Flag = "rell_delay", Min = 0.3, Max = 3, Step = 0.1, Default = 1, Suffix = " s",
 		Callback = function(v) ENV.RELL_DELAY = v end })
-	RellCard:Toggle({ Title = "Re-run after rejoin", Desc = "queue_on_teleport ile otomatik devam", Flag = "rell_queue", Default = true,
+	RellCard:Toggle({ Title = "Re-run after rejoin", Desc = "Continues automatically with queue_on_teleport", Flag = "rell_queue", Default = true,
 		Callback = function(on)
 			ENV.RELL_NOQUEUE = not on
 			queuePermission(RELL_QUEUE_STOP, on and ENV.RELL_RUNNING == true)
@@ -2435,7 +2435,7 @@ do
 		local g = LocalPlayer.PlayerGui:FindFirstChild("QustahRELL")
 		if g then g:Destroy() end
 		Window:SetModule("Auto Spin RELL", "Off", nil, { Icon = "dices", Tab = "Spin" })
-		notify("Auto Spin RELL", "Durduruldu, bir sonraki rejoin'de çalışmaz", "circle-stop")
+		notify("Auto Spin RELL", "Stopped, won't run on the next rejoin", "circle-stop")
 	end })
 
 	local SpinsCard = RellPage:Card({ Title = "Spins", Icon = "gauge", Side = "Right" })
@@ -2468,8 +2468,8 @@ do
 	local G = { NoCombat = false, Unbreak = false, Aura = false, AuraRange = 0, Scroll = false, ScrollSpawn = true }
 
 	local Game = P:Card({ Title = "Game", Icon = "wand-sparkles" })
-	Game:Toggle({ Title = "Disable in combat", Desc = "Savaştayken de ışınlan / çık", Flag = "sh_nocombat", Default = false, Callback = function(v) G.NoCombat = v end })
-	Game:Toggle({ Title = "Immortal", Desc = "Yere düşürülünce hemen kalkarsın (knockdown yok)", Flag = "sh_immortal", Default = false,
+	Game:Toggle({ Title = "Disable in combat", Desc = "Teleport / leave even while in combat", Flag = "sh_nocombat", Default = false, Callback = function(v) G.NoCombat = v end })
+	Game:Toggle({ Title = "Immortal", Desc = "Get up instantly when knocked down (no knockdown)", Flag = "sh_immortal", Default = false,
 		Callback = function(v) G.Immortal = v end })
 	hubConnect(RunService.Heartbeat, function()
 		if not G.Immortal then return end
@@ -2501,7 +2501,7 @@ do
 		end
 	end
 	HUB.Cleanup[#HUB.Cleanup + 1] = restoreBlocks
-	Game:Toggle({ Title = "Unbreakable blocks", Desc = "Blok kırılmaz", Flag = "sh_unbreak", Default = false, Callback = function(v)
+	Game:Toggle({ Title = "Unbreakable blocks", Desc = "Block can't be broken", Flag = "sh_unbreak", Default = false, Callback = function(v)
 		G.Unbreak = v
 		if v then applyBlocks(character()) else restoreBlocks() end
 	end })
@@ -2515,8 +2515,8 @@ do
 	end)
 
 	local Aura = P:Card({ Title = "NPC kill aura", Icon = "skull", Side = "Right" })
-	Aura:Toggle({ Title = "Kill aura", Desc = "Yakındaki NPC'lerin canını sıfırlar (istemci tarafı)", Flag = "sh_aura", Default = false, Callback = function(v) G.Aura = v end })
-	Aura:Slider({ Title = "Range", Desc = "0 = sınırsız", Flag = "sh_aurarange", Min = 0, Max = 500, Default = 0, Suffix = " studs", DependsOn = { Flag = "sh_aura", Reason = "" },
+	Aura:Toggle({ Title = "Kill aura", Desc = "Sets nearby NPCs' health to 0 (client side)", Flag = "sh_aura", Default = false, Callback = function(v) G.Aura = v end })
+	Aura:Slider({ Title = "Range", Desc = "0 = unlimited", Flag = "sh_aurarange", Min = 0, Max = 500, Default = 0, Suffix = " studs", DependsOn = { Flag = "sh_aura", Reason = "" },
 		Callback = function(v) G.AuraRange = v end })
 	loop("Kill aura", 0.08, function()
 		if not G.Aura then return end
@@ -2529,7 +2529,7 @@ do
 		end
 	end)
 
-	local Scroll = P:Card({ Title = "Scroll snipe", Icon = "scroll", Desc = "Haritada çıkan scroll'u kapar" })
+	local Scroll = P:Card({ Title = "Scroll snipe", Icon = "scroll", Desc = "Grabs scrolls that spawn on the map" })
 	Scroll:Toggle({ Title = "Scroll snipe", Flag = "sh_scroll", Default = false, Callback = function(v) G.Scroll = v end })
 	Scroll:Toggle({ Title = "Teleport to spawn after", Flag = "sh_scrollspawn", Default = true, Callback = function(v) G.ScrollSpawn = v end })
 	local function toSpawn()
@@ -2569,7 +2569,7 @@ do
 								if not HUB.Running or not G.Scroll or inMission() then return end
 								if hasScroll(v.Name) then
 									ignored[v] = true
-									notify("Scroll snipe", v.Name .. " alındı", "scroll", "success")
+									notify("Scroll snipe", v.Name .. " collected", "scroll", "success")
 									if G.ScrollSpawn then toSpawn() end
 									return
 								end
@@ -2799,7 +2799,7 @@ do
 	local MapPage = T:Page("Map")
 	local ServerPage = T:Page("Servers")
 
-	local Places = MapPage:Card({ Title = "Locations", Icon = "map-pin", Desc = "Bu haritanın noktaları" })
+	local Places = MapPage:Card({ Title = "Locations", Icon = "map-pin", Desc = "This map's locations" })
 	local here = TP_DATA[game.PlaceId] or {}
 	local names, byName = {}, {}
 	for _, p in ipairs(here) do names[#names + 1] = p[1] byName[p[1]] = p end
@@ -2807,15 +2807,15 @@ do
 	Places:Dropdown({ Title = "Location", Flag = "tp_loc", Items = #names > 0 and names or { "-" }, Search = true, Callback = function(v) chosen = v end })
 	Places:Button({ Title = "Teleport", Icon = "map-pin", Style = "Primary", Callback = function()
 		local p = byName[chosen or ""]
-		if p then tpTo(CFrame.new(p[2], p[3], p[4])) else notify("Teleport", "Önce listeden seç", "list", "warning") end
+		if p then tpTo(CFrame.new(p[2], p[3], p[4])) else notify("Teleport", "Pick one from the list first", "list", "warning") end
 	end })
-	if #names == 0 then Places:Paragraph({ Title = "Not", Content = "Bu harita için kayıtlı nokta yok. Sağdaki hızlı noktaları kullan." }) end
+	if #names == 0 then Places:Paragraph({ Title = "Note", Content = "No saved locations for this map. Use the quick spots on the right." }) end
 
 	local Quick = MapPage:Card({ Title = "Quick", Icon = "zap", Side = "Right" })
 	local function quick(title, icon, fn)
 		Quick:Button({ Title = title, Icon = icon, Align = "Left", Callback = function()
 			local ok = fn()
-			if not ok then notify("Teleport", title .. " bu haritada yok", "triangle-alert", "warning") end
+			if not ok then notify("Teleport", title .. " is not on this map", "triangle-alert", "warning") end
 		end })
 	end
 	quick("Spawn", "house", function()
@@ -2857,7 +2857,7 @@ do
 		Afk:Button({ Title = a[1], Icon = a[1] == "Bed" and "bed" or "soup", Align = "Left", Callback = function()
 			local ap = apartment()
 			local part = ap and ap:FindFirstChild(a[2])
-			if part then tpTo(part.CFrame) else notify("AFK", "Sadece My Home'da", "triangle-alert", "warning") end
+			if part then tpTo(part.CFrame) else notify("AFK", "Only in My Home", "triangle-alert", "warning") end
 		end })
 	end
 	local seatRow = Afk:Row({ Gap = 4 })
@@ -2867,11 +2867,11 @@ do
 			local model = ap and ap:FindFirstChild("Model")
 			local seats = {}
 			if model then for _, s in ipairs(model:GetChildren()) do if s:IsA("Seat") then seats[#seats + 1] = s end end end
-			if seats[i] then tpTo(seats[i].CFrame) else notify("AFK", "Koltuk bulunamadı (My Home'da mısın?)", "triangle-alert", "warning") end
+			if seats[i] then tpTo(seats[i].CFrame) else notify("AFK", "Seat not found (are you in My Home?)", "triangle-alert", "warning") end
 		end })
 	end
 
-	local S = ServerPage:Card({ Title = "Map teleport", Icon = "map", Desc = "Menüdeki harita listesinden" })
+	local S = ServerPage:Card({ Title = "Map teleport", Icon = "map", Desc = "From the menu's map list" })
 	local maps = {}
 	pcall(function()
 		for _, v in ipairs(mainGui().ingame.Menu.ArenaTab.List:GetChildren()) do
@@ -2883,13 +2883,13 @@ do
 	S:Dropdown({ Title = "Map", Flag = "tp_map", Items = #maps > 0 and maps or { "-" }, Search = true, Callback = function(v) mapPick = v end })
 	S:Button({ Title = "Teleport to map", Icon = "plane", Style = "Primary", Callback = function()
 		local ok, place = pcall(function() return mainGui().ingame.Menu.ArenaTab.List[mapPick].place.Value end)
-		if ok and place then fire("rpgteleport", place) else notify("Map teleport", "Önce listeden seç", "list", "warning") end
+		if ok and place then fire("rpgteleport", place) else notify("Map teleport", "Pick one from the list first", "list", "warning") end
 	end })
 	local Priv = ServerPage:Card({ Title = "Private server", Icon = "lock", Side = "Right" })
 	local code = ""
-	Priv:Input({ Title = "Code", Placeholder = "private server kodu", Flag = "tp_pscode", Finished = false, Callback = function(t) code = t end })
+	Priv:Input({ Title = "Code", Placeholder = "private server code", Flag = "tp_pscode", Finished = false, Callback = function(t) code = t end })
 	Priv:Button({ Title = "Join private server", Icon = "log-in", Callback = function()
-		if code == "" then return notify("Private server", "Önce kodu yaz", "triangle-alert", "warning") end
+		if code == "" then return notify("Private server", "Enter the code first", "triangle-alert", "warning") end
 		fire("teleporttoprivate", code)
 	end })
 end
@@ -2898,7 +2898,7 @@ end
 do
 local function showBloodlineCodes()
 	local gui = mainGui()
-	if not gui then return notify("Code names", "Menü bulunamadı", "triangle-alert", "warning") end
+	if not gui then return notify("Code names", "Menu not found", "triangle-alert", "warning") end
 	local count = 0
 	for _, root in ipairs({ gui:FindFirstChild("Customization") and gui.Customization:FindFirstChild("Genkaibag"),
 		gui:FindFirstChild("ingame") and gui.ingame:FindFirstChild("Menu") }) do
@@ -2913,7 +2913,7 @@ local function showBloodlineCodes()
 			end
 		end
 	end
-	notify("Code names", count > 0 and ("Bloodline çantasında " .. count .. " kod adı gösterildi") or "Bloodline çantasını açıp tekrar dene", "scan-search")
+	notify("Code names", count > 0 and ("Showed " .. count .. " code names in the bloodline bag") or "Open the bloodline bag and try again", "scan-search")
 end
 
 local function refreshRCNames()
@@ -2933,7 +2933,7 @@ local function showShopCodes()
 		end
 	end)
 	refreshRCNames()
-	notify("Code names", ok and "RC Shop'ta kod adları gösterildi" or "RC Shop bulunamadı", ok and "scan-search" or "triangle-alert", not ok and "warning" or nil)
+	notify("Code names", ok and "Showed code names in the RC Shop" or "RC Shop not found", ok and "scan-search" or "triangle-alert", not ok and "warning" or nil)
 end
 local function setShopVisible(on)
 	pcall(function()
@@ -2995,14 +2995,14 @@ local dropdowns = {}
 local function pickSet(key) return function(v) picks[key] = (v ~= "-" and v ~= nil) and toCode(v) or nil end end
 local function need(key, label)
 	local v = picks[key]
-	if not v then notify(label, "Önce listeden seç", "list", "warning") end
+	if not v then notify(label, "Pick one from the list first", "list", "warning") end
 	return v
 end
 local function refreshLists(silent)
 	buildLists()
 	for key, dd in pairs(dropdowns) do pcall(function() dd:SetItems(itemsOf(key), true) end) end
 	if not silent then
-		notify("Listeler yenilendi", ("%d bloodline · %d element · %d kenjutsu · %d stil · %d kıyafet"):format(
+		notify("Lists refreshed", ("%d bloodlines · %d elements · %d kenjutsu · %d styles · %d clothes"):format(
 			count(Lists.bloodline), count(Lists.element), count(Lists.kenjutsu), count(Lists.style), count(Lists.cloth)), "refresh-cw")
 	end
 end
@@ -3011,7 +3011,7 @@ buildLists()
 ------------------------------------------------------------------ LOADOUT
 local Loadout = Tabs.Loadout:Page("Changer")
 
-local Elem = Loadout:Card({ Title = "Element", Icon = "flame", Desc = "Element slotlarını değiştir" })
+local Elem = Loadout:Card({ Title = "Element", Icon = "flame", Desc = "Change element slots" })
 dropdowns.element = Elem:Dropdown({ Title = "Element", Flag = "ld_elem", Items = itemsOf("element"), Search = true, Callback = pickSet("element") })
 local elemRow = Elem:Row({ Gap = 4 })
 for i = 1, 4 do
@@ -3021,7 +3021,7 @@ for i = 1, 4 do
 	end })
 end
 
-local Blood = Loadout:Card({ Title = "Bloodline", Icon = "dna", Side = "Right", Desc = "Bloodline slotlarını değiştir" })
+local Blood = Loadout:Card({ Title = "Bloodline", Icon = "dna", Side = "Right", Desc = "Change bloodline slots" })
 dropdowns.bloodline = Blood:Dropdown({ Title = "Bloodline", Flag = "ld_bl", Items = itemsOf("bloodline"), Search = true, Callback = pickSet("bloodline") })
 local blRow = Blood:Row({ Gap = 4 })
 for i = 1, 4 do
@@ -3050,16 +3050,16 @@ fsRow:Button({ Title = "Buy style", Icon = "store", Size = "Small", Style = "Sof
 	local aj = ReplicatedStorage:FindFirstChild("alljutsu")
 	local fsFolder = aj and aj:FindFirstChild("FIGHTINGSTYLES")
 	local style = fsFolder and fsFolder:FindFirstChild(v)
-	if not style then return notify("Fighting style", v .. " bulunamadı", "triangle-alert", "warning") end
+	if not style then return notify("Fighting style", v .. " not found", "triangle-alert", "warning") end
 	fire("selectmartialstyle", style)
-	notify("Fighting style", v .. " için istek gönderildi", "store")
+	notify("Fighting style", v .. " requested", "store")
 end })
 
 local Tools = Loadout:Card({ Title = "Lists", Icon = "list", Wide = "Bottom" })
 local toolRow = Tools:Row()
 toolRow:Button({ Title = "Refresh lists", Icon = "refresh-cw", Callback = function() refreshLists(false) end })
 toolRow:Button({ Title = "Show code names", Icon = "scan-search", Callback = showBloodlineCodes })
-Tools:Paragraph({ Title = "Not", Content = "Listelerde oyunun orijinal adları var. Liste boş görünürse oyuna tam girdikten sonra Refresh lists'e bas. Değişiklikler senin tarafında yapılır." })
+Tools:Paragraph({ Title = "Note", Content = "Lists show the game's real names. If a list is empty, press Refresh lists once you're fully in the game. Changes are client side." })
 
 ------------------------------------------------------------------ RC SHOP
 local Shop = Tabs.Loadout:Page("RC Shop")
@@ -3068,9 +3068,9 @@ ShopCard:Button({ Title = "Show RC Shop", Icon = "eye", Toggle = true, OnTitle =
 	Callback = function(on) setShopVisible(on) end })
 ShopCard:Button({ Title = "Show code names", Icon = "scan-search", Callback = showShopCodes })
 ShopCard:Button({ Title = "Refresh lists", Icon = "refresh-cw", Style = "Ghost", Callback = function() refreshLists(false) end })
-ShopCard:Paragraph({ Title = "Not", Content = "Mağaza eşyalarını kendi ekranında değiştirir. Kıyafet listesi boşsa RC Shop'u bir kez açıp Refresh lists'e bas." })
+ShopCard:Paragraph({ Title = "Note", Content = "Changes shop items on your screen only. If the clothing list is empty, open the RC Shop once and press Refresh lists." })
 
-local Cloth = Shop:Card({ Title = "Clothings", Icon = "shirt", Side = "Right", Desc = "4 saatlik mağaza" })
+local Cloth = Shop:Card({ Title = "Clothings", Icon = "shirt", Side = "Right", Desc = "4-hour shop" })
 dropdowns.cloth = Cloth:Dropdown({ Title = "Clothing", Flag = "rc_cloth", Items = itemsOf("cloth"), Search = true, Callback = pickSet("cloth") })
 local clothRow = Cloth:Row({ Gap = 4 })
 for i = 1, 4 do
@@ -3080,7 +3080,7 @@ for i = 1, 4 do
 	end })
 end
 
-local Rare = Shop:Card({ Title = "Limited bloodlines", Icon = "dna", Desc = "RC Genkai mağazası" })
+local Rare = Shop:Card({ Title = "Limited bloodlines", Icon = "dna", Desc = "RC Genkai shop" })
 dropdowns.limited = Rare:Dropdown({ Title = "Limited bloodline", Flag = "rc_rare", Items = itemsOf("limited"), Search = true, Callback = pickSet("limited") })
 local rareRow = Rare:Row({ Gap = 4 })
 for i = 1, 3 do
@@ -3132,7 +3132,7 @@ end
 Window:SettingsTab()
 Window.Config:LoadAutoLoad()
 for _, fn in ipairs(HUB.AfterAutoLoad or {}) do pcall(fn) end
-Window:Notify({ Title = "Qustāh Shindo", Content = "Yüklendi · " .. placeName() .. " · RShift ile aç/kapat", Icon = "sparkles" })
+Window:Notify({ Title = "Qustāh Shindo", Content = "Loaded · " .. placeName() .. " · RShift to toggle", Icon = "sparkles" })
 
 ]============]
 
