@@ -1,15 +1,13 @@
 --[[
-    Qustāh · Shindo Life  ·  V1.40
+    Qustāh · Shindo Life  ·  V1.41
     UI: qustah-ui-lib · sadece Shindo Life'ta açılır (GameId kontrolü)
 
-    Sekmeler: Dashboard · Farm · Spin · Combat · Visuals · Player · Teleport · Loadout · Server · Settings
+    Sekmeler: Dashboard · Farm · Spin · Combat · Visuals · Movement · Player · Teleport · Loadout · Server · Settings
 ]]
 
--- Script'i GitHub'a koyarsan raw linkini yaz; boş kalırsa kendi kaynağını kuyruğa ekler.
+-- Teleporttan sonra hub bu raw linkten yeniden yüklenir (queue_on_teleport)
 local SCRIPT_URL = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
 
-local SOURCE = [============[
-local SCRIPT_URL, SELF_SOURCE = ...
 local ENV = (getgenv and getgenv()) or _G
 
 if game.GameId ~= 1511883870 then                               -- sadece Shindo Life
@@ -72,8 +70,7 @@ end
 local function queueHub()                                       -- teleporttan sonra hub kendini tekrar açar
 	if not queue or not (isfile and writefile and delfile) then return end
 	if not queuePermission(HUB_QUEUE_STOP, true) or hubQueued then return end
-	local code = SCRIPT_URL ~= "" and ("loadstring(game:HttpGet(%q, true))()"):format(SCRIPT_URL)
-		or ("local s = %q\nloadstring(s)(%q, s)"):format(SELF_SOURCE, SCRIPT_URL)
+	local code = ("loadstring(game:HttpGet(%q, true))()"):format(SCRIPT_URL)
 	local ok, result = pcall(queue, guardQueue(HUB_QUEUE_STOP, code))
 	hubQueued = ok and result ~= false
 end
@@ -398,7 +395,7 @@ end
 ------------------------------------------------------------------ PENCERE
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.40",
+	Version = "V1.41",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -3608,7 +3605,3 @@ Window:SettingsTab()
 Window.Config:LoadAutoLoad()
 for _, fn in ipairs(HUB.AfterAutoLoad or {}) do pcall(fn) end
 Window:Notify({ Title = "Qustāh Shindo", Content = "Loaded · " .. placeName() .. " · RShift to toggle", Icon = "sparkles" })
-
-]============]
-
-loadstring(SOURCE)(SCRIPT_URL, SOURCE)
