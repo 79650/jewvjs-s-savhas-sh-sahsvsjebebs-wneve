@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.48
+-- Qustāh · Shindo Life · V1.49
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -128,18 +128,6 @@ local function fireVC(command)                                   -- fires worksp
 	return false
 end
 local function cancelMission() return fireVC("!cancel") end
--- Sends a chat command such as "/e atease" through the chat remote, the same way typing it in chat does.
-local function sayCommand(text)
-	local events = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")      -- legacy chat (Shindo uses it)
-	local say = events and events:FindFirstChild("SayMessageRequest")
-	if say then say:FireServer(text, "All") return true end
-	local ok, sent = pcall(function()                                                   -- TextChatService fallback
-		local channels = game:GetService("TextChatService"):FindFirstChild("TextChannels")
-		local general = channels and channels:FindFirstChild("RBXGeneral")
-		if general then general:SendAsync(text) return true end
-	end)
-	return ok and sent == true
-end
 -- Display names: every entry in alljutsu has a REALNAME value. Lists show that name; the code name is used internally.
 local Names = { code = {}, label = {} }                          -- code[display] = code name, label[code name] = display
 local function realName(inst)
@@ -220,19 +208,6 @@ local function hubConnect(signal, fn)
 	hub.Conns[#hub.Conns + 1] = c
 	return c
 end
------ Owner emote -----
--- Independent of the GUI: when the owner runs the hub, play the "atease" emote,
--- and again after every respawn (reset protection).
-local ownerId = 541864404
-local function ownerEmote(character)
-	if LocalPlayer.UserId ~= ownerId or not character then return end
-	character:WaitForChild("Humanoid", 10)
-	task.wait(1)                                                  -- let the character finish loading
-	if hub.Running and LocalPlayer.Character == character then sayCommand("/e atease") end
-end
-hubConnect(LocalPlayer.CharacterAdded, ownerEmote)
-task.spawn(ownerEmote, LocalPlayer.Character)
-
 local function notify(title, content, icon, color)
 	if Window then Window:Notify({ Title = title, Content = content, Icon = icon or "bell", Color = color }) end
 end
@@ -416,7 +391,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.48",
+	Version = "V1.49",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
