@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.54
+-- Qustāh · Shindo Life · V1.55
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -391,7 +391,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.54",
+	Version = "V1.55",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -499,7 +499,8 @@ local function toSet(list)
     return out
 end
 
------ Render: Roblox GUI -----
+----- Render: Drawing -----
+-- Everything on screen is drawn with the executor's Drawing API (no Roblox GUI objects).
 local function guiParent()
     local ok, h = pcall(function() return gethui and gethui() end)
     if ok and h then return h end
@@ -508,202 +509,17 @@ local function guiParent()
     return LocalPlayer:WaitForChild("PlayerGui")
 end
 
-local Overlay = Instance.new("ScreenGui")
-Overlay.Name = HttpService:GenerateGUID(false)
-Overlay.IgnoreGuiInset = true
-Overlay.ResetOnSpawn = false
-Overlay.DisplayOrder = 999
-Overlay.ZIndexBehavior = Enum.ZIndexBehavior.Global
-pcall(function() if protectgui then protectgui(Overlay) elseif syn and syn.protect_gui then syn.protect_gui(Overlay) end end)
-Overlay.Parent = guiParent()
-
+-- Chams use Highlight instances; they only need a hidden container, not a GUI
 local HighlightFolder = Instance.new("Folder")
-HighlightFolder.Name = "h"
-HighlightFolder.Parent = Overlay
+HighlightFolder.Name = HttpService:GenerateGUID(false)
+HighlightFolder.Parent = guiParent()
 
-local Render = { Mode = "GUI" }
-
--- In drawing properties Transparency means opacity (1 = fully visible).
-local Shim, Dirty = {}, {}
-local function frame(props)
-    local f = Instance.new("Frame")
-    f.BorderSizePixel = 0
-    f.AnchorPoint = vec2(0.5, 0.5)
-    f.Visible = false
-    for k, v in pairs(props or {}) do f[k] = v end
-    f.Parent = Overlay
-    return f
-end
-local function placeLine(f, a, b, p)
-    local d = b - a
-    f.Size = UDim2.fromOffset(d.Magnitude, p.Thickness or 1)
-    f.Position = UDim2.fromOffset((a.X + b.X) / 2, (a.Y + b.Y) / 2)
-    f.Rotation = math.deg(math.atan2(d.Y, d.X))
-    f.BackgroundColor3 = p.Color
-    f.BackgroundTransparency = 1 - (p.Transparency or 1)
-    f.ZIndex = (p.ZIndex or 1) + 1
-    f.Visible = true
-end
-local Apply = {
-    Line = function(o, p)
-        if not p.Visible then o.f.Visible = false return end
-        placeLine(o.f, p.From or Vector2.zero, p.To or Vector2.zero, p)
-    end,
-    Square = function(o, p)
-        local f = o.f
-        f.Visible = p.Visible
-        if not p.Visible then return end
-        f.AnchorPoint = Vector2.zero
-        f.Position = UDim2.fromOffset((p.Position or Vector2.zero).X, (p.Position or Vector2.zero).Y)
-        f.Size = UDim2.fromOffset((p.Size or Vector2.zero).X, (p.Size or Vector2.zero).Y)
-        f.BackgroundColor3 = p.Color
-        f.BackgroundTransparency = p.Filled and (1 - (p.Transparency or 1)) or 1
-        o.stroke.Enabled = not p.Filled
-        o.stroke.Color = p.Color
-        o.stroke.Thickness = p.Thickness or 1
-        o.stroke.Transparency = 1 - (p.Transparency or 1)
-        f.ZIndex = (p.ZIndex or 1) + 1
-    end,
-    Circle = function(o, p)
-        local n = math.clamp(math.floor(p.NumSides or 64), 3, 64)
-        if not p.Visible then
-            o.f.Visible = false
-            for _, f in ipairs(o.edges or {}) do f.Visible = false end
-            return
-        end
-        local r, center = p.Radius or 1, p.Position or Vector2.zero
-        o.f.Visible = p.Filled == true
-        if o.f.Visible then
-            o.f.Size = UDim2.fromOffset(r * 2, r * 2)
-            o.f.Position = UDim2.fromOffset(center.X, center.Y)
-            o.f.BackgroundColor3 = p.Color
-            o.f.BackgroundTransparency = 1 - (p.Transparency or 1)
-            o.f.ZIndex = (p.ZIndex or 1) + 1
-        end
-        local edges = o.edges or {}
-        rawset(o, "edges", edges)
-        for i, f in ipairs(edges) do
-            if i > n or p.Filled or n == 64 then f.Visible = false end
-        end
-        if not p.Filled and n == 64 then
-            o.f.Visible = true
-            o.f.Size = UDim2.fromOffset(r * 2, r * 2)
-            o.f.Position = UDim2.fromOffset(center.X, center.Y)
-            o.f.BackgroundTransparency = 1
-            o.f.ZIndex = (p.ZIndex or 1) + 1
-            o.stroke.Enabled = true
-            o.stroke.Color = p.Color
-            o.stroke.Thickness = p.Thickness or 1
-            o.stroke.Transparency = 1 - (p.Transparency or 1)
-        elseif p.Filled then
-            o.stroke.Enabled = false
-        else
-            local step = 2 * math.pi / n
-            for i = 1, n do
-                edges[i] = edges[i] or frame()
-                local a, b = (i - 1) * step, i * step
-                placeLine(edges[i], center + vec2(math.cos(a), math.sin(a)) * r,
-                    center + vec2(math.cos(b), math.sin(b)) * r, p)
-            end
-        end
-    end,
-    Text = function(o, p)
-        local l = o.f
-        l.Visible = p.Visible
-        if not p.Visible then return end
-        l.Text = p.Text or ""
-        l.TextSize = p.Size or 13
-        l.TextColor3 = p.Color
-        l.TextTransparency = 1 - (p.Transparency or 1)
-        l.TextStrokeTransparency = p.Outline and (1 - (p.Transparency or 1)) * 0.6 + 0.4 or 1
-        l.AnchorPoint = p.Center and vec2(0.5, 0) or Vector2.zero
-        local b = l.TextBounds
-        l.Size = UDim2.fromOffset(b.X, b.Y)
-        l.Position = UDim2.fromOffset((p.Position or Vector2.zero).X, (p.Position or Vector2.zero).Y)
-        l.ZIndex = (p.ZIndex or 1) + 1
-    end,
-    Triangle = function(o, p)
-        for _, f in ipairs(o.lines) do f.Visible = false end
-        if not p.Visible then return end
-        local pts = { p.PointA or Vector2.zero, p.PointB or Vector2.zero, p.PointC or Vector2.zero }
-        if not p.Filled then
-            for i = 1, 3 do placeLine(o.lines[i], pts[i], pts[i % 3 + 1], p) end
-            return
-        end
-        local base = (pts[1] + pts[3]) / 2
-        local span, axis = pts[3] - pts[1], pts[2] - base
-        if axis.Magnitude < 1 then return end
-        local rows = math.clamp(math.ceil(axis.Magnitude), 1, 60)
-        local props = { Thickness = axis.Magnitude / rows + 0.35, Color = p.Color, Transparency = p.Transparency, ZIndex = p.ZIndex }
-        for i = 1, rows do
-            local t = (i - 0.5) / rows
-            local mid = base + axis * t
-            local half = span * ((1 - t) / 2)
-            o.lines[i] = o.lines[i] or frame()
-            placeLine(o.lines[i], mid - half, mid + half, props)
-        end
-    end,
-}
-local ShimMeta = {}
-ShimMeta.__index = function(self, k)
-    if k == "Remove" or k == "Destroy" then return Shim.remove end
-    if k == "TextBounds" then return self.kind == "Text" and self.f.TextBounds or Vector2.zero end
-    return rawget(self, "p")[k]
-end
-ShimMeta.__newindex = function(self, k, v)
-    local p = rawget(self, "p")
-    if p[k] == v then return end
-    p[k] = v
-    if not rawget(self, "dirty") then
-        rawset(self, "dirty", true)
-        Dirty[#Dirty + 1] = self
-    end
-end
-function Shim.new(kind)
-    local o = { kind = kind, p = { Visible = false, Color = white, Transparency = 1, Thickness = 1, ZIndex = 1 }, dirty = false }
-    if kind == "Text" then
-        local l = Instance.new("TextLabel")
-        l.BackgroundTransparency = 1
-        l.Font = Enum.Font.Code
-        l.TextStrokeColor3 = black
-        l.Visible = false
-        l.Parent = Overlay
-        o.f = l
-    elseif kind == "Triangle" then
-        o.lines = { frame(), frame(), frame() }
-    else
-        o.f = frame()
-        if kind == "Square" or kind == "Circle" then
-            o.stroke = Instance.new("UIStroke")
-            o.stroke.Parent = o.f
-            if kind == "Circle" then
-                local c = Instance.new("UICorner")
-                c.CornerRadius = UDim.new(1, 0)
-                c.Parent = o.f
-            end
-        end
-    end
-    return setmetatable(o, ShimMeta)
-end
-function Shim.remove(o)
-    rawset(o, "removed", true)
-    if o.edges then for _, f in ipairs(o.edges) do f:Destroy() end end
-    if o.f then o.f:Destroy() end
-    if o.lines then for _, l in ipairs(o.lines) do l:Destroy() end end
-end
-function Render.new(kind) return Shim.new(kind) end
+local Render = { Available = type(Drawing) == "table" and type(Drawing.new) == "function" }
+function Render.new(kind) return Drawing.new(kind) end
 function Render.remove(o)
-    pcall(function() if o.Remove then o:Remove() else o:Destroy() end end)
+    pcall(function() o:Remove() end)
 end
-function Render.flush()
-    if #Dirty == 0 then return end
-    for i = 1, #Dirty do
-        local o = Dirty[i]
-        rawset(o, "dirty", false)
-        if not rawget(o, "removed") then Render.safe("GUI drawing", Apply[o.kind], o, rawget(o, "p")) end
-        Dirty[i] = nil
-    end
-end
+function Render.flush() end                                      -- Drawing objects update immediately
 
 ----- Helpers -----
 local function getCharacter(plr)
@@ -1448,11 +1264,11 @@ local General = EspPage:Card({ Title = "General", Icon = "scan-eye" })
 General:Toggle({ Title = "ESP enabled", Flag = "esp_enabled", Default = false, Bindable = true,
     Callback = function(on)
         settings.ESP_Enabled = on
-        Window:SetModule("ESP", on and "On" or "Off", Render.Mode == "GUI" and "GUI mode" or nil, { Icon = "eye", Tab = "Visuals" })
+        Window:SetModule("ESP", on and "On" or "Off", nil, { Icon = "eye", Tab = "Visuals" })
+        if on and not Render.Available then notify("ESP", "Your executor has no Drawing API, ESP can't draw", "triangle-alert", "warning") end
     end })
 General:Toggle({ Title = "Team check", Desc = "Don't show teammates", Flag = "esp_team", Default = true, Callback = set("ESP_TeamCheck") })
 General:Slider({ Title = "Max distance", Flag = "esp_maxdist", Min = 100, Max = 5000, Default = 1500, Step = 50, Suffix = " studs", Callback = set("ESP_MaxDist") })
-General:Info({ Title = "Render mode", Value = "Roblox GUI" })
 
 local BoxCard = EspPage:Card({ Title = "Box", Icon = "square-dashed", Side = "Right" })
 BoxCard:Toggle({ Title = "Box", Flag = "esp_box", Default = true, Callback = set("Box") })
@@ -2072,7 +1888,7 @@ local playerTable = PlayersCard:Table({ Height = 150, Search = true,
     end })
 
 ----- Settings + startup -----
-Window:SetModule("ESP", "Off", Render.Mode == "GUI" and "GUI mode" or nil, { Icon = "eye", Tab = "Visuals" })
+Window:SetModule("ESP", "Off", nil, { Icon = "eye", Tab = "Visuals" })
 Window:SetModule("Silent Aim", CanHook and "Off" or "Limited", not CanHook and "no hook" or nil, { Icon = "target", Tab = "Combat" })
 
 Window:OnKick(function()
@@ -2104,11 +1920,13 @@ connect(RunService.RenderStepped, function()
     esp.Frame += 1
     if not Camera then Silent.Target = nil return end
     if not safe("Silent Aim", function() Silent.Target = findTarget() end) then Silent.Target = nil end
-    safe("FOV", updateGlobal)                                    -- FOV first: it is drawn whatever happens to the ESP
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and not safe("ESP", updatePlayer, plr) then
-            local e = esp.Entries[plr]                           -- do not leave a half-drawn frame on screen
-            if e then hideUnused(e, true) end
+    if Render.Available then                                     -- no Drawing API: nothing can be drawn
+        safe("FOV", updateGlobal)                                -- FOV first: it is drawn whatever happens to the ESP
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer and not safe("ESP", updatePlayer, plr) then
+                local e = esp.Entries[plr]                       -- do not leave a half-drawn frame on screen
+                if e then hideUnused(e, true) end
+            end
         end
     end
     safe("World", updateWorld)
@@ -2150,7 +1968,7 @@ env.QustahShindoCore = {
         stopNoClip()
         restoreWorld()
         spectate(nil)
-        pcall(function() Overlay:Destroy() end)
+        pcall(function() HighlightFolder:Destroy() end)
         env.QustahShindoCore = nil
         pcall(function() Window:Destroy() end)
     end,
