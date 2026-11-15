@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.52
+-- Qustāh · Shindo Life · V1.53
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -391,7 +391,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.52",
+	Version = "V1.53",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -409,7 +409,7 @@ Window:DashboardTab({ Info = {
 
 local Tabs = {
 	Farm = Window:Tab({ Title = "Farm", Icon = "swords" }),
-	Spin = Window:Tab({ Title = "Spin", Icon = "dices" }),
+	Spin = placeType == "menu" and Window:Tab({ Title = "Spin", Icon = "dices" }) or nil,   -- spins only work in the main menu
 	Combat = Window:Tab({ Title = "Combat", Icon = "crosshair" }),
 	Visuals = Window:Tab({ Title = "Visuals", Icon = "eye" }),
 	Player = Window:Tab({ Title = "Player", Icon = "user-round-cog" }),
@@ -2561,7 +2561,7 @@ do
 end
 
 ----- Spin -----
-do
+if Tabs.Spin then                                                 -- main menu only
 	local Spin = Tabs.Spin
 	local InfPage = Spin:Page("Inf Spin")
 	local RellPage = Spin:Page("Auto RELL")
@@ -2794,7 +2794,6 @@ do
 	end })
 	row:Button({ Title = "Reset spins", Icon = "rotate-ccw", Confirm = "Sure?", Callback = resetAndRejoin })
 	row:Button({ Title = "Save spins", Icon = "save", Style = "Soft", Confirm = "Sure?", Callback = saveAndLeave })
-	if placeType ~= "menu" then InfPage:Warning("Inf Spin only works in the main menu (now: " .. placeName() .. "). Your picks are saved.", { Level = "info" }) end
 	if (infSpin.On.Element or infSpin.On.Bloodline or infSpin.On.Kenjutsu) and placeType == "menu" then queueHub() end
 	-- Do not let the settings profile (AutoLoad) turn Inf Spin off: restore the json state after a rejoin
 	hub.AfterAutoLoad = hub.AfterAutoLoad or {}
