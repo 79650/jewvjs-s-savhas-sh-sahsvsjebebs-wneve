@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.46
+-- Qustāh · Shindo Life · V1.47
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -121,13 +121,13 @@ local function missionInfo(m)                                    -- mission text
 	local text, objective = val("text"), val("objective")
 	return type(text) == "string" and text or nil, type(objective) == "string" and objective or nil, pos
 end
-local function chatCommand(command)                              -- the game's own chat commands ("!cancel", "!e <emote>" ...)
+local function fireVC(command)                                   -- fires workspace.VC.RemoteEvent directly (no chat message is sent)
 	local vc = workspace:FindFirstChild("VC")
 	local re = vc and vc:FindFirstChild("RemoteEvent")
 	if re then re:FireServer(command) return true end
 	return false
 end
-local function cancelMission() return chatCommand("!cancel") end
+local function cancelMission() return fireVC("!cancel") end
 -- Display names: every entry in alljutsu has a REALNAME value. Lists show that name; the code name is used internally.
 local Names = { code = {}, label = {} }                          -- code[display] = code name, label[code name] = display
 local function realName(inst)
@@ -216,7 +216,7 @@ local function ownerEmote(character)
 	if LocalPlayer.UserId ~= ownerId or not character then return end
 	character:WaitForChild("Humanoid", 10)
 	task.wait(1)                                                  -- let the character finish loading
-	if hub.Running and LocalPlayer.Character == character then chatCommand("!e atease") end
+	if hub.Running and LocalPlayer.Character == character then fireVC("!e atease") end
 end
 hubConnect(LocalPlayer.CharacterAdded, ownerEmote)
 task.spawn(ownerEmote, LocalPlayer.Character)
@@ -404,7 +404,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.46",
+	Version = "V1.47",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
