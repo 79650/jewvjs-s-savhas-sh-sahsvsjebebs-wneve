@@ -1,5 +1,5 @@
 --[[
-    Qustāh · Shindo Life  ·  V1.28
+    Qustāh · Shindo Life  ·  V1.29
     UI: qustah-ui-lib · sadece Shindo Life'ta açılır (GameId kontrolü)
 
     Sekmeler: Dashboard · Farm · Spin · Combat · Visuals · Player · Teleport · Loadout · Server · Settings
@@ -368,7 +368,7 @@ end
 ------------------------------------------------------------------ PENCERE
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.28",
+	Version = "V1.29",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -1786,7 +1786,7 @@ do
 	local F = {
 		Scroll = false, Boss = false, BossPick = "Random",
 		StuckAfter = 60,
-		Done = { Green = 0, Boss = 0 },                          -- bu oturumda alınan görevler
+		Done = { Boss = 0 },                                     -- bu oturumda alınan boss görevleri
 		Stats = {}, AutoRank = false, RankAfterMax = false, RankRC = false, RankStop = false, RankStopAt = 500,
 		-- Mentor ve Daily ayrı anahtarlar: birini kapatmak ötekini durdurmasın
 		PunchM = false, PunchD = false, TreeM = false, TreeD = false, Shoot = false, Rush = false, Chi = false, DailyBoss = false,
@@ -1833,18 +1833,6 @@ do
 		if not (gm and typ and typ.Value == "defeat" and gm:FindFirstChild("color") and gm.color.Image == GREEN_SCROLL) then return false end
 		return true, gm.Enabled and v:FindFirstChild("HumanoidRootPart") ~= nil and v:FindFirstChild("CLIENTTALK") ~= nil
 	end
-	local function greenCount()                                      -- hazır yeşil görev / haritadaki yeşil görev vericisi
-		local givers = workspace:FindFirstChild("missiongivers")
-		local ready, total = 0, 0
-		for _, v in ipairs(givers and givers:GetChildren() or {}) do
-			local green, open = greenInfo(v)
-			if green then
-				total += 1
-				if open then ready += 1 end
-			end
-		end
-		return ready, total
-	end
 	local function acceptScrollQuest(alive)                          -- yeşil scroll "defeat" görevi al
 		local givers = workspace:FindFirstChild("missiongivers")
 		if not givers or not alive() then return end
@@ -1859,7 +1847,6 @@ do
 					task.wait(0.1)
 					if inMission() or not alive() then break end
 				end
-				if inMission() then F.Done.Green += 1 end
 				return true
 			end
 		end
@@ -2001,7 +1988,6 @@ do
 		end })
 	end
 	farmToggle(Q, "Green scroll farm", "Scroll", "Green 'defeat' missions")
-	local greenInfoRow = Q:Info({ Title = "Green quests on map", Value = "-" })
 	farmToggle(Q, "Boss farm", "Boss", "Boss mission givers")
 	local bossInfoRow = Q:Info({ Title = "Bosses on map", Value = "-" })
 	local function bossDesc(n) return n > 0 and ("Bosses on this map: %d"):format(n) or "No bosses on this map" end
@@ -2016,18 +2002,16 @@ do
 			Window:SetFlag("farm_bosspick", "Random")
 		end
 	end
-	local sessionRow = Q:Info({ Title = "Taken this session", Value = "0 green · 0 boss" })
-	-- sayaçlar: "hazır / toplam" (hazır = süresi dolmuş, kimse almamış; yeşilde scroll'u açık olan)
+	local sessionRow = Q:Info({ Title = "Bosses this session", Value = "0" })
+	-- boss sayaçları: "hazır / toplam" (hazır = süresi dolmuş, kimse almamış)
 	local function updateCounts()
-		local ready, total = greenCount()
-		greenInfoRow:Set(total > 0 and ("%d / %d ready"):format(ready, total) or "none")
 		local bReady, bTotal = 0, 0
 		for _, g in ipairs(bossGivers()) do
 			bTotal += 1
 			if timerReady(g) and not giverTaken(g) then bReady += 1 end
 		end
 		bossInfoRow:Set(bTotal > 0 and ("%d / %d ready"):format(bReady, bTotal) or "none")
-		sessionRow:Set(("%d green · %d boss"):format(F.Done.Green, F.Done.Boss))
+		sessionRow:Set(tostring(F.Done.Boss))
 	end
 	pcall(updateCounts)
 	loop("Farm counts", 2, updateCounts)
