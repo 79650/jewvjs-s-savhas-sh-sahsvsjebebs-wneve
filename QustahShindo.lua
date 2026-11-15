@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.50
+-- Qustāh · Shindo Life · V1.51
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -391,7 +391,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.50",
+	Version = "V1.51",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -412,12 +412,14 @@ local Tabs = {
 	Spin = Window:Tab({ Title = "Spin", Icon = "dices" }),
 	Combat = Window:Tab({ Title = "Combat", Icon = "crosshair" }),
 	Visuals = Window:Tab({ Title = "Visuals", Icon = "eye" }),
-	Movement = Window:Tab({ Title = "Movement", Icon = "footprints" }),
 	Player = Window:Tab({ Title = "Player", Icon = "person-standing" }),
 	Teleport = Window:Tab({ Title = "Teleport", Icon = "map-pin" }),
 	Loadout = Window:Tab({ Title = "Loadout", Icon = "dna" }),
 	Server = Window:Tab({ Title = "Server", Icon = "server" }),
 }
+-- Player tab: two pages, Player (game features) and Movement
+local playerPage = Tabs.Player:Page("Player")
+local movementPage = Tabs.Player:Page("Movement")
 
 if placeType == "tournament" then
 	Window:Notify({ Title = "Tournament", Content = "You are in tournament mode. Exploiting here can easily get you banned.", Icon = "triangle-alert", Color = "warning" })
@@ -1891,7 +1893,7 @@ hub.Cleanup[#hub.Cleanup + 1] = function()
 end
 hub.MoveStops = moveStops                                           -- for tests
 
-local moveTab = Tabs.Movement
+local moveTab = movementPage
 moveStops.flyFov = Move.flyFov()                                    -- FOV protection is always on
 
 local Basic = moveTab:Card({ Title = "Movement", Icon = "footprints" })
@@ -1918,10 +1920,10 @@ Dash:Slider({ Title = "Speed", Flag = "mv_dashspeed", Min = 50, Max = 300, Defau
     Callback = function(v) moveCfg.DashSpeed = v end })
 
 ----- Player: general -----
-local PlayerMisc = Tabs.Player:Card({ Title = "Misc", Icon = "wand-sparkles", Side = "Right" })
+local PlayerMisc = playerPage:Card({ Title = "Misc", Icon = "wand-sparkles", Side = "Right" })
 PlayerMisc:Toggle({ Title = "Anti-AFK", Desc = "Prevents the 20 minute idle kick", Flag = "p_antiafk", Default = true, Callback = set("AntiAfk") })
 
-local Spec = Tabs.Player:Card({ Title = "Spectate", Icon = "video", Side = "Right" })
+local Spec = playerPage:Card({ Title = "Spectate", Icon = "video", Side = "Right" })
 local specList = Spec:PlayerList({ Title = "Player", Multi = false, Height = 120 })
 local specRow = Spec:Row({ Widths = { 2, 1 } })
 specRow:Button({ Title = "Spectate", Icon = "eye", Style = "Primary", Callback = function()
@@ -2895,7 +2897,7 @@ end
 
 ----- Player: Shindo -----
 do
-	local playerTab = Tabs.Player                                     -- single page: Game · NPC kill aura · Scroll snipe, with Misc / Spectate below
+	local playerTab = playerPage                                      -- Game · NPC kill aura · Scroll snipe, with Misc / Spectate below
 	local shindo = { NoCombat = false, Unbreak = false, Aura = false, Scroll = false, ScrollSpawn = true }
 
 	local Game = playerTab:Card({ Title = "Game", Icon = "wand-sparkles" })
