@@ -1,16 +1,16 @@
 --[[
-    Qustāh · Shindo Life  ·  V1.41
-    UI: qustah-ui-lib · sadece Shindo Life'ta açılır (GameId kontrolü)
+    Qustāh · Shindo Life  ·  V1.42
+    UI: qustah-ui-lib · loads only in Shindo Life (GameId check)
 
-    Sekmeler: Dashboard · Farm · Spin · Combat · Visuals · Movement · Player · Teleport · Loadout · Server · Settings
+    Tabs: Dashboard · Farm · Spin · Combat · Visuals · Movement · Player · Teleport · Loadout · Server · Settings
 ]]
 
--- Teleporttan sonra hub bu raw linkten yeniden yüklenir (queue_on_teleport)
+-- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local SCRIPT_URL = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
 
 local ENV = (getgenv and getgenv()) or _G
 
-if game.GameId ~= 1511883870 then                               -- sadece Shindo Life
+if game.GameId ~= 1511883870 then                               -- Shindo Life only
 	warn("Qustāh Shindo: this game is not Shindo Life, script not loaded")
 	return
 end
@@ -28,7 +28,7 @@ local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
------------------------------------------------------------------- yerler
+------------------------------------------------------------------ places
 local PLACE = {
 	MAIN_MENU = 4616652839, MY_HOME = 5451410109, DUNGEON_SELECT = 7524809704, TOURNAMENT = 6602058266,
 }
@@ -67,7 +67,7 @@ end
 local function guardQueue(path, code)
 	return ("if not isfile or isfile(%q) then return end\n%s"):format(path, code)
 end
-local function queueHub()                                       -- teleporttan sonra hub kendini tekrar açar
+local function queueHub()                                       -- re-open the hub after a teleport
 	if not queue or not (isfile and writefile and delfile) then return end
 	if not queuePermission(HUB_QUEUE_STOP, true) or hubQueued then return end
 	local code = ("loadstring(game:HttpGet(%q, true))()"):format(SCRIPT_URL)
@@ -75,21 +75,21 @@ local function queueHub()                                       -- teleporttan s
 	hubQueued = ok and result ~= false
 end
 
------------------------------------------------------------------- ortak yardımcılar
+------------------------------------------------------------------ shared helpers
 local function statz() return LocalPlayer:FindFirstChild("statz") end
 local function mainGui() return LocalPlayer.PlayerGui:FindFirstChild("Main") end
 local function character() return LocalPlayer.Character end
 local function rootPart() local c = character() return c and c:FindFirstChild("HumanoidRootPart") end
-local function fire(...)                                         -- startevent: spin, claim, teleport...
+local function fire(...)                                         -- startevent: spins, claims, teleports...
 	local ev = LocalPlayer:FindFirstChild("startevent")
 	if ev then ev:FireServer(...) end
 end
-local function combat(...)                                       -- karakterin combat remote'u: tuşlar, m1
+local function combat(...)                                       -- the character's combat remote: keys, M1
 	local c = character()
 	local u = c and c:FindFirstChild("combat") and c.combat:FindFirstChild("update")
 	if u then u:FireServer(...) end
 end
-local function rellCoinOut()                                      -- oyunun "Not Enough RELL Coin." bildirimi
+local function rellCoinOut()                                      -- the game's "Not Enough RELL Coin." notification
 	local n = LocalPlayer.PlayerGui:FindFirstChild("notifui")
 	local k = n and n:FindFirstChild("keymove")
 	local t = k and k:FindFirstChild("Tex")
@@ -103,8 +103,8 @@ local function missionUI()
 	local m = mainGui()
 	return m and m:FindFirstChild("ingame") and m.ingame:FindFirstChild("Missionstory")
 end
--- Görev durumu: oyunun kendi "currentmission" değeri (ObjectValue). Görev ekranı bitince kapanmadığı için ona güvenilmez;
--- currentmission yoksa (eski sürüm vb.) yedek olarak görev ekranına bakılır.
+-- Mission state: the game's own "currentmission" value (ObjectValue). The mission UI stays open after a mission ends, so it is not reliable;
+-- if currentmission is missing (older builds etc.) the mission UI is used as a fallback.
 local function currentMission()
 	local cm = LocalPlayer:FindFirstChild("currentmission")
 	if cm and cm:IsA("ObjectValue") then return cm.Value, true end
@@ -116,7 +116,7 @@ local function inMission()
 	local m = missionUI()
 	return m ~= nil and m.Visible and m:FindFirstChild("title") and m.title.Text == "[Objective: Mission]"
 end
-local function missionInfo(m)                                    -- görev yazısı, tipi, hedef konumu
+local function missionInfo(m)                                    -- mission text, type and target position
 	local function val(n) local o = m and m:FindFirstChild(n) return o and o.Value end
 	local t = val("target")
 	local pos
@@ -126,14 +126,14 @@ local function missionInfo(m)                                    -- görev yazı
 	local text, objective = val("text"), val("objective")
 	return type(text) == "string" and text or nil, type(objective) == "string" and objective or nil, pos
 end
-local function cancelMission()                                   -- oyunun kendi "!cancel" komutu
+local function cancelMission()                                   -- the game's own "!cancel" command
 	local vc = workspace:FindFirstChild("VC")
 	local re = vc and vc:FindFirstChild("RemoteEvent")
 	if re then re:FireServer("!cancel") return true end
 	return false
 end
--- Oyundaki gerçek isimler: alljutsu içindeki her şeyin REALNAME değeri var. Listelerde onu gösterip arkada kod adını kullanırız.
-local Names = { code = {}, label = {} }                          -- code[gösterilen] = kod adı, label[kod adı] = gösterilen
+-- Display names: every entry in alljutsu has a REALNAME value. Lists show that name; the code name is used internally.
+local Names = { code = {}, label = {} }                          -- code[display] = code name, label[code name] = display
 local function realName(inst)
 	local r = inst and inst:FindFirstChild("REALNAME")
 	local v = r and r.Value
@@ -142,7 +142,7 @@ end
 local function labelFor(code, inst)
 	if Names.label[code] then return Names.label[code] end
 	local n = realName(inst) or code
-	if Names.code[n] and Names.code[n] ~= code then n = n .. " (" .. code .. ")" end   -- aynı isimli iki şey varsa
+	if Names.code[n] and Names.code[n] ~= code then n = n .. " (" .. code .. ")" end   -- two entries with the same display name
 	Names.label[code], Names.code[n] = n, code
 	return n
 end
@@ -153,8 +153,8 @@ local function mapList(list, fn)
 	for _, v in ipairs(type(list) == "table" and list or {}) do out[#out + 1] = fn(v) end
 	return out
 end
--- anyHealth: canı istemcide 0'lanmış ama sunucuda hâlâ yaşayan mob'ları da say.
--- (Saldırırken canı kendi ekranımızda 0 yapıyoruz; mob gerçekten ölünce Humanoid'i silinir. DogeHub da buna bakıyor.)
+-- anyHealth: also count mobs whose health is 0 on the client but which are still alive on the server.
+-- (We set their health to 0 locally while attacking; the Humanoid is removed once the mob really dies. DogeHub checks the same thing.)
 local function validNPC(v, anyHealth)
 	return v:IsA("Model") and v:FindFirstChild("npctype") and v.Name:lower():find("npc")
 		and v:FindFirstChild("HumanoidRootPart") and v:FindFirstChild("Humanoid") and v:FindFirstChild("Head")
@@ -170,7 +170,7 @@ local function npcs(anyHealth)
 	end
 	return out
 end
-local function susanooNPCs()                                      -- vurulamayan (susanoo'lu) mob var mı
+local function susanooNPCs()                                      -- is there a mob that cannot be hit (full susanoo)?
 	local folder = workspace:FindFirstChild("npc")
 	if not folder then return 0 end
 	local n = 0
@@ -185,15 +185,15 @@ local function lookAt(pos)
 end
 
 local Window, unloadThis
--- Hub'ın kendi döngüleri: kapatınca (Unload) hepsi durur, bir turda hata olursa döngü ölmez, hata Settings › Info'ya düşer.
+-- Hub loops: all of them stop on Unload, an error in one iteration does not kill the loop, and errors are reported to Settings › Info.
 local HUB = { Running = true, Conns = {}, Err = {}, Cleanup = {} }
 local function hubError(tag, err)
 	local now = os.clock()
-	if HUB.Err[tag] and now - HUB.Err[tag] < 10 then return end    -- aynı yerden 10 sn'de bir rapor
+	if HUB.Err[tag] and now - HUB.Err[tag] < 10 then return end    -- report the same source at most once every 10 s
 	HUB.Err[tag] = now
 	if Window then pcall(function() Window:ReportError(tag, tostring(err)) end) end
 end
-local function loop(tag, interval, fn)                          -- interval: sayı ya da sayı döndüren fonksiyon
+local function loop(tag, interval, fn)                          -- interval: a number or a function returning a number
 	task.spawn(function()
 		while HUB.Running do
 			task.wait(type(interval) == "function" and interval() or interval)
@@ -225,11 +225,11 @@ local function setValue(getter, value, label)
 	end
 end
 
--- uçmayı önleyen görünmez platform (farm sırasında ayağın altında durur)
+-- invisible platform that prevents falling (kept under the feet while farming)
 local Platform
 local platformUsers = 0
-local platformFixed                                              -- boss güvenli noktası: platform orada sabit durur
-local SafePart                                                   -- boss güvenli bölgesi (istemci tarafı zemin)
+local platformFixed                                              -- boss safe spot: the platform stays fixed there
+local SafePart                                                   -- boss safe zone (client-side floor)
 local function platformOn()
 	platformUsers += 1
 	if Platform then return end
@@ -238,7 +238,7 @@ local function platformOn()
 	Platform.Parent = workspace
 	task.spawn(function()
 		local mine = Platform
-		while Platform == mine do                                  -- yeniden kurulursa eski döngü biter
+		while Platform == mine do                                  -- if it is rebuilt, the old loop exits
 			local r = rootPart()
 			if platformFixed then Platform.CFrame = platformFixed
 			elseif r then Platform.CFrame = r.CFrame * CFrame.new(0, -3.4, 0) end
@@ -250,7 +250,7 @@ local function platformOff()
 	platformUsers = math.max(platformUsers - 1, 0)
 	if platformUsers == 0 and Platform then Platform:Destroy() Platform = nil end
 end
-local function hubStop()                                         -- Unload: döngüler, eventler, platform
+local function hubStop()                                         -- Unload: loops, events, platform
 	HUB.Running = false
 	queuePermission(HUB_QUEUE_STOP, false)
 	queuePermission(RELL_QUEUE_STOP, false)
@@ -263,19 +263,19 @@ local function hubStop()                                         -- Unload: dön
 	if Platform then pcall(function() Platform:Destroy() end) Platform = nil end
 	if SafePart then pcall(function() SafePart:Destroy() end) SafePart = nil end
 end
--- Boss güvenli noktası: görev vericinin konuşma kısmının (scroll'lu kısım) 1000 stud üstü.
--- Boss öldükten sonra görev hemen bitmiyor, susanoo'lu boss'a da vurulamıyor: sıradaki boss'a kadar burada beklenir.
+-- Boss safe spot: 1000 studs above the mission giver's talk part (the part with the scroll).
+-- The mission does not end right after the boss dies and full-susanoo bosses cannot be hit, so we wait here until the next boss.
 local SAFE_HEIGHT = 1000
 local function giverTalkPart(giver)
 	local mg = giver and giver:FindFirstChild("missiongiver")
 	return mg and mg:FindFirstChild("HumanoidRootPart")
 end
--- Güvenli bölge: istemci tarafında 85x85'lik bir zemin. Üstünde serbestçe dolaşırsın (sürekli ışınlama yok);
--- zeminin dışına çıkar ya da düşersen ortasına geri konursun.
+-- Safe zone: an 85x85 client-side floor. You can move freely on it (no constant teleporting);
+-- if you walk off or fall, you are put back in the middle.
 local SAFE_SIZE = Vector3.new(85, 2, 85)
--- Kök parçanın ayak tabanına uzaklığı (ayakta dururken). Animasyondaki bacak konumuna bakmak yanıltıyor
--- (QustahInfo: koşarken 3.26, düşerken 2.04 çıktı, gerçek zemin mesafesi 2.88). Bu yüzden rig'in kendi ölçüsü kullanılır:
--- R6: kökün yarısı + bacak boyu (0.96 + 1.92 = 2.88) · R15: HipHeight + kökün yarısı.
+-- Distance from the root part to the feet while standing. Reading the animated leg position is unreliable
+-- (QustahInfo measured 3.26 while running and 2.04 while falling; the real floor distance was 2.88), so the rig's own size is used:
+-- R6: half the root + leg height (0.96 + 1.92 = 2.88) · R15: HipHeight + half the root.
 local function rootToFeet(c, r)
 	local h = c:FindFirstChildOfClass("Humanoid")
 	local r15 = h and select(2, pcall(function() return h.RigType == Enum.HumanoidRigType.R15 end)) == true
@@ -284,17 +284,17 @@ local function rootToFeet(c, r)
 	if leg and leg:IsA("BasePart") then return r.Size.Y / 2 + leg.Size.Y end
 	return r.Size.Y / 2 + 2
 end
-local function safeStandCF(part)                                  -- zeminin tam üstü (+0.15 pay), içine girmeden
+local function safeStandCF(part)                                  -- exactly on top of the floor (+0.15 margin), never inside it
 	local c, r = character(), rootPart()
 	local up = part.Size.Y / 2 + 0.15 + ((c and r) and rootToFeet(c, r) or 3)
 	return part.CFrame * CFrame.new(0, up, 0)
 end
--- Oyunun kendi zemini: oyunun hareket sistemi (wallwalk / tree jump / waterwalk) yeri workspace.map'teki parçalara bakarak
--- buluyor olabilir; bizim parça workspace'in kökünde, Default collision grubundayken karakter partın içine gömülüyordu.
--- Bu yüzden güvenli zemin, haritadaki gerçek bir zemin parçasından kopyalanır ve onun yanına (workspace.map) konur.
+-- The game's movement systems (wall walk / tree jump / water walk) probably detect the ground from parts in workspace.map;
+-- with our part at the workspace root in the Default collision group the character sank into it.
+-- So the safe floor is cloned from a real ground part of the map and parented next to it (workspace.map).
 local function mapGroundTemplate()
 	local r, c = rootPart(), character()
-	if r then                                                     -- önce ayağının altındaki parça
+	if r then                                                     -- first, the part under your feet
 		local params = RaycastParams.new()
 		params.FilterType = Enum.RaycastFilterType.Exclude
 		params.FilterDescendantsInstances = { c, SafePart, Platform }
@@ -302,7 +302,7 @@ local function mapGroundTemplate()
 		local p = hit and hit.Instance
 		if p and p:IsA("Part") and p.Anchored and p.CanCollide and p.Parent and p.Parent ~= workspace.CurrentCamera then return p end
 	end
-	local map = workspace:FindFirstChild("map")                  -- yoksa haritadan düz, büyükçe bir parça
+	local map = workspace:FindFirstChild("map")                  -- otherwise a large, flat part from the map
 	if map then
 		for _, p in ipairs(map:GetChildren()) do
 			if p:IsA("Part") and p.Anchored and p.CanCollide and p.Size.X >= 8 and p.Size.Z >= 8 then return p end
@@ -314,7 +314,7 @@ local function safePartAt(cf)
 		local tpl = mapGroundTemplate()
 		local ok, clone = pcall(function() return tpl and tpl:Clone() end)
 		SafePart = (ok and clone) or Instance.new("Part")
-		pcall(function() SafePart:ClearAllChildren() end)           -- doku, script vb. kopyalanmasın
+		pcall(function() SafePart:ClearAllChildren() end)           -- do not copy textures, scripts etc.
 		SafePart.Name = "QustahSafe"
 		SafePart.Anchored, SafePart.CanCollide, SafePart.Size = true, true, SAFE_SIZE
 		pcall(function() SafePart.CanQuery, SafePart.CanTouch = true, true end)
@@ -331,7 +331,7 @@ local function safePartAt(cf)
 	if SafePart.CFrame ~= cf then SafePart.CFrame = cf end
 	return SafePart
 end
-local function onSafePart(r, part)                               -- zeminin üstünde mi (biraz zıplama payıyla)
+local function onSafePart(r, part)                               -- is the player on the floor (with some room for jumping)
 	local rel = part.CFrame:PointToObjectSpace(r.Position)
 	return math.abs(rel.X) <= part.Size.X / 2 + 1 and math.abs(rel.Z) <= part.Size.Z / 2 + 1 and rel.Y > -1 and rel.Y < 60
 end
@@ -339,7 +339,7 @@ local function goSafe(giver)
 	local talk = giverTalkPart(giver)
 	if not talk then return false end
 	local part = safePartAt(CFrame.new(talk.Position + Vector3.new(0, SAFE_HEIGHT, 0)))
-	platformFixed = part.CFrame * CFrame.new(0, -12, 0)            -- takip eden platform zeminin altına park edilir (üst üste binip kaydırmasın)
+	platformFixed = part.CFrame * CFrame.new(0, -12, 0)            -- the follow platform is parked below the floor so the two do not overlap and push you around
 	local r = rootPart()
 	if r and not onSafePart(r, part) then tpTo(safeStandCF(part)) r.AssemblyLinearVelocity = Vector3.zero end
 	return true
@@ -348,7 +348,7 @@ local function leaveSafe()
 	platformFixed = nil
 	if SafePart then SafePart:Destroy() SafePart = nil end
 end
--- Kaymayı önle: güvenli zeminde tuşa basmıyorsan yatay hızın sıfırlanır (ışınlanmadan kalan ivme vb.)
+-- Anti-slide: on the safe floor, horizontal velocity is cleared while no movement key is pressed (leftover momentum from teleports etc.)
 hubConnect(RunService.Heartbeat, function()
 	if not SafePart then return end
 	local c = character()
@@ -361,9 +361,9 @@ hubConnect(RunService.Heartbeat, function()
 	end
 end)
 
--- bir NPC'ye saldır: üstünde/arkasında dur, kameranı çevir, tuş + m1
-local Attack = { Height = 0, Distance = 10, Mode = "Legacy (M1 + E)" }   -- Height / Distance sabit (ayarı yok); Legacy varsayılan açık (DogeHub gibi)
--- Melee / Legacy mesafesi dövüş stiline göre (DogeHub'daki gibi): kısa menzilli stiller 7, diğerleri 10 stud
+-- attack an NPC: stand above / behind it, face it, press keys + M1
+local Attack = { Height = 0, Distance = 10, Mode = "Legacy (M1 + E)" }   -- Height / Distance are fixed (no setting); Legacy is on by default (as in DogeHub)
+-- Melee / Legacy distance depends on the fighting style (as in DogeHub): short-range styles 7, others 10 studs
 local SHORT_STYLES = { [""] = true, boxing = true, jeetkunedo = true, muaythai = true, mma = true }
 local function meleeDistance()
 	local st = LocalPlayer:FindFirstChild("statz")
@@ -374,13 +374,13 @@ end
 local function attackNPC(v)
 	local hrp = v:FindFirstChild("HumanoidRootPart")
 	if not hrp then return end
-	local ae = v:FindFirstChild("antiexploit")                     -- mob'un korumasını kaldır (NukeVsCity'deki gibi)
+	local ae = v:FindFirstChild("antiexploit")                     -- remove the mob's protection (as in NukeVsCity)
 	if ae then ae:Destroy() end
 	lookAt(hrp.Position)
 	if Attack.Mode == "Melee (M1)" then
 		tpTo(hrp.CFrame * CFrame.new(0, 0, meleeDistance()))
 		combat("mouse1", true)
-	elseif Attack.Mode == "Legacy (M1 + E)" then                -- yakında dur, hem M1 hem E
+	elseif Attack.Mode == "Legacy (M1 + E)" then                -- stay close, both M1 and E
 		tpTo(hrp.CFrame * CFrame.new(0, 0, meleeDistance()))
 		combat("mouse1", true)
 		combat("key", "e") combat("key", "eend")
@@ -388,14 +388,14 @@ local function attackNPC(v)
 		tpTo(hrp.CFrame * CFrame.new(0, Attack.Height, Attack.Distance))
 		for _ = 1, 3 do combat("key", "e") combat("key", "eend") end
 	end
-	pcall(function() v.Humanoid.Health = -v.Humanoid.Health end)   -- NukePlat'taki gibi canı eksiye çek (istemci tarafı)
-	HUB.AuraTarget = v                                           -- kill aura farm'ın o anki hedefine vursun
+	pcall(function() v.Humanoid.Health = -v.Humanoid.Health end)   -- set health to its negative, as NukePlat does (client side)
+	HUB.AuraTarget = v                                           -- let the kill aura hit the farm's current target
 end
 
------------------------------------------------------------------- PENCERE
+------------------------------------------------------------------ WINDOW
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.41",
+	Version = "V1.42",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -428,7 +428,7 @@ end
 
 ------------------------------------------------------------------ UNIVERSAL (Silent Aim · ESP · World · Player · Server)
 do
------------------------------------------------------------------------- servisler
+------------------------------------------------------------------------ services
 local function service(name)
     local s = game:GetService(name)
     return (cloneref and cloneref(s)) or s
@@ -445,9 +445,9 @@ local VirtualUser = service("VirtualUser")
 local LocalPlayer = Players.LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
 local Camera = Workspace.CurrentCamera
--- Hook'ta karşılaştırma için gerçek referans: cloneref kopyası oyunun workspace'ine == ile eşit sayılmaz
+-- The real reference for hook comparisons: a cloneref copy is not == to the game's workspace
 local RealWorkspace = workspace
-local FindFirstChild = game.FindFirstChild                      -- hook içinde namecall yapmamak için düz çağrı
+local FindFirstChild = game.FindFirstChild                      -- a plain call so no namecall happens inside the hook
 
 local ENV = (getgenv and getgenv()) or _G
 
@@ -464,7 +464,7 @@ local V2, V3, CF, C3 = Vector2.new, Vector3.new, CFrame.new, Color3.new
 local floor, clamp, max, min, rad, tan = math.floor, math.clamp, math.max, math.min, math.rad, math.tan
 local BLACK, WHITE = C3(0, 0, 0), C3(1, 1, 1)
 
------------------------------------------------------------------------- ayarlar (UI callback'leri doldurur)
+------------------------------------------------------------------------ settings (filled in by the UI callbacks)
 local S = {
     -- silent aim
     SA_Enabled = false, SA_HitChance = 100, SA_Part = "Head", SA_Priority = "Mouse",
@@ -523,7 +523,7 @@ HighlightFolder.Parent = Overlay
 
 local Render = { Mode = "GUI" }
 
--- Çizim özelliklerinde Transparency = opaklık (1 = tam görünür).
+-- In drawing properties Transparency means opacity (1 = fully visible).
 local Shim, Dirty = {}, {}
 local function frame(props)
     local f = Instance.new("Frame")
@@ -705,7 +705,7 @@ function Render.flush()
     end
 end
 
------------------------------------------------------------------------- yardımcılar
+------------------------------------------------------------------------ helpers
 local function getCharacter(plr)
     local char = plr and plr.Character
     if not char then return end
@@ -739,7 +739,7 @@ local function isFriend(plr)
     return FriendCache[plr.UserId]
 end
 
--- görünürlük: oyuncu başına saniyede 10 kez raycast (önbellekli)
+-- visibility: up to 10 raycasts per player per second (cached)
 local VisParams = RaycastParams.new()
 VisParams.FilterType = Enum.RaycastFilterType.Exclude
 VisParams.IgnoreWater = true
@@ -756,7 +756,7 @@ local function isVisible(plr, char, part)
     return visible
 end
 
------------------------------------------------------------------------- Silent Aim: hedef seçimi
+------------------------------------------------------------------------ Silent Aim: target selection
 local Silent = { Target = nil, Hooked = false, IndexHooked = false }
 local CanHook = typeof(hookmetamethod) == "function" and typeof(getnamecallmethod) == "function" and typeof(checkcaller) == "function"
 local RandomPick = {}
@@ -781,7 +781,7 @@ local function pickPart(plr, char, mousePos)
         end
         return r.part
     end
-    local best, bestD = nil, math.huge                          -- "Closest": imlece en yakın parça
+    local best, bestD = nil, math.huge                          -- "Closest": the part closest to the cursor
     for _, p in ipairs(parts) do
         local sp, on = toScreen(p.Position)
         if on then
@@ -817,7 +817,7 @@ local function findTarget()
                             elseif S.SA_Priority == "Health" then score = hum.Health end
                             if score < bestScore then
                                 local pos = part.Position
-                                if S.SA_Predict and S.SA_PredStrength > 0 then              -- %100 = 1000 stud/s mermi varsayımı
+                                if S.SA_Predict and S.SA_PredStrength > 0 then              -- 100% = a 1000 studs/s projectile
                                     pos = pos + part.AssemblyLinearVelocity * (dist / 1000) * (S.SA_PredStrength / 100)
                                 end
                                 best, bestScore = { Player = plr, Part = part, Position = pos }, score
@@ -832,10 +832,10 @@ local function findTarget()
 end
 
 local function roll() return math.random(1, 100) <= S.SA_HitChance end
-local function fromShooter(origin)                               -- sadece senin silahından çıkan ışınları değiştir
+local function fromShooter(origin)                               -- only redirect rays fired from your own weapon
     if not S.SA_SafeOrigin then return true end
     if (origin - Camera.CFrame.Position).Magnitude < 25 then return true end
-    -- dikkat: hook'un içinde char:FindFirstChild (namecall) yapılırsa oyunun asıl çağrısı bozulur
+    -- note: calling char:FindFirstChild (a namecall) inside the hook breaks the game's original call
     local char = LocalPlayer.Character
     local head = char and FindFirstChild(char, "Head")
     return head ~= nil and (origin - head.Position).Magnitude < 25
@@ -845,7 +845,7 @@ local setnamecall = setnamecallmethod
 local function installNamecallHook()
     if Silent.Hooked or not CanHook then return Silent.Hooked end
     local old
-    local function callOld(method, self, ...)                  -- metot adı arada değiştiyse geri koy
+    local function callOld(method, self, ...)                  -- restore the method name if it changed in between
         if setnamecall then setnamecall(method) end
         return old(self, ...)
     end
@@ -892,7 +892,7 @@ local function installNamecallHook()
     return true
 end
 
-local function installIndexHook()                                -- Mouse.Hit / Mouse.Target (sadece seçilince kurulur)
+local function installIndexHook()                                -- Mouse.Hit / Mouse.Target (only installed when selected)
     if Silent.IndexHooked or not CanHook then return Silent.IndexHooked end
     local old
     local wrapper = newcclosure(function(self, key)
@@ -934,7 +934,7 @@ local function entry(plr)
     end
     return e
 end
-local function use(e, key, kind)                                 -- objeler ilk ihtiyaçta oluşur
+local function use(e, key, kind)                                 -- objects are created on first use
     local o = e.Obj[key]
     if not o then
         o = Render.new(kind)
@@ -944,8 +944,8 @@ local function use(e, key, kind)                                 -- objeler ilk 
     e.Vis[key] = true
     return o
 end
--- Bu karede kullanılmayan objeleri gizler. Görünürlüğü kendimiz tutuyoruz: bazı executor'larda Drawing
--- özellikleri okunamıyor (o.Visible hep nil döner), eskiden bu yüzden ekrandan çıkan oyuncunun ESP'si ekranda kalıyordu.
+-- Hides the objects not used this frame. Visibility is tracked by us: on some executors Drawing
+-- properties cannot be read (o.Visible always returns nil), which used to leave ESP on screen after a player left the view.
 local function hideUnused(e, all)
     for key, o in pairs(e.Obj) do
         if e.Vis[key] and (all or e.Stamp[key] ~= ESP.Frame) then
@@ -1011,7 +1011,7 @@ local function updatePlayer(plr)
         updateChams(e, nil, nil, false)
         return hideUnused(e)
     end
-    if S.Perf and dist > 400 and (ESP.Frame + plr.UserId) % 2 == 1 then   -- uzaktakiler iki karede bir
+    if S.Perf and dist > 400 and (ESP.Frame + plr.UserId) % 2 == 1 then   -- far players every other frame
         for key in pairs(e.Obj) do e.Stamp[key] = ESP.Frame end
         return
     end
@@ -1032,7 +1032,7 @@ local function updatePlayer(plr)
 
     local rootScreen, onScreen = toScreen(root.Position)
     if not onScreen then
-        if S.Arrows then                                         -- ekran dışı ok
+        if S.Arrows then                                         -- off-screen arrow
             local rel = Camera.CFrame:PointToObjectSpace(root.Position)
             local dir = V2(rel.X, rel.Z)
             if dir.Magnitude > 0 then
@@ -1049,7 +1049,7 @@ local function updatePlayer(plr)
         return hideUnused(e)
     end
 
-    -- kutu: kafa üstü ve ayak altı ekrana çevrilir (sabit, aksesuarlardan etkilenmez)
+    -- box: the top of the head and the bottom of the feet are projected (stable, not affected by accessories)
     local top = toScreen(root.Position + V3(0, 2.6, 0))
     local bottom = toScreen(root.Position - V3(0, 3, 0))
     local h = max(bottom.Y - top.Y, 6)
@@ -1088,10 +1088,10 @@ local function updatePlayer(plr)
         local name = S.DisplayName and plr.DisplayName or plr.Name
         drawText(e, "name", name, V2(rootScreen.X, T - size - 4), color, size, alpha, true)
     end
-    if S.HealthText and hp < 1 then                              -- can sayısı barın üst ucunu takip eder
+    if S.HealthText and hp < 1 then                              -- the health number follows the top of the bar
         local txt = tostring(floor(hum.Health + 0.5))
         local t = drawText(e, "hp", txt, V2(0, 0), healthColor(hp), size - 1, alpha, false)
-        local okB, bounds = pcall(function() return t.TextBounds end)  -- bazı Drawing'lerde TextBounds yok
+        local okB, bounds = pcall(function() return t.TextBounds end)  -- some Drawing implementations have no TextBounds
         local tw = (okB and typeof(bounds) == "Vector2" and bounds.X > 0) and bounds.X or #txt * (size - 1) * 0.55
         local bx = (S.HealthBar and barX - 3 or L - 3) - tw
         t.Position = V2(bx, clamp(T + h * (1 - hp) - size / 2, T - 2, B - size))
@@ -1142,7 +1142,7 @@ local function updatePlayer(plr)
     hideUnused(e)
 end
 
--- FOV çemberi ve hedef çizgisi (global objeler)
+-- FOV circle and target line (global objects)
 local Global = { Obj = {}, Stamp = {}, Vis = {} }
 local function updateGlobal()
     if S.SA_Enabled and S.FOV_Show then
@@ -1207,7 +1207,7 @@ local function updateWorld()
     fogDensity(S.NoFog)
 end
 
------------------------------------------------------------------------- Player (hareket)
+------------------------------------------------------------------------ Player (movement)
 local NoClipParts = {}
 local function stopNoClip()
     for part, was in pairs(NoClipParts) do
@@ -1358,7 +1358,7 @@ local function checkStaff(plr)
     end)
 end
 
------------------------------------------------------------------------- PENCERE
+------------------------------------------------------------------------ WINDOW
 ------------------------------------------------------------------------ COMBAT
 do
 local Combat = Tabs.Combat
@@ -1525,14 +1525,14 @@ end
 
 ------------------------------------------------------------------------ PLAYER
 do
------------------------------------------------------------------- MOVEMENT (kullanıcının verdiği kaynaklar: Always Run · Fly FOV · Puppet · Wider dash)
--- Her biri açılınca kurulur, kapanınca bütün bağlantıları kopar. Aynı scriptler tek başına da çalıştırıldıysa
--- (getgenv().AlwaysRunStop / fv / puppetdash / WiderDashStop) önce onlar durdurulur, iki kopya çalışmasın.
+------------------------------------------------------------------ MOVEMENT (sources provided by the user: Always Run · Fly FOV · Puppet · Wider dash)
+-- Each feature is set up when switched on and drops all of its connections when switched off. If the same scripts were also
+-- run on their own (getgenv().AlwaysRunStop / fv / puppetdash / WiderDashStop), those are stopped first so two copies never run.
 local Move = {}
 local MoveCfg = { PuppetSpeed = 200, PuppetLimit = 5, PuppetGap = 0.3, DashSpeed = 125, Fov = nil }
 local genv = (getgenv and getgenv()) or _G
 
--- Always Run: combat.run hep açık
+-- Always Run: keeps combat.run on
 function Move.alwaysRun()
     if type(genv.AlwaysRunStop) == "function" then genv.AlwaysRunStop() end
     local p = LocalPlayer
@@ -1565,8 +1565,8 @@ function Move.alwaysRun()
     return function() a:Disconnect() b:Disconnect() clear() end
 end
 
--- FOV: slider'daki değer uygulanır; flyjutsu açıkken (ve kapandıktan sonraki 1.2 sn tween boyunca) oyun FOV'u değiştiremez.
--- Hub açıkken hep çalışır (ayrı toggle yok).
+-- FOV: applies the slider value; while flyjutsu is active (and during the 1.2 s tween after it ends) the game cannot change the FOV.
+-- Always active while the hub is running (no separate toggle).
 function Move.flyFov()
     if type(genv.fv) == "function" then genv.fv() end
     local p = LocalPlayer
@@ -1610,7 +1610,7 @@ function Move.flyFov()
         if hasFly() then return end
         revision = revision + 1
         local token = revision
-        -- flyjutsu biterken FOV'u 1 sn'lik tween'le değiştiriyor
+        -- flyjutsu tweens the FOV over 1 s when it ends
         task.delay(1.2, function()
             if alive and revision == token and not hasFly() then
                 enforce()
@@ -1636,7 +1636,7 @@ function Move.flyFov()
     connections[1] = workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindCamera)
     connections[2] = p.CharacterAdded:Connect(bindCharacter)
     if p.Character then bindCharacter(p.Character) end
-    Move.setFov = function(v)                                       -- slider: hemen uygula, uçarken de bu değer korunur
+    Move.setFov = function(v)                                       -- slider: apply immediately; the value is also kept while flying
         MoveCfg.Fov = v
         saved = v
         if camera then writing = true camera.FieldOfView = v writing = false end
@@ -1652,7 +1652,7 @@ function Move.flyFov()
     end
 end
 
--- Puppet: havada en fazla LIMIT kez, aralarında GAP sn olacak şekilde yönlü puppet zıplaması (hız SPEED)
+-- Puppet: directional puppet jumps in the air, at most LIMIT times, GAP seconds apart (speed SPEED)
 function Move.puppet()
     if type(genv.puppetdash) == "function" then genv.puppetdash() end
     if type(genv.pd) == "function" then genv.pd() end
@@ -1778,7 +1778,7 @@ function Move.puppet()
                 local id = track.Animation and track.Animation.AnimationId:match("%d+")
                 if not byId[id] or owned[track] or a.FloorMaterial ~= Enum.Material.Air then return end
                 used = used + 1 last = os.clock()
-                -- oyunun kendi puppet zıplaması, animasyonu oynatmadan önce zıplama gücünü 1.5 katına çıkarıyor
+                -- the game's own puppet jump sets jump power to 1.5x before playing the animation
                 baseJumpPower = a.JumpPower / 1.5
                 local d = cameraDirection(byId[id], a.MoveDirection)
                 local currentRoot, currentEpoch = root, epoch
@@ -1859,7 +1859,7 @@ function Move.puppet()
     end
 end
 
--- Wider dash: dash hızı sabit SPEED (sağ tık basılıyken dokunmaz)
+-- Wider dash: fixed dash speed SPEED (left alone while right click is held)
 function Move.widerDash()
     if type(genv.WiderDashStop) == "function" then genv.WiderDashStop() end
     local connection = RunService.PreSimulation:Connect(function()
@@ -1882,7 +1882,7 @@ function Move.widerDash()
 end
 
 local moveStops = {}
-local function moveToggle(key)                                      -- toggle → kur / durdur
+local function moveToggle(key)                                      -- toggle → start / stop
     return function(on)
         if moveStops[key] then pcall(moveStops[key]) moveStops[key] = nil end
         if on then
@@ -1894,10 +1894,10 @@ end
 HUB.Cleanup[#HUB.Cleanup + 1] = function()
     for k, stop in pairs(moveStops) do pcall(stop) moveStops[k] = nil end
 end
-HUB.MoveStops = moveStops                                           -- testler için
+HUB.MoveStops = moveStops                                           -- for tests
 
 local MV = Tabs.Movement
-moveStops.flyFov = Move.flyFov()                                    -- FOV koruması hep açık
+moveStops.flyFov = Move.flyFov()                                    -- FOV protection is always on
 
 local Basic = MV:Card({ Title = "Movement", Icon = "footprints" })
 Basic:Toggle({ Title = "Always run", Flag = "mv_run", Default = false, Callback = moveToggle("alwaysRun") })
@@ -1922,7 +1922,7 @@ Dash:Toggle({ Title = "Wider dash", Flag = "mv_dash", Default = false, Callback 
 Dash:Slider({ Title = "Speed", Flag = "mv_dashspeed", Min = 50, Max = 300, Default = 125, Suffix = " studs/s", DependsOn = { Flag = "mv_dash", Reason = "" },
     Callback = function(v) MoveCfg.DashSpeed = v end })
 
------------------------------------------------------------------------- PLAYER (genel kısım; Shindo kartları aşağıda aynı sayfaya eklenir)
+------------------------------------------------------------------------ PLAYER (general part; the Shindo cards are added to the same page below)
 local PlayerMisc = Tabs.Player:Card({ Title = "Misc", Icon = "wand-sparkles", Side = "Right" })
 PlayerMisc:Toggle({ Title = "Anti-AFK", Desc = "Prevents the 20 minute idle kick", Flag = "p_antiafk", Default = true, Callback = set("AntiAfk") })
 
@@ -1934,15 +1934,15 @@ specRow:Button({ Title = "Spectate", Icon = "eye", Style = "Primary", Callback =
     if chosen and chosen[1] then spectate(chosen[1]) end
 end })
 specRow:Button({ Title = "Stop", Icon = "square", Style = "Ghost", Callback = function() spectate(nil) end })
-HUB.PlayerLateCards = { PlayerMisc, Spec }                          -- Shindo kartlarının altına itilecek
+HUB.PlayerLateCards = { PlayerMisc, Spec }                          -- moved below the Shindo cards
 end
 
 ------------------------------------------------------------------------ SERVER
--- Düzen C: solda sunucu tarayıcı (doluluk çubuğu + ping + tek tık Join), sağda Seçenekler ve Job ID.
+-- Layout C: server browser on the left (fill bar + ping + one-click Join), Options and Job ID on the right.
 local Server = Tabs.Server
 local SrvCard = Server:Card({ Title = "Servers", Icon = "server", Desc = "Pick by player count and ping" })
 
--- ServerList: lib'de yok, kartın gövdesine elle çiziliyor (tema renklerine bağlı)
+-- ServerList: not part of the lib, drawn by hand into the card body (bound to theme colours)
 local UI_ = Lib.Util
 local TH = Lib.Theme
 local srvBox = UI_.create("Frame", { Name = "ServerList", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0),
@@ -1956,7 +1956,7 @@ local function pingLevel(ms)
     return 1
 end
 local function myPing()
-    local ok, p = pcall(function() return LocalPlayer:GetNetworkPing() * 2000 end)   -- tek yön → gidiş-dönüş
+    local ok, p = pcall(function() return LocalPlayer:GetNetworkPing() * 2000 end)   -- one way → round trip
     return ok and floor(p) or 0
 end
 
@@ -2032,7 +2032,7 @@ srvBtns:Button({ Title = "Lowest ping", Icon = "wifi", Callback = function() srv
 SrvCard:Button({ Title = "Random hop", Icon = "shuffle", Style = "Ghost", Cooldown = 5, Callback = function() serverHop("Random") end })
 task.delay(1, function() if Running then refreshServers() end end)
 
--- eski kodun beklediği "Players" bilgisi → artık listedeki "buradasın" satırını günceller
+-- the "Players" info the old code expected → now updates the "you are here" row in the list
 local playersInfo = { Set = function()
     local n, m = #Players:GetPlayers(), Players.MaxPlayers
     srvCurrent.cnt.Text = ("%d/%d"):format(n, m)
@@ -2073,7 +2073,7 @@ local playerTable = PlayersCard:Table({ Height = 150, Search = true,
         if plr then spectate(plr) notify("Spectate", plr.Name .. " izleniyor", "eye") end
     end })
 
------------------------------------------------------------------------- Settings + açılış
+------------------------------------------------------------------------ Settings + startup
 Window:SetModule("ESP", "Off", Render.Mode == "GUI" and "GUI mode" or nil, { Icon = "eye", Tab = "Visuals" })
 Window:SetModule("Silent Aim", CanHook and "Off" or "Limited", not CanHook and "no hook" or nil, { Icon = "target", Tab = "Combat" })
 
@@ -2081,7 +2081,7 @@ Window:OnKick(function()
     if S.AutoRejoin then task.delay(2, function() if Running and S.AutoRejoin then rejoin() end end) end
 end)
 
------------------------------------------------------------------------- döngüler
+------------------------------------------------------------------------ loops
 connect(Workspace:GetPropertyChangedSignal("CurrentCamera"), function()
     Camera = Workspace.CurrentCamera
 end)
@@ -2092,11 +2092,11 @@ connect(Players.PlayerRemoving, function(plr)
 end)
 connect(Players.PlayerAdded, checkStaff)
 
--- Her parça kendi pcall'ında: bir oyuncunun ESP'si hata verirse FOV / diğer oyuncular / world donmaz.
--- (Eskiden ESP'deki tek bir hata karenin geri kalanını, FOV çemberi dahil, durduruyordu.)
+-- Every part runs in its own pcall: an error in one player's ESP does not freeze the FOV, other players or the world.
+-- (Previously a single ESP error stopped the rest of the frame, including the FOV circle.)
 local function safe(tag, fn, ...)
     local ok, err = pcall(fn, ...)
-    if not ok then hubError(tag, err) end                       -- aynı hatayı 10 sn'de bir raporlar
+    if not ok then hubError(tag, err) end                       -- reports the same error at most once every 10 s
     return ok
 end
 Render.safe = safe
@@ -2106,10 +2106,10 @@ connect(RunService.RenderStepped, function()
     ESP.Frame += 1
     if not Camera then Silent.Target = nil return end
     if not safe("Silent Aim", function() Silent.Target = findTarget() end) then Silent.Target = nil end
-    safe("FOV", updateGlobal)                                    -- FOV önce: ESP ne olursa olsun çizilir
+    safe("FOV", updateGlobal)                                    -- FOV first: it is drawn whatever happens to the ESP
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and not safe("ESP", updatePlayer, plr) then
-            local e = ESP.Entries[plr]                           -- yarıda kalan çizim ekranda asılı kalmasın
+            local e = ESP.Entries[plr]                           -- do not leave a half-drawn frame on screen
             if e then hideUnused(e, true) end
         end
     end
@@ -2121,7 +2121,7 @@ connect(RunService.RenderStepped, function()
     Render.flush()
 end)
 
-task.spawn(function()                                            -- oyuncu tablosu, 2 saniyede bir
+task.spawn(function()                                            -- player table, every 2 seconds
     while Running do
         local rows = {}
         local _, _, myRoot = getCharacter(LocalPlayer)
@@ -2145,7 +2145,7 @@ ENV.QustahShindoCore = {
     Unload = function()
         if not Running then return end
         Running = false
-        pcall(hubStop)                                           -- farm / spin / player döngüleri ve platform
+        pcall(hubStop)                                           -- farm / spin / player loops and the platform
         for _, c in ipairs(Connections) do pcall(function() c:Disconnect() end) end
         for plr in pairs(ESP.Entries) do removeEntry(plr) end
         for _, o in pairs(Global.Obj) do Render.remove(o) end
@@ -2169,16 +2169,16 @@ do
 
 	local F = {
 		Scroll = false, Boss = false,
-		BossSpecific = false, BossSel = {},   -- DogeHub gibi: Specific (toplu seçim) / Random
-		StuckAfter = 60,                                         -- takılan görevi iptal (ayar yok, scriptin kendi işi)
+		BossSpecific = false, BossSel = {},   -- as in DogeHub: Specific (multi-select) / Random
+		StuckAfter = 60,                                         -- cancel stuck missions (no setting, handled internally)
 		Stats = {}, AutoRank = false, RankAfterMax = false, RankRC = false, RankStop = false, RankStopAt = 500,
-		-- Mentor ve Daily ayrı anahtarlar: birini kapatmak ötekini durdurmasın
+		-- Mentor and Daily use separate keys so turning one off does not stop the other
 		PunchM = false, PunchD = false, TreeM = false, TreeD = false, Shoot = false, Rush = false, Chi = false, DailyBoss = false,
 	}
 	local GREEN_SCROLL = "http://www.roblox.com/asset/?id=5459241648"
-	if ENV.QustahShindoCore then ENV.QustahShindoCore.Farm, ENV.QustahShindoCore.Hub = F, HUB end   -- testler için
+	if ENV.QustahShindoCore then ENV.QustahShindoCore.Farm, ENV.QustahShindoCore.Hub = F, HUB end   -- for tests
 
-	local function timerReady(giver)                            -- boss görev vericisinin süresi doldu mu
+	local function timerReady(giver)                            -- has the boss mission giver's cooldown finished
 		local ok, txt = pcall(function() return giver.missiongiver.timer.time.time.Text end)
 		return ok and (txt == "00:00" or txt == "59:59")
 	end
@@ -2188,7 +2188,7 @@ do
 		tpTo(mg.HumanoidRootPart.CFrame + Vector3.new(0, -0.8, 0))
 		mg.CLIENTTALK:FireServer(LocalPlayer)
 	end
-	-- missions klasöründe bütün boss'lar var; sadece bu haritadakilerin içinde "missiongiver" (konuşulan NPC) olur
+	-- the missions folder lists every boss; only the bosses on this map contain a "missiongiver" (the NPC you talk to)
 	local BOSS_FOLDERS = { "bossdropmission", "sengokubossfight" }
 	local function bossGivers()
 		local out = {}
@@ -2211,13 +2211,13 @@ do
 		table.sort(out)
 		return out
 	end
-	local function greenInfo(v)                                       -- yeşil "defeat" vericisi mi, şu an görev veriyor mu
+	local function greenInfo(v)                                       -- is this a green "defeat" giver, and is it giving a mission right now
 		local gm = v:FindFirstChild("Head") and v.Head:FindFirstChild("givemission")
 		local typ = v:FindFirstChild("Talk") and v.Talk:FindFirstChild("typ")
 		if not (gm and typ and typ.Value == "defeat" and gm:FindFirstChild("color") and gm.color.Image == GREEN_SCROLL) then return false end
 		return true, gm.Enabled and v:FindFirstChild("HumanoidRootPart") ~= nil and v:FindFirstChild("CLIENTTALK") ~= nil
 	end
-	local function acceptScrollQuest(alive)                          -- yeşil scroll "defeat" görevi al
+	local function acceptScrollQuest(alive)                          -- take a green scroll "defeat" mission
 		local givers = workspace:FindFirstChild("missiongivers")
 		if not givers or not alive() then return end
 		for _, v in ipairs(givers:GetChildren()) do
@@ -2235,15 +2235,15 @@ do
 			end
 		end
 	end
-	local bossGiver                                              -- şu an görevini yaptığımız boss'un vericisi
-	local lastGiver                                              -- güvenli nokta için son boss vericisi
-	local bossKilled = false                                     -- bu boss görevinde gerçekten bir mob öldürdük mü
-	local function giverTaken(g)                                 -- başka biri bu boss'un görevinde mi
+	local bossGiver                                              -- giver of the boss mission currently in progress
+	local lastGiver                                              -- last boss giver, used for the safe spot
+	local bossKilled = false                                     -- did we actually kill a mob during this boss mission
+	local function giverTaken(g)                                 -- is someone else already doing this boss mission
 		local p = g:FindFirstChild("position")
 		local p1 = p and p:FindFirstChild("p1")
 		return p1 ~= nil and p1:FindFirstChild("inmission") ~= nil
 	end
-	local progressAt = os.clock()                               -- son ilerleme (mob öldü / görev başladı)
+	local progressAt = os.clock()                               -- last progress (mob died / mission started)
 	local function acceptFrom(list, pick, alive)
 		for _, g in ipairs(list) do
 			if not alive() or inMission() then return inMission() end
@@ -2256,8 +2256,8 @@ do
 			end
 		end
 	end
-	-- Sadece bu görevin mob'ları: tipi görev yazısında geçen ve görev noktasına 500 stud içinde olanlar.
-	-- Bulunamazsa sırayla gevşetilir (sadece tip → sadece mesafe → boss görevinde hepsi).
+	-- Only this mission's mobs: those whose type appears in the mission text and are within 500 studs of the mission point.
+	-- If none are found the filter is relaxed step by step (type only → distance only → everything during a boss mission).
 	local function missionMobs()
 		local all = npcs(true)
 		local cur = currentMission()
@@ -2284,10 +2284,10 @@ do
 		local list = missionMobs()
 		if #list > 0 then leaveSafe() end
 		for _, v in ipairs(list) do
-			-- DogeHub gibi: mob'un Humanoid'i silinene (sunucuda ölene) ya da görev bitene kadar vur.
-			-- Can'a bakmıyoruz: istemcide 0 yaptığımız için hep "ölü" görünür, boss kesilmeden kaçıyorduk.
+			-- As in DogeHub: keep hitting until the mob's Humanoid is removed (it died on the server) or the mission ends.
+			-- Health is not checked: we set it to 0 locally so it always looks "dead", which made us leave before the boss was killed.
 			while flagFn() and inMission() and v.Parent and v:FindFirstChild("Humanoid") do
-				pcall(attackNPC, v)                                   -- mob tam o an silinirse döngü kopmasın
+				pcall(attackNPC, v)                                   -- keep the loop alive if the mob is removed mid-attack
 				task.wait(0.05)
 			end
 			if not (v.Parent and v:FindFirstChild("Humanoid")) then
@@ -2295,8 +2295,8 @@ do
 				if bossGiver then bossKilled = true end
 			end
 		end
-		-- boss görevi: boss gerçekten öldü ya da susanoo'lu olduğu için vurulamıyor → görev bitene kadar güvenli noktada bekle.
-		-- Boss henüz doğmadıysa yerinde bekler (uzaklaşırsak hiç yüklenmeyebilir).
+		-- boss mission: the boss is really dead or cannot be hit (full susanoo) → wait at the safe spot until the mission ends.
+		-- If the boss has not spawned yet, wait in place (moving away might stop it from loading at all).
 		if bossGiver and flagFn() and inMission() and #missionMobs() == 0 and (bossKilled or susanooNPCs() > 0) then
 			goSafe(bossGiver)
 		end
@@ -2324,7 +2324,7 @@ do
 		return list
 	end
 	loop("Auto farm", 0.2, function()
-		if not farmAlive() then if SafePart or platformFixed then leaveSafe() end return end   -- farm kapandı: güvenli zemini kaldır
+		if not farmAlive() then if SafePart or platformFixed then leaveSafe() end return end   -- farm turned off: remove the safe floor
 		if KIND ~= "map" or HUB.ScrollBusy then return end
 		HUB.FarmBusy = true
 		local ok, err = pcall(function()
@@ -2332,13 +2332,13 @@ do
 			if cur ~= lastMission then lastMission, progressAt = cur, os.clock() end
 			if cur then
 				local _, objective = missionInfo(cur)
-				if objective and objective ~= "Mission" then          -- farm'ın yapamayacağı görev tipi
+				if objective and objective ~= "Mission" then          -- a mission type the farm cannot do
 					if cancelMission() then notify("Auto farm", "Mission type '" .. objective .. "', cancelled", "circle-x", "warning") end
 					task.wait(1)
 					return
 				end
 			end
-			if inMission() and F.StuckAfter > 0 and os.clock() - progressAt > F.StuckAfter then   -- takıldı
+			if inMission() and F.StuckAfter > 0 and os.clock() - progressAt > F.StuckAfter then   -- stuck
 				if cancelMission() then notify("Auto farm", F.StuckAfter .. "s without progress, mission cancelled", "circle-x", "warning") end
 				progressAt = os.clock()
 				leaveSafe()
@@ -2346,7 +2346,7 @@ do
 				return
 			end
 			if inMission() then killMissionMobs(farmAlive) return end
-			bossGiver, bossKilled = nil, false                       -- görev bitti
+			bossGiver, bossKilled = nil, false                       -- mission finished
 			if F.Boss and acceptFrom(bossGivers(), (F.BossSpecific and #F.BossSel > 0 and F.BossSel) or "Random", function() return HUB.Running and F.Boss end) then
 				return
 			end
@@ -2356,7 +2356,7 @@ do
 				acceptScrollQuest(function() return HUB.Running and F.Scroll end)
 				return
 			end
-			-- sadece boss farm açık ve hazır boss yok: sıradaki boss'a kadar son boss'un üstünde bekle
+			-- only boss farm is on and no boss is ready: wait above the last boss until the next one
 			if (F.Boss or F.DailyBoss) and lastGiver and lastGiver.Parent then goSafe(lastGiver) end
 		end)
 		HUB.FarmBusy = false
@@ -2364,7 +2364,7 @@ do
 		if not ok then error(err, 0) end
 	end)
 
-	-- DogeHub'ın "Quests" sayfası gibi: Auto Farm · Configurations · Boss Farm Settings
+	-- Like DogeHub's "Quests" page: Auto Farm · Configurations · Boss Farm Settings
 	local Q = QuestPage:Card({ Title = "Auto Farm", Icon = "scroll-text" })
 	local function farmToggle(card, title, key)
 		card:Toggle({ Title = title, Flag = "farm_" .. key:lower(), Default = false, Callback = function(on)
@@ -2381,14 +2381,14 @@ do
 	end })
 	Conf:Toggle({ Title = "NPC Kill Aura", Flag = "farm_aura", Default = false, Callback = function(v) HUB.FarmAura = v end })
 
-	-- Specific / Random: biri açılınca öteki kapanır (DogeHub'daki gibi)
+	-- Specific / Random: turning one on turns the other off (as in DogeHub)
 	local function pickCard(title, icon, what, list, keySpecific, keySel, flagPrefix)
 		local C = QuestPage:Card({ Title = title, Icon = icon })
 		C:Toggle({ Title = "Specific " .. what, Flag = flagPrefix .. "specific", Default = false, Callback = function(v)
 			F[keySpecific] = v
 			if v then Window:SetFlag(flagPrefix .. "random", false) end
 		end })
-		-- toplu seçim: birden fazla boss işaretlenebilir, sırayla hangisi hazırsa o alınır (hiçbiri seçili değilse Random gibi)
+		-- multi-select: several bosses can be ticked and whichever is ready first is taken (nothing ticked behaves like Random)
 		local dd = C:Dropdown({ Title = "Specific " .. what:lower() .. " to kill", Flag = flagPrefix .. "pick", Items = list, Default = {}, Multi = true,
 			AllowNone = true, Search = true, Callback = function(v) F[keySel] = type(v) == "table" and v or { v } end })
 		C:Toggle({ Title = "Random " .. what .. "es", Flag = flagPrefix .. "random", Default = true, Callback = function(v)
@@ -2404,14 +2404,14 @@ do
 
 	local function refreshList(dd, list, keySel, flag)
 		dd:SetItems(list, true)
-		local keep = {}                                          -- seçililerden bu haritada olmayanları çıkar
+		local keep = {}                                          -- drop selections that are not on this map
 		for _, n in ipairs(F[keySel]) do if table.find(list, n) then keep[#keep + 1] = n end end
 		if #keep ~= #F[keySel] then Window:SetFlag(flag, keep) F[keySel] = keep end
 	end
 	local function refreshBosses()
 		refreshList(bossDD, names(bossGivers()), "BossSel", "farm_bosspick")
 	end
-	-- boss sayaçları: "hazır / toplam" (hazır = süresi dolmuş, kimse almamış)
+	-- boss counters: "ready / total" (ready = cooldown finished and nobody has taken it)
 	local function updateCounts()
 		local bReady, bTotal = 0, 0
 		for _, g in ipairs(bossGivers()) do
@@ -2424,7 +2424,7 @@ do
 	end
 	pcall(updateCounts)
 	loop("Farm counts", 2, updateCounts)
-	-- Boss NPC'leri sonradan yüklenebilir (uzaktakiler): missiongiver gelince / gidince listeler kendiliğinden yenilenir
+	-- Boss NPCs may load later (distant ones): the lists refresh by themselves when a missiongiver appears or disappears
 	local pending = false
 	local function queueRefresh(obj)
 		if obj.Name ~= "missiongiver" or pending then return end
@@ -2435,7 +2435,7 @@ do
 	local function watchBossFolder(f)
 		if watched[f] or not table.find(BOSS_FOLDERS, f.Name) then return end
 		watched[f] = true
-		hubConnect(f.DescendantAdded, queueRefresh)                  -- missions klasörü de sonradan gelebilir
+		hubConnect(f.DescendantAdded, queueRefresh)                  -- the missions folder itself may also arrive later
 		hubConnect(f.DescendantRemoving, queueRefresh)
 		queueRefresh({ Name = "missiongiver" })
 	end
@@ -2552,7 +2552,7 @@ do
 	DA:Toggle({ Title = "Chi charge", Flag = "dl_chi", Default = false, Callback = function(v) F.Chi = v end })
 	DA:Toggle({ Title = "Tree jumps", Flag = "dl_tree", Default = false, Callback = function(v) F.TreeD = v end })
 	DA:Toggle({ Title = "Daily boss quests", Flag = "dl_boss", Default = false, Callback = function(v)
-		if v ~= F.DailyBoss then if v then platformOn() else platformOff() end end   -- boss farm gibi platform
+		if v ~= F.DailyBoss then if v then platformOn() else platformOff() end end   -- platform, as in boss farm
 		F.DailyBoss = v
 	end })
 	loop("Daily", 0.05, function()
@@ -2577,14 +2577,14 @@ do
 		On = { Element = false, Bloodline = false, Kenjutsu = false, Race = false },
 		ResetAt = 0, AutoSave = true, Delay = 0.25,
 	}
-	local function persist()                                    -- seçimler rejoin'den sonra da kalsın
+	local function persist()                                    -- keep the selections across rejoins
 		if not writefile then return end
 		pcall(function()
 			if makefolder and isfolder and not isfolder("QustahShindo") then makefolder("QustahShindo") end
 			writefile(SAVE_FILE, HttpService:JSONEncode(I))
 		end)
 	end
-	local fromFile                                               -- json'dan okunan hal (AutoLoad'dan sonra geri yüklenir)
+	local fromFile                                               -- state read from the json (restored after AutoLoad)
 	pcall(function()
 		if isfile and isfile(SAVE_FILE) then
 			local data = HttpService:JSONDecode(readfile(SAVE_FILE))
@@ -2596,13 +2596,13 @@ do
 	local function lists()
 		local alljutsu = ReplicatedStorage:FindFirstChild("alljutsu")
 		local el, kg, ken, race = {}, {}, {}, {}
-		local function add(t, n, inst)                              -- listeye gerçek ismiyle ekle
+		local function add(t, n, inst)                              -- add it to the list under its display name
 			n = labelFor(n, inst)
 			if not table.find(t, n) then t[#t + 1] = n end
 		end
 		local rare = workspace:FindFirstChild("RAREKGS")
 		if alljutsu then
-			if rare then                                        -- bu haftanın dönen limited'leri
+			if rare then                                        -- this week's rotating limiteds
 				for _, v in ipairs(rare:GetChildren()) do
 					local j = alljutsu:FindFirstChild(v.Name)
 					if v.Name ~= "KGTEMPLATE" and j and v:FindFirstChild("tim") and v.tim.Value ~= "N/A" then
@@ -2652,8 +2652,8 @@ do
 		if HUB.Running and not ENV.RELL_RUNNING then TeleportService:Teleport(game.PlaceId, LocalPlayer) end
 	end
 
-	-- tek döngü: açık olan her kategori için, istenen gelene kadar sırayla spin
-	-- Bir kategori açık ama "Wanted" ya da "Slots" boşsa o kategori atlanır (eskiden boş liste = "geldi" sayılıp kaydedip çıkıyordu).
+	-- single loop: for every enabled category, spin in turn until the wanted result arrives
+	-- A category that is on but has an empty "Wanted" or "Slots" list is skipped (an empty list used to count as "got it" and saved / left).
 	local CAT = {
 		{ on = "Element", flag = "is_elem_on", wanted = "Elements", slots = "ElemSlots", label = "Elements" },
 		{ on = "Bloodline", flag = "is_bl_on", wanted = "Bloodlines", slots = "BlSlots", label = "Bloodlines" },
@@ -2661,7 +2661,7 @@ do
 		{ on = "Race", flag = "is_race_on", wanted = "Races", label = "Race" },
 	}
 	local function asList(v) return type(v) == "table" and v or {} end
-	local function ready(c)                                     -- açık + listesi dolu
+	local function ready(c)                                     -- enabled and the list is not empty
 		if not I.On[c.on] then return false end
 		if #asList(I[c.wanted]) == 0 then return false, "Wanted is empty" end
 		if c.slots and #asList(I[c.slots]) == 0 then return false, "Slots is empty" end
@@ -2731,7 +2731,7 @@ do
 			end
 		end
 		if active.Race then
-			if rellCoinOut() then                                   -- coin bitti: race spinini kapat, boşuna remote atma
+			if rellCoinOut() then                                   -- out of coins: turn off the race spin instead of firing remotes for nothing
 				I.On.Race = false
 				Window:SetFlag("is_race_on", false)
 				persist()
@@ -2760,7 +2760,7 @@ do
 
 	local function category(page, side, title, icon, listKey, items, slotKey, slotItems, onFlag, onKey, desc)
 		local c = page:Card({ Title = title, Icon = icon, Side = side, Desc = desc })
-		-- listede gerçek isimler görünür, kayıtta / spin kontrolünde kod adları kullanılır
+		-- lists show display names; saves and spin checks use code names
 		local dd = c:Dropdown({ Title = "Wanted", Flag = onFlag .. "_list", Multi = true, Items = orDash(items), Default = mapList(I[listKey], toLabel), Search = true,
 			Callback = function(list) I[listKey] = mapList(list, toCode) persist() end })
 		if slotKey then
@@ -2799,7 +2799,7 @@ do
 	row:Button({ Title = "Save spins", Icon = "save", Style = "Soft", Confirm = "Sure?", Callback = saveAndLeave })
 	if KIND ~= "menu" then InfPage:Warning("Inf Spin only works in the main menu (now: " .. placeName() .. "). Your picks are saved.", { Level = "info" }) end
 	if (I.On.Element or I.On.Bloodline or I.On.Kenjutsu) and KIND == "menu" then queueHub() end
-	-- Ayar profili (AutoLoad) Inf Spin'i kapatmasın: rejoin sonrası json'daki hali geri koy
+	-- Do not let the settings profile (AutoLoad) turn Inf Spin off: restore the json state after a rejoin
 	HUB.AfterAutoLoad = HUB.AfterAutoLoad or {}
 	HUB.AfterAutoLoad[#HUB.AfterAutoLoad + 1] = function()
 		if type(fromFile) ~= "table" then return end
@@ -2812,8 +2812,8 @@ do
 		for _, c in ipairs(CAT) do put(c.flag, on[c.on] == true) end
 	end
 
-	------------------------------------------------ Auto Spin RELL (ayrı pencere)
-	-- Auto Spin RELL artık kendi raw'ından açılıyor (script içine gömülü değil); rejoin sonrası da kendini o linkten açar
+	------------------------------------------------ Auto Spin RELL (separate window)
+	-- Auto Spin RELL now loads from its own raw link (not embedded in this script) and reloads itself from that link after a rejoin
 	local RELL_URL = "https://raw.githubusercontent.com/79650/dg3b2352313124scjd3124sanhgcdsahncdas457hs1amgdcankjcj/refs/heads/main/rellauto"
 	local function openRell()
 		if ENV.RELL_RUNNING then return true end
@@ -2834,11 +2834,11 @@ do
 			notify("Auto Spin RELL", "Couldn't download the script (raw link)", "triangle-alert", "danger")
 			return false
 		end
-		task.spawn(function()                                  -- açılırken menünün yüklenmesini bekliyor: butonu kilitlemesin
+		task.spawn(function()                                  -- it waits for the menu to load while opening: do not lock the button
 			local ok, err = pcall(fn)
 			if not ok then warn("Auto Spin RELL:", err) if ENV.RELLStop then pcall(ENV.RELLStop) end end
 		end)
-		for _ = 1, 40 do                                        -- en fazla ~20 sn çalışmaya başlamasını bekle
+		for _ = 1, 40 do                                        -- wait up to ~20 s for it to start running
 			if ENV.RELL_RUNNING or ENV.RELL_BOOT_CANCEL then break end
 			task.wait(0.5)
 		end
@@ -2900,7 +2900,7 @@ end
 
 ------------------------------------------------------------------ PLAYER › Shindo
 do
-	local P = Tabs.Player                                     -- tek sayfa: Game · NPC kill aura · Scroll snipe, altında Misc / Spectate
+	local P = Tabs.Player                                     -- single page: Game · NPC kill aura · Scroll snipe, with Misc / Spectate below
 	local G = { NoCombat = false, Unbreak = false, Aura = false, Scroll = false, ScrollSpawn = true }
 
 	local Game = P:Card({ Title = "Game", Icon = "wand-sparkles" })
@@ -2952,11 +2952,11 @@ do
 
 	local Aura = P:Card({ Title = "NPC kill aura", Icon = "skull", Side = "Right" })
 	Aura:Toggle({ Title = "NPC Kill Aura", Flag = "sh_aura", Default = false, Callback = function(v) G.Aura = v end })
-	-- Kill aura: sadece o anki hedefe vurur. Farm bir mob'a saldırıyorsa o mob, değilse sana en yakın geçerli NPC.
-	-- Hedefin "antiexploit"i silinir ve canı NukePlat'taki gibi eksiye çekilir (Health = -Health, 5 kez; istemci tarafı).
-	-- NPC kontrolü DogeHub'daki gibi: Head'e doğrudan bakar, Head'i olmayan NPC o karede hata verip kalanları atlatır.
-	-- Bu yüzden hubConnect (hata raporu) değil, düz bir bağlantı kullanılır; hata sadece o kareyi keser.
-	-- Player > NPC kill aura ya da Farm > Configurations'tan biri açıksa çalışır.
+	-- Kill aura: hits only the current target. If the farm is attacking a mob it is that mob, otherwise the closest valid NPC.
+	-- The target's "antiexploit" is removed and its health is set to its negative, as NukePlat does (Health = -Health, 5 times; client side).
+	-- NPC check as in DogeHub: Head is read directly, so an NPC without a Head errors for that frame and the rest are skipped.
+	-- That is why a plain connection is used instead of hubConnect (error reporting); an error only cuts that frame short.
+	-- Runs when either Player > NPC kill aura or Farm > Configurations is on.
 	local function isValidNPC(npc)
 		return npc:IsA("Model")
 			and npc:FindFirstChild("npctype")
@@ -2967,7 +2967,7 @@ do
 			and npc.Humanoid.Health > 0
 	end
 	local function auraTarget(r, folder)
-		local t = HUB.AuraTarget                                     -- farm'ın hedefi: canı istemcide 0 görünse de sunucuda ölene kadar
+		local t = HUB.AuraTarget                                     -- the farm's target: kept until it dies on the server, even if its health already reads 0 locally
 		if t and t.Parent == folder and t:FindFirstChild("Humanoid") and t:FindFirstChild("HumanoidRootPart") then return t end
 		HUB.AuraTarget = nil
 		local best, bestD
@@ -3054,7 +3054,7 @@ do
 			end
 		end
 	end)
-	-- Misc ve Spectate önce oluşturuldu; Shindo kartları üstte görünsün diye sıraları sona alınır
+	-- Misc and Spectate were created first; move them to the end so the Shindo cards appear on top
 	for i, card in ipairs(HUB.PlayerLateCards or {}) do
 		pcall(function() card.frame.LayoutOrder = 1000 + i end)
 	end
@@ -3415,8 +3415,8 @@ local function setShopVisible(on)
 		gui.ingame.Menu.Visible = not on
 	end)
 end
------------------------------------------------------------------- seçim listeleri (oyunun kendi verisinden okunur)
-local function childNames(folder)              -- listede oyunun orijinal (kod) adları görünür
+------------------------------------------------------------------ selection lists (read from the game's own data)
+local function childNames(folder)              -- lists show the game's original (code) names
 	local out = {}
 	if folder then
 		for _, v in ipairs(folder:GetChildren()) do out[v.Name] = true end
@@ -3429,7 +3429,7 @@ local function buildLists()
 	local alljutsu = ReplicatedStorage:FindFirstChild("alljutsu")
 	local gui = mainGui()
 	local el, bl = {}, {}
-	if alljutsu then                               -- oyunun kendi işaretleri: ELEMENT / KG
+	if alljutsu then                               -- the game's own markers: ELEMENT / KG
 		for _, v in ipairs(alljutsu:GetChildren()) do
 			if v:FindFirstChild("ELEMENT") then el[v.Name] = true end
 			if v:FindFirstChild("KG") then bl[v.Name] = true end
@@ -3447,7 +3447,7 @@ local function buildLists()
 end
 local function count(map) local n = 0 for _ in pairs(map) do n += 1 end return n end
 local EMPTY = { "-" }
-local function sourceOf(key, code)              -- REALNAME'in okunacağı obje
+local function sourceOf(key, code)              -- object to read REALNAME from
 	local aj = ReplicatedStorage:FindFirstChild("alljutsu")
 	if not aj then return nil end
 	if key == "kenjutsu" then local f = aj:FindFirstChild("ALLKENSTYLES") return f and f:FindFirstChild(code) end
@@ -3455,7 +3455,7 @@ local function sourceOf(key, code)              -- REALNAME'in okunacağı obje
 	if key == "cloth" then return nil end
 	return aj:FindFirstChild(code)
 end
-local function itemsOf(key)                    -- alfabetik sıralı ad listesi (oyundaki gerçek isimler)
+local function itemsOf(key)                    -- alphabetically sorted name list (the game's display names)
 	local out = {}
 	for code in pairs(Lists[key] or {}) do out[#out + 1] = labelFor(code, sourceOf(key, code)) end
 	table.sort(out, function(a, b) return a:lower() < b:lower() end)
@@ -3536,7 +3536,7 @@ Tools:Paragraph({ Title = "Note", Content = "Lists show the game's real names. I
 ------------------------------------------------------------------ RC SHOP
 local Shop = Tabs.Loadout:Page("RC Shop")
 local ShopCard = Shop:Card({ Title = "Shop", Icon = "store" })
-ShopCard:Button({ Title = "Show RC Shop", Icon = "eye", Toggle = true, OnTitle = "Hide RC Shop", OnIcon = "eye-off",   -- Flag yok: açılışta mağaza kendiliğinden açılmasın
+ShopCard:Button({ Title = "Show RC Shop", Icon = "eye", Toggle = true, OnTitle = "Hide RC Shop", OnIcon = "eye-off",   -- no Flag: the shop must not open by itself on startup
 	Callback = function(on) setShopVisible(on) end })
 ShopCard:Button({ Title = "Show code names", Icon = "scan-search", Callback = showShopCodes })
 ShopCard:Button({ Title = "Refresh lists", Icon = "refresh-cw", Style = "Ghost", Callback = function() refreshLists(false) end })
@@ -3563,11 +3563,11 @@ for i = 1, 3 do
 	end })
 end
 
-task.delay(4, function() if HUB.Running then refreshLists(true) end end)    -- menü geç yüklenirse listeleri bir kez daha oku
+task.delay(4, function() if HUB.Running then refreshLists(true) end end)    -- if the menu loads late, read the lists once more
 end
 
------------------------------------------------------------------- kilit ikonu
--- Bağlı olduğu ayar kapalıyken satır grileşir; başlığın yanında sadece küçük bir kilit görünür (yazı yok).
+------------------------------------------------------------------ lock icon
+-- While the setting it depends on is off, the row is greyed out; only a small lock is shown next to the title (no text).
 do
 	local marks = {}
 	for _, el in pairs(Window.flags or {}) do
@@ -3600,7 +3600,7 @@ do
 	end)
 end
 
------------------------------------------------------------------- açılış
+------------------------------------------------------------------ startup
 Window:SettingsTab()
 Window.Config:LoadAutoLoad()
 for _, fn in ipairs(HUB.AfterAutoLoad or {}) do pcall(fn) end
