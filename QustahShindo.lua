@@ -1,5 +1,5 @@
 --[[
-    Qustāh · Shindo Life  ·  V1.36
+    Qustāh · Shindo Life  ·  V1.37
     UI: qustah-ui-lib · sadece Shindo Life'ta açılır (GameId kontrolü)
 
     Sekmeler: Dashboard · Farm · Spin · Combat · Visuals · Player · Teleport · Loadout · Server · Settings
@@ -397,7 +397,7 @@ end
 ------------------------------------------------------------------ PENCERE
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.36",
+	Version = "V1.37",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -1531,7 +1531,7 @@ do
 -- Her biri açılınca kurulur, kapanınca bütün bağlantıları kopar. Aynı scriptler tek başına da çalıştırıldıysa
 -- (getgenv().AlwaysRunStop / fv / puppetdash / WiderDashStop) önce onlar durdurulur, iki kopya çalışmasın.
 local Move = {}
-local MoveCfg = { PuppetSpeed = 200, PuppetLimit = 5, PuppetGap = 0.3, DashSpeed = 125 }
+local MoveCfg = { PuppetSpeed = 200, PuppetLimit = 5, PuppetGap = 0.3, DashSpeed = 125, Fov = nil }
 local genv = (getgenv and getgenv()) or _G
 
 -- Always Run: combat.run hep açık
@@ -1567,7 +1567,8 @@ function Move.alwaysRun()
     return function() a:Disconnect() b:Disconnect() clear() end
 end
 
--- Fly FOV: flyjutsu açıkken (ve kapandıktan sonraki 1.2 sn tween boyunca) kamera FOV'u değişmesin
+-- FOV: slider'daki değer uygulanır; flyjutsu açıkken (ve kapandıktan sonraki 1.2 sn tween boyunca) oyun FOV'u değiştiremez.
+-- Hub açıkken hep çalışır (ayrı toggle yok).
 function Move.flyFov()
     if type(genv.fv) == "function" then genv.fv() end
     local p = LocalPlayer
@@ -1597,13 +1598,13 @@ function Move.flyFov()
         if cameraConnection then cameraConnection:Disconnect() end
         camera = workspace.CurrentCamera
         if not camera then return end
-        if not locked or saved == nil then saved = camera.FieldOfView end
+        if not locked or saved == nil then saved = MoveCfg.Fov or camera.FieldOfView end
         cameraConnection = camera:GetPropertyChangedSignal("FieldOfView"):Connect(enforce)
         enforce()
     end
     local function begin()
         revision = revision + 1
-        if not locked then saved = camera and camera.FieldOfView or nil end
+        if not locked then saved = MoveCfg.Fov or (camera and camera.FieldOfView) or nil end
         locked = true
         enforce()
     end
@@ -1637,7 +1638,13 @@ function Move.flyFov()
     connections[1] = workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindCamera)
     connections[2] = p.CharacterAdded:Connect(bindCharacter)
     if p.Character then bindCharacter(p.Character) end
+    Move.setFov = function(v)                                       -- slider: hemen uygula, uçarken de bu değer korunur
+        MoveCfg.Fov = v
+        saved = v
+        if camera then writing = true camera.FieldOfView = v writing = false end
+    end
     return function()
+        Move.setFov = nil
         alive = false
         revision = revision + 1
         locked = false
@@ -1892,26 +1899,28 @@ end
 HUB.MoveStops = moveStops                                           -- testler için
 
 local MV = Tabs.Movement
+moveStops.flyFov = Move.flyFov()                                    -- FOV koruması hep açık
+
 local Basic = MV:Card({ Title = "Movement", Icon = "footprints" })
 Basic:Toggle({ Title = "Always run", Flag = "mv_run", Default = false, Callback = moveToggle("alwaysRun") })
 Basic:Toggle({ Title = "NoClip", Icon = "ghost", Flag = "p_noclip", Default = false, Bind = Enum.KeyCode.N, Bindable = true, Callback = set("NoClip") })
-Basic:Toggle({ Title = "Click TP", Desc = "Ctrl + left click", Flag = "p_clicktp", Default = false, Callback = set("ClickTP") })
+Basic:Toggle({ Title = "Click TP", Flag = "p_clicktp", Default = false, Callback = set("ClickTP") })
 
 local Puppet = MV:Card({ Title = "Puppet", Icon = "zap", Side = "Right" })
-Puppet:Toggle({ Title = "Puppet boost", Desc = "Extra directional air jumps (puppet race)", Flag = "mv_puppet", Default = false, Callback = moveToggle("puppet") })
+Puppet:Toggle({ Title = "Puppet boost", Flag = "mv_puppet", Default = false, Callback = moveToggle("puppet") })
 Puppet:Slider({ Title = "Speed", Flag = "mv_puppetspeed", Min = 50, Max = 400, Default = 200, DependsOn = { Flag = "mv_puppet", Reason = "" },
     Callback = function(v) MoveCfg.PuppetSpeed = v end })
 Puppet:Slider({ Title = "Count", Flag = "mv_puppetcount", Min = 2, Max = 10, Default = 5, DependsOn = { Flag = "mv_puppet", Reason = "" },
     Callback = function(v) MoveCfg.PuppetLimit = v end })
-Puppet:Slider({ Title = "Gap", Flag = "mv_puppetgap", Min = 0.1, Max = 1, Step = 0.05, Default = 0.3, Suffix = " s", DependsOn = { Flag = "mv_puppet", Reason = "" },
-    Callback = function(v) MoveCfg.PuppetGap = v end })
 
 local Cam = MV:Card({ Title = "Camera", Icon = "camera" })
-Cam:Toggle({ Title = "Lock FOV while flying", Desc = "Fly jutsu doesn't change your FOV", Flag = "mv_flyfov", Default = false, Callback = moveToggle("flyFov") })
+Cam:Slider({ Title = "FOV", Flag = "mv_fov", Min = 30, Max = 120, Default = 70, Callback = function(v)
+    if Move.setFov then Move.setFov(v) else MoveCfg.Fov = v end
+end })
 Cam:Toggle({ Title = "Unlock zoom", Flag = "p_zoom", Default = false, Callback = set("UnlockZoom") })
 
 local Dash = MV:Card({ Title = "Wider dash", Icon = "wind", Side = "Right" })
-Dash:Toggle({ Title = "Wider dash", Desc = "Hold right click for a normal dash", Flag = "mv_dash", Default = false, Callback = moveToggle("widerDash") })
+Dash:Toggle({ Title = "Wider dash", Flag = "mv_dash", Default = false, Callback = moveToggle("widerDash") })
 Dash:Slider({ Title = "Speed", Flag = "mv_dashspeed", Min = 50, Max = 300, Default = 125, Suffix = " studs/s", DependsOn = { Flag = "mv_dash", Reason = "" },
     Callback = function(v) MoveCfg.DashSpeed = v end })
 
