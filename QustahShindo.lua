@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.51
+-- Qustāh · Shindo Life · V1.52
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -391,7 +391,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.51",
+	Version = "V1.52",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -412,14 +412,14 @@ local Tabs = {
 	Spin = Window:Tab({ Title = "Spin", Icon = "dices" }),
 	Combat = Window:Tab({ Title = "Combat", Icon = "crosshair" }),
 	Visuals = Window:Tab({ Title = "Visuals", Icon = "eye" }),
-	Player = Window:Tab({ Title = "Player", Icon = "person-standing" }),
-	Teleport = Window:Tab({ Title = "Teleport", Icon = "map-pin" }),
+	Player = Window:Tab({ Title = "Player", Icon = "user-round-cog" }),
 	Loadout = Window:Tab({ Title = "Loadout", Icon = "dna" }),
 	Server = Window:Tab({ Title = "Server", Icon = "server" }),
 }
--- Player tab: two pages, Player (game features) and Movement
+-- Player tab: three pages, Player (game features), Movement and Teleports
 local playerPage = Tabs.Player:Page("Player")
 local movementPage = Tabs.Player:Page("Movement")
+local teleportsPage = Tabs.Player:Page("Teleports")
 
 if placeType == "tournament" then
 	Window:Notify({ Title = "Tournament", Content = "You are in tournament mode. Exploiting here can easily get you banned.", Icon = "triangle-alert", Color = "warning" })
@@ -3264,103 +3264,98 @@ local teleportData = {
     },
 }
 do
-	local teleportTab = Tabs.Teleport
-	local MapPage = teleportTab:Page("Map")
-	local ServerPage = teleportTab:Page("Servers")
-
-	local Places = MapPage:Card({ Title = "Locations", Icon = "map-pin", Desc = "This map's locations" })
+	-- Only what exists on the current map is shown: the Locations card needs saved spots for this place,
+	-- and each quick spot appears once its target is found (rechecked every few seconds, parts can stream in late).
 	local here = teleportData[game.PlaceId] or {}
 	local names, byName = {}, {}
 	for _, p in ipairs(here) do names[#names + 1] = p[1] byName[p[1]] = p end
-	local chosen
-	Places:Dropdown({ Title = "Location", Flag = "tp_loc", Items = #names > 0 and names or { "-" }, Search = true, Callback = function(v) chosen = v end })
-	Places:Button({ Title = "Teleport", Icon = "map-pin", Style = "Primary", Callback = function()
-		local p = byName[chosen or ""]
-		if p then tpTo(CFrame.new(p[2], p[3], p[4])) else notify("Teleport", "Pick one from the list first", "list", "warning") end
-	end })
-	if #names == 0 then Places:Paragraph({ Title = "Note", Content = "No saved locations for this map. Use the quick spots on the right." }) end
-
-	local Quick = MapPage:Card({ Title = "Quick", Icon = "zap", Side = "Right" })
-	local function quick(title, icon, fn)
-		Quick:Button({ Title = title, Icon = icon, Align = "Left", Callback = function()
-			local ok = fn()
-			if not ok then notify("Teleport", title .. " is not on this map", "triangle-alert", "warning") end
-		end })
-	end
-	quick("Spawn", "house", function()
-		local sp = workspace:FindFirstChild("SpawnLocation")
-		if sp then tpTo(sp.CFrame + Vector3.new(0, 3, 0)) return true end
-	end)
-	quick("Duel pads", "swords", function()
-		local d = workspace:FindFirstChild("map2") and workspace.map2:FindFirstChild("duel")
-		local pad = d and d:FindFirstChild("pad", true)
-		if pad and not pad:IsA("BasePart") then pad = pad:FindFirstChildWhichIsA("BasePart", true) end
-		if pad then tpTo(pad.CFrame + Vector3.new(0, 3, 0)) return true end
-	end)
-	quick("Ramen", "soup", function()
-		local r = workspace:FindFirstChild("EAT") and workspace.EAT:FindFirstChild("Ramen")
-		local part = r and (r:IsA("BasePart") and r or r:FindFirstChildWhichIsA("BasePart", true))
-		if part then tpTo(part.CFrame + Vector3.new(0, 3, 0)) return true end
-	end)
-	quick("Mentor", "graduation-cap", function()
-		local s = workspace:FindFirstChild("sensei")
-		local g = s and s:FindFirstChild("missions") and s.missions:GetChildren()[1]
-		local hrp = g and g:FindFirstChild("missiongiver") and g.missiongiver:FindFirstChild("HumanoidRootPart")
-		if hrp then tpTo(hrp.CFrame + Vector3.new(0, 0, 4)) return true end
-		local ken = workspace:FindFirstChild("Ken Mentor")
-		if ken and ken:FindFirstChild("HumanoidRootPart") then tpTo(ken.HumanoidRootPart.CFrame + Vector3.new(-6, 4, 0)) return true end
-	end)
-	quick("Susanoo customizer", "sparkles", function()
-		local s = workspace:FindFirstChild("Susanoo Customizer")
-		local part = s and (s:FindFirstChild("HumanoidRootPart") or s:FindFirstChildWhichIsA("BasePart", true))
-		if part then tpTo(part.CFrame + Vector3.new(0, 3, 4)) return true end
-	end)
-
-	local Afk = MapPage:Card({ Title = "AFK (My Home)", Icon = "bed", Side = "Right" })
-	local function apartment()
-		local map = workspace:FindFirstChild("map")
-		return map and map:FindFirstChild(LocalPlayer.Name .. "apartment")
-	end
-	local afkSpots = { { "Bed", "afkreward" }, { "Ramen", "Ramen" } }
-	for _, a in ipairs(afkSpots) do
-		Afk:Button({ Title = a[1], Icon = a[1] == "Bed" and "bed" or "soup", Align = "Left", Callback = function()
-			local ap = apartment()
-			local part = ap and ap:FindFirstChild(a[2])
-			if part then tpTo(part.CFrame) else notify("AFK", "Only in My Home", "triangle-alert", "warning") end
-		end })
-	end
-	local seatRow = Afk:Row({ Gap = 4 })
-	for i = 1, 4 do
-		seatRow:Button({ Title = "Seat " .. i, Size = "Small", Callback = function()
-			local ap = apartment()
-			local model = ap and ap:FindFirstChild("Model")
-			local seats = {}
-			if model then for _, s in ipairs(model:GetChildren()) do if s:IsA("Seat") then seats[#seats + 1] = s end end end
-			if seats[i] then tpTo(seats[i].CFrame) else notify("AFK", "Seat not found (are you in My Home?)", "triangle-alert", "warning") end
+	if #names > 0 then
+		local places = teleportsPage:Card({ Title = "Locations", Icon = "map-pin", Desc = "This map's locations" })
+		local chosen
+		places:Dropdown({ Title = "Location", Flag = "tp_loc", Items = names, Search = true, Callback = function(v) chosen = v end })
+		places:Button({ Title = "Teleport", Icon = "map-pin", Style = "Primary", Callback = function()
+			local p = byName[chosen or ""]
+			if p then tpTo(CFrame.new(p[2], p[3], p[4])) else notify("Teleport", "Pick one from the list first", "list", "warning") end
 		end })
 	end
 
-	local mapCard = ServerPage:Card({ Title = "Map teleport", Icon = "map", Desc = "From the menu's map list" })
-	local maps = {}
-	pcall(function()
-		for _, v in ipairs(mainGui().ingame.Menu.ArenaTab.List:GetChildren()) do
-			if v:FindFirstChild("place") then maps[#maps + 1] = v.Name end
+	-- each spot returns the CFrame to teleport to, or nil when it is not on this map
+	local spots = {
+		{ "Spawn", "house", function()
+			local sp = workspace:FindFirstChild("SpawnLocation")
+			return sp and sp.CFrame + Vector3.new(0, 3, 0)
+		end },
+		{ "Duel pads", "swords", function()
+			local d = workspace:FindFirstChild("map2") and workspace.map2:FindFirstChild("duel")
+			local pad = d and d:FindFirstChild("pad", true)
+			if pad and not pad:IsA("BasePart") then pad = pad:FindFirstChildWhichIsA("BasePart", true) end
+			return pad and pad.CFrame + Vector3.new(0, 3, 0)
+		end },
+		{ "Ramen", "soup", function()
+			local r = workspace:FindFirstChild("EAT") and workspace.EAT:FindFirstChild("Ramen")
+			local part = r and (r:IsA("BasePart") and r or r:FindFirstChildWhichIsA("BasePart", true))
+			return part and part.CFrame + Vector3.new(0, 3, 0)
+		end },
+		{ "Mentor", "graduation-cap", function()
+			local s = workspace:FindFirstChild("sensei")
+			local g = s and s:FindFirstChild("missions") and s.missions:GetChildren()[1]
+			local hrp = g and g:FindFirstChild("missiongiver") and g.missiongiver:FindFirstChild("HumanoidRootPart")
+			if hrp then return hrp.CFrame + Vector3.new(0, 0, 4) end
+			local ken = workspace:FindFirstChild("Ken Mentor")
+			return ken and ken:FindFirstChild("HumanoidRootPart") and ken.HumanoidRootPart.CFrame + Vector3.new(-6, 4, 0)
+		end },
+		{ "Susanoo customizer", "sparkles", function()
+			local s = workspace:FindFirstChild("Susanoo Customizer")
+			local part = s and (s:FindFirstChild("HumanoidRootPart") or s:FindFirstChildWhichIsA("BasePart", true))
+			return part and part.CFrame + Vector3.new(0, 3, 4)
+		end },
+	}
+	local quick = teleportsPage:Card({ Title = "Quick", Icon = "zap", Side = "Right" })
+	local buttons = {}
+	for _, spot in ipairs(spots) do
+		buttons[spot] = quick:Button({ Title = spot[1], Icon = spot[2], Align = "Left", Callback = function()
+			local ok, target = pcall(spot[3])
+			if ok and target then tpTo(target) else notify("Teleport", spot[1] .. " is not on this map", "triangle-alert", "warning") end
+		end })
+	end
+	local function refreshSpots()
+		local any = false
+		for spot, button in pairs(buttons) do
+			local ok, target = pcall(spot[3])
+			local found = ok and target ~= nil
+			button:SetVisible(found)
+			any = any or found
 		end
-		table.sort(maps)
-	end)
-	local mapPick
-	mapCard:Dropdown({ Title = "Map", Flag = "tp_map", Items = #maps > 0 and maps or { "-" }, Search = true, Callback = function(v) mapPick = v end })
-	mapCard:Button({ Title = "Teleport to map", Icon = "plane", Style = "Primary", Callback = function()
-		local ok, place = pcall(function() return mainGui().ingame.Menu.ArenaTab.List[mapPick].place.Value end)
-		if ok and place then fire("rpgteleport", place) else notify("Map teleport", "Pick one from the list first", "list", "warning") end
-	end })
-	local Priv = ServerPage:Card({ Title = "Private server", Icon = "lock", Side = "Right" })
-	local code = ""
-	Priv:Input({ Title = "Code", Placeholder = "private server code", Flag = "tp_pscode", Finished = false, Callback = function(t) code = t end })
-	Priv:Button({ Title = "Join private server", Icon = "log-in", Callback = function()
-		if code == "" then return notify("Private server", "Enter the code first", "triangle-alert", "warning") end
-		fire("teleporttoprivate", code)
-	end })
+		quick:SetVisible(any)
+	end
+	refreshSpots()
+	loop("Teleport spots", 5, refreshSpots)
+
+	-- AFK spots only exist in My Home
+	if placeType == "home" then
+		local afk = teleportsPage:Card({ Title = "AFK", Icon = "bed", Side = "Right" })
+		local function apartment()
+			local map = workspace:FindFirstChild("map")
+			return map and map:FindFirstChild(LocalPlayer.Name .. "apartment")
+		end
+		for _, a in ipairs({ { "Bed", "afkreward", "bed" }, { "Ramen", "Ramen", "soup" } }) do
+			afk:Button({ Title = a[1], Icon = a[3], Align = "Left", Callback = function()
+				local ap = apartment()
+				local part = ap and ap:FindFirstChild(a[2])
+				if part then tpTo(part.CFrame) else notify("AFK", a[1] .. " not found", "triangle-alert", "warning") end
+			end })
+		end
+		local seatRow = afk:Row({ Gap = 4 })
+		for i = 1, 4 do
+			seatRow:Button({ Title = "Seat " .. i, Size = "Small", Callback = function()
+				local ap = apartment()
+				local model = ap and ap:FindFirstChild("Model")
+				local seats = {}
+				if model then for _, s in ipairs(model:GetChildren()) do if s:IsA("Seat") then seats[#seats + 1] = s end end end
+				if seats[i] then tpTo(seats[i].CFrame) else notify("AFK", "Seat " .. i .. " not found", "triangle-alert", "warning") end
+			end })
+		end
+	end
 end
 
 ----- Loadout -----
