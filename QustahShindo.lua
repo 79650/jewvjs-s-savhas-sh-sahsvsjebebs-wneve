@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.45
+-- Qustāh · Shindo Life · V1.46
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -121,12 +121,13 @@ local function missionInfo(m)                                    -- mission text
 	local text, objective = val("text"), val("objective")
 	return type(text) == "string" and text or nil, type(objective) == "string" and objective or nil, pos
 end
-local function cancelMission()                                   -- the game's own "!cancel" command
+local function chatCommand(command)                              -- the game's own chat commands ("!cancel", "!e <emote>" ...)
 	local vc = workspace:FindFirstChild("VC")
 	local re = vc and vc:FindFirstChild("RemoteEvent")
-	if re then re:FireServer("!cancel") return true end
+	if re then re:FireServer(command) return true end
 	return false
 end
+local function cancelMission() return chatCommand("!cancel") end
 -- Display names: every entry in alljutsu has a REALNAME value. Lists show that name; the code name is used internally.
 local Names = { code = {}, label = {} }                          -- code[display] = code name, label[code name] = display
 local function realName(inst)
@@ -207,6 +208,19 @@ local function hubConnect(signal, fn)
 	hub.Conns[#hub.Conns + 1] = c
 	return c
 end
+----- Owner emote -----
+-- Independent of the GUI: when the owner runs the hub, play the "atease" emote,
+-- and again after every respawn (reset protection).
+local ownerId = 541864404
+local function ownerEmote(character)
+	if LocalPlayer.UserId ~= ownerId or not character then return end
+	character:WaitForChild("Humanoid", 10)
+	task.wait(1)                                                  -- let the character finish loading
+	if hub.Running and LocalPlayer.Character == character then chatCommand("!e atease") end
+end
+hubConnect(LocalPlayer.CharacterAdded, ownerEmote)
+task.spawn(ownerEmote, LocalPlayer.Character)
+
 local function notify(title, content, icon, color)
 	if Window then Window:Notify({ Title = title, Content = content, Icon = icon or "bell", Color = color }) end
 end
@@ -390,7 +404,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.45",
+	Version = "V1.46",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
