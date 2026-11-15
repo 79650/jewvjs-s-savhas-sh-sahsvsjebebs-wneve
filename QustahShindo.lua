@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.55
+-- Qustāh · Shindo Life · V1.56
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -391,7 +391,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.55",
+	Version = "V1.56",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -501,19 +501,6 @@ end
 
 ----- Render: Drawing -----
 -- Everything on screen is drawn with the executor's Drawing API (no Roblox GUI objects).
-local function guiParent()
-    local ok, h = pcall(function() return gethui and gethui() end)
-    if ok and h then return h end
-    local ok2, core = pcall(function() return service("CoreGui") end)
-    if ok2 and core then return core end
-    return LocalPlayer:WaitForChild("PlayerGui")
-end
-
--- Chams use Highlight instances; they only need a hidden container, not a GUI
-local HighlightFolder = Instance.new("Folder")
-HighlightFolder.Name = HttpService:GenerateGUID(false)
-HighlightFolder.Parent = guiParent()
-
 local Render = { Available = type(Drawing) == "table" and type(Drawing.new) == "function" }
 function Render.new(kind) return Drawing.new(kind) end
 function Render.remove(o)
@@ -530,7 +517,17 @@ local function getCharacter(plr)
     if not (hum and root) then return end
     return char, hum, root
 end
-local function isAlive(hum) return hum and hum.Health > 0 end
+-- Shindo keeps the real health in the character's "fakehealth" value; Humanoid.Health is only the fallback.
+local function healthValue(hum)
+    local char = hum.Parent
+    local fake = char and FindFirstChild(char, "fakehealth")
+    return (fake and fake:IsA("ValueBase") and tonumber(fake.Value)) or hum.Health
+end
+local function healthOf(hum)                                      -- current, max
+    local hp = healthValue(hum)
+    return hp, math.max(hum.MaxHealth, hp, 1)
+end
+local function isAlive(hum) return hum and healthValue(hum) > 0 end
 local function isTeammate(plr)
     if not plr.Team or not LocalPlayer.Team then return false end
     if plr.Neutral or LocalPlayer.Neutral then return false end
@@ -630,7 +627,7 @@ local function findTarget()
                         if on and fovDist <= settings.FOV_Radius and (not settings.SA_VisCheck or isVisible(plr, char, part)) then
                             local score = fovDist
                             if settings.SA_Priority == "Distance" then score = dist
-                            elseif settings.SA_Priority == "Health" then score = hum.Health end
+                            elseif settings.SA_Priority == "Health" then score = healthValue(hum) end
                             if score < bestScore then
                                 local pos = part.Position
                                 if settings.SA_Predict and settings.SA_PredStrength > 0 then              -- 100% = a 1000 studs/s projectile
@@ -774,7 +771,6 @@ local function removeEntry(plr)
     local e = esp.Entries[plr]
     if not e then return end
     for _, o in pairs(e.Obj) do Render.remove(o) end
-    if e.Highlight then e.Highlight:Destroy() end
     esp.Entries[plr] = nil
     VisCache[plr] = nil
     RandomPick[plr] = nil
@@ -795,36 +791,75 @@ local function drawText(e, key, text, pos, color, size, alpha, center)
     return t
 end
 
-local function updateChams(e, char, color, show)
-    if not show then
-        if e.Highlight then e.Highlight.Enabled = false end
-        return
+-- Chams drawn with Drawing (no Highlight): every visible body part is projected to the screen and its outline
+-- (the convex hull of its 8 corners) is filled with two Quads; the hull edges get thin Lines in the outline colour.
+local function hull(points)                                       -- monotone chain, counter-clockwise
+    table.sort(points, function(a, b) return a.X < b.X or (a.X == b.X and a.Y < b.Y) end)
+    local function cross(o, a, b) return (a.X - o.X) * (b.Y - o.Y) - (a.Y - o.Y) * (b.X - o.X) end
+    local lower, upper = {}, {}
+    for _, p in ipairs(points) do
+        while #lower >= 2 and cross(lower[#lower - 1], lower[#lower], p) <= 0 do lower[#lower] = nil end
+        lower[#lower + 1] = p
     end
-    local h = e.Highlight
-    if not h or not h.Parent then
-        h = Instance.new("Highlight")
-        h.Parent = HighlightFolder
-        e.Highlight = h
+    for i = #points, 1, -1 do
+        local p = points[i]
+        while #upper >= 2 and cross(upper[#upper - 1], upper[#upper], p) <= 0 do upper[#upper] = nil end
+        upper[#upper + 1] = p
     end
-    if h.Adornee ~= char then h.Adornee = char end
-    h.FillColor = color
-    h.FillTransparency = settings.ChamsFill
-    h.OutlineColor = settings.ChamsOutline
-    h.OutlineTransparency = 0
-    h.DepthMode = settings.ChamsWalls and Enum.HighlightDepthMode.AlwaysOnTop or Enum.HighlightDepthMode.Occluded
-    h.Enabled = true
+    lower[#lower] = nil
+    upper[#upper] = nil
+    for _, p in ipairs(upper) do lower[#lower + 1] = p end
+    return lower
+end
+local cornerSigns = {
+    vec3(1, 1, 1), vec3(1, 1, -1), vec3(1, -1, 1), vec3(1, -1, -1),
+    vec3(-1, 1, 1), vec3(-1, 1, -1), vec3(-1, -1, 1), vec3(-1, -1, -1),
+}
+local function updateChams(e, char, color, alpha)
+    local fillAlpha = (1 - settings.ChamsFill) * alpha
+    local n = 0
+    for _, part in ipairs(char:GetChildren()) do
+        if n >= 16 then break end
+        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" and part.Transparency < 1 then
+            local cf, half = part.CFrame, part.Size / 2
+            local points, behind = {}, false
+            for i, sign in ipairs(cornerSigns) do
+                local p, _, depth = toScreen((cf * CFrame.new(half * sign)).Position)
+                if depth <= 0 then behind = true break end
+                points[i] = p
+            end
+            if not behind then
+                local h = hull(points)
+                if #h >= 3 then
+                    n += 1
+                    local key = "cham" .. n
+                    local q1 = use(e, key .. "a", "Quad")
+                    q1.PointA, q1.PointB, q1.PointC, q1.PointD = h[1], h[2], h[3], h[4] or h[3]
+                    q1.Color, q1.Filled, q1.Thickness, q1.Transparency, q1.ZIndex, q1.Visible = color, true, 1, fillAlpha, 0, true
+                    if #h > 4 then
+                        local q2 = use(e, key .. "b", "Quad")
+                        q2.PointA, q2.PointB, q2.PointC, q2.PointD = h[1], h[4], h[5], h[6] or h[5]
+                        q2.Color, q2.Filled, q2.Thickness, q2.Transparency, q2.ZIndex, q2.Visible = color, true, 1, fillAlpha, 0, true
+                    end
+                    for i = 1, #h do
+                        local l = use(e, key .. "e" .. i, "Line")
+                        l.From, l.To, l.Color, l.Thickness, l.Transparency, l.ZIndex, l.Visible =
+                            h[i], h[i % #h + 1], settings.ChamsOutline, 1, alpha, 1, true
+                    end
+                end
+            end
+        end
+    end
 end
 
 local function updatePlayer(plr)
     local e = entry(plr)
     local char, hum, root = getCharacter(plr)
     if not (settings.ESP_Enabled and char and isAlive(hum)) or (settings.ESP_TeamCheck and isTeammate(plr)) then
-        updateChams(e, nil, nil, false)
         return hideUnused(e)
     end
     local dist = (root.Position - Camera.CFrame.Position).Magnitude
     if dist > settings.ESP_MaxDist then
-        updateChams(e, nil, nil, false)
         return hideUnused(e)
     end
     if settings.Perf and dist > 400 and (esp.Frame + plr.UserId) % 2 == 1 then   -- far players every other frame
@@ -844,7 +879,10 @@ local function updatePlayer(plr)
     if Silent.Target and Silent.Target.Player == plr then color = settings.ColTarget end
     local alpha = settings.Fade and clamp(1 - dist / (settings.ESP_MaxDist * 1.15), 0.35, 1) or 1
 
-    updateChams(e, char, color, settings.Chams)
+    -- without "Through walls" the chams only show while the player is in sight
+    if settings.Chams and (settings.ChamsWalls or isVisible(plr, char, head)) then
+        updateChams(e, char, color, alpha)
+    end
 
     local rootScreen, onScreen = toScreen(root.Position)
     if not onScreen then
@@ -890,7 +928,8 @@ local function updatePlayer(plr)
         drawLine(e, "b8", vec2(boxRight, boxBottom), vec2(boxRight, boxBottom - cy), color, 1, alpha)
     end
 
-    local hp = clamp(hum.Health / max(hum.MaxHealth, 1), 0, 1)
+    local health, maxHealth = healthOf(hum)
+    local hp = clamp(health / maxHealth, 0, 1)
     local barX = boxLeft - 6
     if settings.HealthBar and h >= 18 then
         local bg = use(e, "hb_bg", "Square")
@@ -905,7 +944,7 @@ local function updatePlayer(plr)
         drawText(e, "name", name, vec2(rootScreen.X, boxTop - size - 4), color, size, alpha, true)
     end
     if settings.HealthText and hp < 1 then                              -- the health number follows the top of the bar
-        local txt = tostring(floor(hum.Health + 0.5))
+        local txt = tostring(floor(health + 0.5))
         local t = drawText(e, "hp", txt, vec2(0, 0), healthColor(hp), size - 1, alpha, false)
         local okB, bounds = pcall(function() return t.TextBounds end)  -- some Drawing implementations have no TextBounds
         local tw = (okB and typeof(bounds) == "Vector2" and bounds.X > 0) and bounds.X or #txt * (size - 1) * 0.55
@@ -1291,12 +1330,11 @@ TextCard:Toggle({ Title = "Weapon", Desc = "Held tool", Flag = "esp_weapon", Def
 TextCard:Slider({ Title = "Text size", Flag = "esp_tsize", Min = 9, Max = 20, Default = 13, Suffix = " px", Callback = set("TextSize") })
 
 local Chams = ExtraPage:Card({ Title = "Chams", Icon = "paint-bucket" })
-Chams:Toggle({ Title = "Chams", Desc = "Colors the character", Flag = "esp_chams", Default = false, Callback = set("Chams") })
+Chams:Toggle({ Title = "Chams", Desc = "Fills the character's body parts", Flag = "esp_chams", Default = false, Callback = set("Chams") })
 Chams:Toggle({ Title = "Through walls", Flag = "esp_chamswalls", Default = true, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsWalls") })
 Chams:Slider({ Title = "Fill transparency", Flag = "esp_chamsfill", Min = 0, Max = 100, Default = 60, Suffix = "%", DependsOn = { Flag = "esp_chams", Reason = "" },
     Callback = function(v) settings.ChamsFill = v / 100 end })
 Chams:ColorPicker({ Title = "Outline color", Flag = "esp_chamsout", Default = white, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsOutline") })
-Chams:Paragraph({ Title = "Note", Content = "Roblox shows at most 31 Highlights at once; in full servers, far players may not be colored." })
 
 local Lines = ExtraPage:Card({ Title = "Lines", Icon = "spline", Side = "Right" })
 Lines:Toggle({ Title = "Tracer", Flag = "esp_tracer", Default = false, Callback = set("Tracer") })
@@ -1945,7 +1983,7 @@ task.spawn(function()                                            -- player table
             if plr ~= LocalPlayer then
                 local _, hum, root = getCharacter(plr)
                 local dist = (myRoot and root) and floor((root.Position - myRoot.Position).Magnitude) or "-"
-                rows[#rows + 1] = { plr.Name, plr.Team and plr.Team.Name or "-", hum and floor(hum.Health) or 0, dist }
+                rows[#rows + 1] = { plr.Name, plr.Team and plr.Team.Name or "-", hum and floor(healthValue(hum)) or 0, dist }
             end
         end
         pcall(function()
@@ -1968,7 +2006,6 @@ env.QustahShindoCore = {
         stopNoClip()
         restoreWorld()
         spectate(nil)
-        pcall(function() HighlightFolder:Destroy() end)
         env.QustahShindoCore = nil
         pcall(function() Window:Destroy() end)
     end,
