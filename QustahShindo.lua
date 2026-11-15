@@ -1,9 +1,4 @@
---[[
-    Qustāh · Shindo Life  ·  V1.43
-    UI: qustah-ui-lib · loads only in Shindo Life (GameId check)
-
-    Tabs: Dashboard · Farm · Spin · Combat · Visuals · Movement · Player · Teleport · Loadout · Server · Settings
-]]
+-- Qustāh · Shindo Life · V1.44
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local SCRIPT_URL = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -395,7 +390,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.43",
+	Version = "V1.44",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
