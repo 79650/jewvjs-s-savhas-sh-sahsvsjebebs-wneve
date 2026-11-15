@@ -1,5 +1,5 @@
 --[[
-    Qustāh · Shindo Life  ·  V1.26
+    Qustāh · Shindo Life  ·  V1.27
     UI: qustah-ui-lib · sadece Shindo Life'ta açılır (GameId kontrolü)
 
     Sekmeler: Dashboard · Farm · Spin · Combat · Visuals · Player · Teleport · Loadout · Server · Settings
@@ -318,25 +318,10 @@ local function goSafe(giver)
 	if r and not onSafePart(r, part) then tpTo(safeStandCF(part)) r.AssemblyLinearVelocity = Vector3.zero end
 	return true
 end
--- Oyunun kendi su üstünde yürüme parçası (Camera.waterwalk, 4x0.5x4, çarpışmalı). Güvenli zemindeyken ayağının altına
--- girip seni itmesin diye orada çarpışması kapatılır, zeminden çıkınca eski haline döner.
-local waterwalkOff
-local function setWaterwalk(off)
-	local cam = workspace.CurrentCamera
-	local ww = cam and cam:FindFirstChild("waterwalk")
-	if off then
-		if ww and ww:IsA("BasePart") and ww.CanCollide then ww.CanCollide = false waterwalkOff = ww end
-	elseif waterwalkOff then
-		pcall(function() if waterwalkOff.Parent then waterwalkOff.CanCollide = true end end)
-		waterwalkOff = nil
-	end
-end
 local function leaveSafe()
 	platformFixed = nil
-	setWaterwalk(false)
 	if SafePart then SafePart:Destroy() SafePart = nil end
 end
-table.insert(HUB.Cleanup, function() setWaterwalk(false) end)
 -- Kaymayı önle: güvenli zeminde tuşa basmıyorsan yatay hızın sıfırlanır (ışınlanmadan kalan ivme vb.)
 hubConnect(RunService.Heartbeat, function()
 	if not SafePart then return end
@@ -344,7 +329,6 @@ hubConnect(RunService.Heartbeat, function()
 	local r = c and c:FindFirstChild("HumanoidRootPart")
 	local h = c and c:FindFirstChildOfClass("Humanoid")
 	if not (r and h and onSafePart(r, SafePart)) then return end
-	setWaterwalk(true)
 	if h.MoveDirection.Magnitude < 0.05 then
 		local v = r.AssemblyLinearVelocity
 		if math.abs(v.X) + math.abs(v.Z) > 0.1 then r.AssemblyLinearVelocity = Vector3.new(0, v.Y, 0) end
@@ -384,7 +368,7 @@ end
 ------------------------------------------------------------------ PENCERE
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.26",
+	Version = "V1.27",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
