@@ -1,5 +1,5 @@
 --[[
-    Qustāh · Shindo Life  ·  V1.42
+    Qustāh · Shindo Life  ·  V1.43
     UI: qustah-ui-lib · loads only in Shindo Life (GameId check)
 
     Tabs: Dashboard · Farm · Spin · Combat · Visuals · Movement · Player · Teleport · Loadout · Server · Settings
@@ -28,7 +28,7 @@ local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
------------------------------------------------------------------- places
+----- Places -----
 local PLACE = {
 	MAIN_MENU = 4616652839, MY_HOME = 5451410109, DUNGEON_SELECT = 7524809704, TOURNAMENT = 6602058266,
 }
@@ -75,7 +75,7 @@ local function queueHub()                                       -- re-open the h
 	hubQueued = ok and result ~= false
 end
 
------------------------------------------------------------------- shared helpers
+----- Shared helpers -----
 local function statz() return LocalPlayer:FindFirstChild("statz") end
 local function mainGui() return LocalPlayer.PlayerGui:FindFirstChild("Main") end
 local function character() return LocalPlayer.Character end
@@ -392,10 +392,10 @@ local function attackNPC(v)
 	HUB.AuraTarget = v                                           -- let the kill aura hit the farm's current target
 end
 
------------------------------------------------------------------- WINDOW
+----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.42",
+	Version = "V1.43",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -426,9 +426,9 @@ if KIND == "tournament" then
 	Window:Notify({ Title = "Tournament", Content = "You are in tournament mode. Exploiting here can easily get you banned.", Icon = "triangle-alert", Color = "warning" })
 end
 
------------------------------------------------------------------- UNIVERSAL (Silent Aim · ESP · World · Player · Server)
+----- Universal: Silent Aim · ESP · World · Player · Server -----
 do
------------------------------------------------------------------------- services
+----- Services -----
 local function service(name)
     local s = game:GetService(name)
     return (cloneref and cloneref(s)) or s
@@ -464,7 +464,7 @@ local V2, V3, CF, C3 = Vector2.new, Vector3.new, CFrame.new, Color3.new
 local floor, clamp, max, min, rad, tan = math.floor, math.clamp, math.max, math.min, math.rad, math.tan
 local BLACK, WHITE = C3(0, 0, 0), C3(1, 1, 1)
 
------------------------------------------------------------------------- settings (filled in by the UI callbacks)
+----- Settings -----
 local S = {
     -- silent aim
     SA_Enabled = false, SA_HitChance = 100, SA_Part = "Head", SA_Priority = "Mouse",
@@ -499,7 +499,7 @@ local function toSet(list)
     return out
 end
 
------------------------------------------------------------------------- Render: Roblox GUI
+----- Render: Roblox GUI -----
 local function guiParent()
     local ok, h = pcall(function() return gethui and gethui() end)
     if ok and h then return h end
@@ -705,7 +705,7 @@ function Render.flush()
     end
 end
 
------------------------------------------------------------------------- helpers
+----- Helpers -----
 local function getCharacter(plr)
     local char = plr and plr.Character
     if not char then return end
@@ -756,7 +756,7 @@ local function isVisible(plr, char, part)
     return visible
 end
 
------------------------------------------------------------------------- Silent Aim: target selection
+----- Silent Aim: target selection -----
 local Silent = { Target = nil, Hooked = false, IndexHooked = false }
 local CanHook = typeof(hookmetamethod) == "function" and typeof(getnamecallmethod) == "function" and typeof(checkcaller) == "function"
 local RandomPick = {}
@@ -915,7 +915,7 @@ local function installIndexHook()                                -- Mouse.Hit / 
     return true
 end
 
------------------------------------------------------------------------- ESP
+----- ESP -----
 local ESP = { Entries = {}, Frame = 0 }
 local SKELETON_R15 = {
     { "Head", "UpperTorso" }, { "UpperTorso", "LowerTorso" },
@@ -1161,7 +1161,7 @@ local function updateGlobal()
     hideUnused(Global)
 end
 
------------------------------------------------------------------------- World (Lighting)
+----- World (Lighting) -----
 local WorldOriginal = {}
 local Atmospheres = setmetatable({}, { __mode = "k" })
 local function worldProperty(key, wanted)
@@ -1207,7 +1207,7 @@ local function updateWorld()
     fogDensity(S.NoFog)
 end
 
------------------------------------------------------------------------- Player (movement)
+----- Player (movement) -----
 local NoClipParts = {}
 local function stopNoClip()
     for part, was in pairs(NoClipParts) do
@@ -1303,7 +1303,7 @@ local function spectate(plr)
     if hum and Camera then Camera.CameraSubject = hum end
 end
 
------------------------------------------------------------------------- Server
+----- Server -----
 
 local function rejoin()
     if #Players:GetPlayers() <= 1 then
@@ -1358,8 +1358,7 @@ local function checkStaff(plr)
     end)
 end
 
------------------------------------------------------------------------- WINDOW
------------------------------------------------------------------------- COMBAT
+----- Combat -----
 do
 local Combat = Tabs.Combat
 local Aim = Combat:Card({ Title = "Silent Aim", Icon = "target", Desc = "Redirects your shots to the target without moving the camera" })
@@ -1438,7 +1437,7 @@ fovPreview = PreviewCard:FovPreview({ Height = 140 })
 refreshFov()
 end
 
------------------------------------------------------------------------- VISUALS
+----- Visuals -----
 do
 local Visuals = Tabs.Visuals
 local EspPage = Visuals:Page("ESP")
@@ -1506,7 +1505,7 @@ Filters:Toggle({ Title = "Visibility color", Desc = "Different color behind wall
 Filters:Toggle({ Title = "Fade with distance", Flag = "esp_fade", Default = true, Callback = set("Fade") })
 Filters:Toggle({ Title = "Performance mode", Desc = "Draw players 400+ studs away every other frame", Flag = "esp_perf", Default = false, Callback = set("Perf") })
 
------------------------------------------------------------------------- WORLD
+----- World -----
 local World = Visuals:Page("World")
 local Light = World:Card({ Title = "Lighting", Icon = "lightbulb" })
 Light:Toggle({ Title = "Fullbright", Flag = "w_fullbright", Default = false, Callback = set("Fullbright") })
@@ -1523,9 +1522,8 @@ TimeCard:Button({ Title = "Restore lighting", Icon = "rotate-ccw", Style = "Ghos
 end })
 end
 
------------------------------------------------------------------------- PLAYER
+----- Movement -----
 do
------------------------------------------------------------------- MOVEMENT (sources provided by the user: Always Run · Fly FOV · Puppet · Wider dash)
 -- Each feature is set up when switched on and drops all of its connections when switched off. If the same scripts were also
 -- run on their own (getgenv().AlwaysRunStop / fv / puppetdash / WiderDashStop), those are stopped first so two copies never run.
 local Move = {}
@@ -1922,7 +1920,7 @@ Dash:Toggle({ Title = "Wider dash", Flag = "mv_dash", Default = false, Callback 
 Dash:Slider({ Title = "Speed", Flag = "mv_dashspeed", Min = 50, Max = 300, Default = 125, Suffix = " studs/s", DependsOn = { Flag = "mv_dash", Reason = "" },
     Callback = function(v) MoveCfg.DashSpeed = v end })
 
------------------------------------------------------------------------- PLAYER (general part; the Shindo cards are added to the same page below)
+----- Player: general -----
 local PlayerMisc = Tabs.Player:Card({ Title = "Misc", Icon = "wand-sparkles", Side = "Right" })
 PlayerMisc:Toggle({ Title = "Anti-AFK", Desc = "Prevents the 20 minute idle kick", Flag = "p_antiafk", Default = true, Callback = set("AntiAfk") })
 
@@ -1937,7 +1935,7 @@ specRow:Button({ Title = "Stop", Icon = "square", Style = "Ghost", Callback = fu
 HUB.PlayerLateCards = { PlayerMisc, Spec }                          -- moved below the Shindo cards
 end
 
------------------------------------------------------------------------- SERVER
+----- Server -----
 -- Layout C: server browser on the left (fill bar + ping + one-click Join), Options and Job ID on the right.
 local Server = Tabs.Server
 local SrvCard = Server:Card({ Title = "Servers", Icon = "server", Desc = "Pick by player count and ping" })
@@ -2073,7 +2071,7 @@ local playerTable = PlayersCard:Table({ Height = 150, Search = true,
         if plr then spectate(plr) notify("Spectate", plr.Name .. " izleniyor", "eye") end
     end })
 
------------------------------------------------------------------------- Settings + startup
+----- Settings + startup -----
 Window:SetModule("ESP", "Off", Render.Mode == "GUI" and "GUI mode" or nil, { Icon = "eye", Tab = "Visuals" })
 Window:SetModule("Silent Aim", CanHook and "Off" or "Limited", not CanHook and "no hook" or nil, { Icon = "target", Tab = "Combat" })
 
@@ -2081,7 +2079,7 @@ Window:OnKick(function()
     if S.AutoRejoin then task.delay(2, function() if Running and S.AutoRejoin then rejoin() end end) end
 end)
 
------------------------------------------------------------------------- loops
+----- Loops -----
 connect(Workspace:GetPropertyChangedSignal("CurrentCamera"), function()
     Camera = Workspace.CurrentCamera
 end)
@@ -2140,7 +2138,7 @@ task.spawn(function()                                            -- player table
     end
 end)
 
------------------------------------------------------------------------- unload
+----- Unload -----
 ENV.QustahShindoCore = {
     Unload = function()
         if not Running then return end
@@ -2160,7 +2158,7 @@ ENV.QustahShindoCore = {
 unloadThis = ENV.QustahShindoCore.Unload
 end
 
------------------------------------------------------------------- FARM
+----- Farm -----
 do
 	local Farm = Tabs.Farm
 	local QuestPage = Farm:Page("Quests")
@@ -2490,7 +2488,7 @@ do
 	end)
 	if KIND ~= "map" then QuestPage:Warning("Missions only work on a map (now: " .. placeName() .. ").", { Level = "info" }) end
 
-	------------------------------------------------ Mentor
+	----- Mentor -----
 	local MENTORS = { "Narumaki", "Jiso Seishin", "Shindai Akuma", "Ryuji Kenichi", "Bruce Kenichi" }
 	local rank = statz() and statz():FindFirstChild("prestige") and statz().prestige:FindFirstChild("rank") and statz().prestige.rank.Value or "?"
 	local M = MentorPage:Card({ Title = "Mentor", Icon = "graduation-cap", Desc = "Requires S rank or higher (your rank: " .. tostring(rank) .. ")" })
@@ -2526,7 +2524,7 @@ do
 		if F.TreeM or F.TreeD then combat("takemovement2") end
 	end)
 
-	------------------------------------------------ Daily
+	----- Daily -----
 	local D = DailyPage:Card({ Title = "Rewards", Icon = "gift" })
 	D:Button({ Title = "Claim all missions", Icon = "gift", Style = "Primary", Callback = function()
 		local st = statz()
@@ -2563,13 +2561,13 @@ do
 
 end
 
------------------------------------------------------------------- SPIN
+----- Spin -----
 do
 	local Spin = Tabs.Spin
 	local InfPage = Spin:Page("Inf Spin")
 	local RellPage = Spin:Page("Auto RELL")
 
-	------------------------------------------------ Inf Spin (element / bloodline / kenjutsu / race)
+	----- Inf Spin -----
 	local SAVE_FILE = "QustahShindo/infspin.json"
 	local I = {
 		Elements = {}, Bloodlines = {}, Kenjutsu = {}, Races = {},
@@ -2812,7 +2810,7 @@ do
 		for _, c in ipairs(CAT) do put(c.flag, on[c.on] == true) end
 	end
 
-	------------------------------------------------ Auto Spin RELL (separate window)
+	----- Auto Spin RELL -----
 	-- Auto Spin RELL now loads from its own raw link (not embedded in this script) and reloads itself from that link after a rejoin
 	local RELL_URL = "https://raw.githubusercontent.com/79650/dg3b2352313124scjd3124sanhgcdsahncdas457hs1amgdcankjcj/refs/heads/main/rellauto"
 	local function openRell()
@@ -2898,7 +2896,7 @@ do
 	Window:SetModule("Auto Spin RELL", ENV.RELL_RUNNING and "On" or "Off", nil, { Icon = "dices", Tab = "Spin" })
 end
 
------------------------------------------------------------------- PLAYER › Shindo
+----- Player: Shindo -----
 do
 	local P = Tabs.Player                                     -- single page: Game · NPC kill aura · Scroll snipe, with Misc / Spectate below
 	local G = { NoCombat = false, Unbreak = false, Aura = false, Scroll = false, ScrollSpawn = true }
@@ -3060,7 +3058,7 @@ do
 	end
 end
 
------------------------------------------------------------------- TELEPORT
+----- Teleport -----
 local TP_DATA = {
     [4601350809] = {
         { "Kage Office", 11984, 991, -17752 },
@@ -3366,7 +3364,7 @@ do
 	end })
 end
 
------------------------------------------------------------------- LOADOUT
+----- Loadout -----
 do
 local function showBloodlineCodes()
 	local gui = mainGui()
@@ -3415,7 +3413,7 @@ local function setShopVisible(on)
 		gui.ingame.Menu.Visible = not on
 	end)
 end
------------------------------------------------------------------- selection lists (read from the game's own data)
+----- Selection lists -----
 local function childNames(folder)              -- lists show the game's original (code) names
 	local out = {}
 	if folder then
@@ -3480,7 +3478,7 @@ local function refreshLists(silent)
 end
 buildLists()
 
------------------------------------------------------------------- LOADOUT
+----- Loadout -----
 local Loadout = Tabs.Loadout:Page("Changer")
 
 local Elem = Loadout:Card({ Title = "Element", Icon = "flame", Desc = "Change element slots" })
@@ -3533,7 +3531,7 @@ toolRow:Button({ Title = "Refresh lists", Icon = "refresh-cw", Callback = functi
 toolRow:Button({ Title = "Show code names", Icon = "scan-search", Callback = showBloodlineCodes })
 Tools:Paragraph({ Title = "Note", Content = "Lists show the game's real names. If a list is empty, press Refresh lists once you're fully in the game. Changes are client side." })
 
------------------------------------------------------------------- RC SHOP
+----- RC Shop -----
 local Shop = Tabs.Loadout:Page("RC Shop")
 local ShopCard = Shop:Card({ Title = "Shop", Icon = "store" })
 ShopCard:Button({ Title = "Show RC Shop", Icon = "eye", Toggle = true, OnTitle = "Hide RC Shop", OnIcon = "eye-off",   -- no Flag: the shop must not open by itself on startup
@@ -3566,7 +3564,7 @@ end
 task.delay(4, function() if HUB.Running then refreshLists(true) end end)    -- if the menu loads late, read the lists once more
 end
 
------------------------------------------------------------------- lock icon
+----- Lock icon -----
 -- While the setting it depends on is off, the row is greyed out; only a small lock is shown next to the title (no text).
 do
 	local marks = {}
@@ -3600,7 +3598,7 @@ do
 	end)
 end
 
------------------------------------------------------------------- startup
+----- Startup -----
 Window:SettingsTab()
 Window.Config:LoadAutoLoad()
 for _, fn in ipairs(HUB.AfterAutoLoad or {}) do pcall(fn) end
