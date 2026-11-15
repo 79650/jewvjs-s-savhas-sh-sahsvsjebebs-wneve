@@ -1,5 +1,5 @@
 --[[
-    Qustāh · Shindo Life  ·  V1.33
+    Qustāh · Shindo Life  ·  V1.34
     UI: qustah-ui-lib · sadece Shindo Life'ta açılır (GameId kontrolü)
 
     Sekmeler: Dashboard · Farm · Spin · Combat · Visuals · Player · Teleport · Loadout · Server · Settings
@@ -397,7 +397,7 @@ end
 ------------------------------------------------------------------ PENCERE
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.33",
+	Version = "V1.34",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -1813,8 +1813,8 @@ do
 	local DailyPage = Farm:Page("Daily")
 
 	local F = {
-		Scroll = false, Boss = false, Beast = false,
-		BossSpecific = false, BossSel = {}, BeastSpecific = false, BeastSel = {},   -- DogeHub gibi: Specific (toplu seçim) / Random
+		Scroll = false, Boss = false,
+		BossSpecific = false, BossSel = {},   -- DogeHub gibi: Specific (toplu seçim) / Random
 		StuckAfter = 60,                                         -- takılan görevi iptal (ayar yok, scriptin kendi işi)
 		Done = { Boss = 0 },                                     -- bu oturumda alınan boss görevleri
 		Stats = {}, AutoRank = false, RankAfterMax = false, RankRC = false, RankStop = false, RankStopAt = 500,
@@ -1824,7 +1824,7 @@ do
 	local GREEN_SCROLL = "http://www.roblox.com/asset/?id=5459241648"
 	if ENV.QustahShindoCore then ENV.QustahShindoCore.Farm = F end   -- testler için
 
-	local function timerReady(giver)                            -- boss/beast görev vericisinin süresi doldu mu
+	local function timerReady(giver)                            -- boss görev vericisinin süresi doldu mu
 		local ok, txt = pcall(function() return giver.missiongiver.timer.time.time.Text end)
 		return ok and (txt == "00:00" or txt == "59:59")
 	end
@@ -1841,20 +1841,6 @@ do
 		for _, folderName in ipairs(BOSS_FOLDERS) do
 			local f = workspace:FindFirstChild(folderName)
 			local missions = f and f:FindFirstChild("missions")
-			if missions then
-				for _, g in ipairs(missions:GetChildren()) do
-					if g:FindFirstChild("missiongiver") then out[#out + 1] = g end
-				end
-			end
-		end
-		return out
-	end
-	-- Beast (kuyruklu canavar) görevleri: missions klasörü olan diğer klasörler (tailbeastbossmission vb.), DogeHub'daki gibi
-	local BEAST_SKIP = { sensei = true, bossdropmission = true, sengokubossfight = true }
-	local function beastGivers()
-		local out = {}
-		for _, f in ipairs(workspace:GetChildren()) do
-			local missions = not BEAST_SKIP[f.Name] and f:FindFirstChild("missions")
 			if missions then
 				for _, g in ipairs(missions:GetChildren()) do
 					if g:FindFirstChild("missiongiver") then out[#out + 1] = g end
@@ -1964,7 +1950,7 @@ do
 
 	local lastMission
 	local function farmAlive()
-		return HUB.Running and (F.Scroll or F.Boss or F.Beast or F.DailyBoss)
+		return HUB.Running and (F.Scroll or F.Boss or F.DailyBoss)
 	end
 	local function dailyBossGivers()
 		local s = statz()
@@ -2007,9 +1993,6 @@ do
 			end
 			if inMission() then killMissionMobs(farmAlive) return end
 			bossGiver, bossKilled = nil, false                       -- görev bitti
-			if F.Beast and acceptFrom(beastGivers(), (F.BeastSpecific and #F.BeastSel > 0 and F.BeastSel) or "Random", function() return HUB.Running and F.Beast end) then
-				return
-			end
 			if F.Boss and acceptFrom(bossGivers(), (F.BossSpecific and #F.BossSel > 0 and F.BossSel) or "Random", function() return HUB.Running and F.Boss end) then
 				F.Done.Boss += 1
 				return
@@ -2021,14 +2004,14 @@ do
 				return
 			end
 			-- sadece boss farm açık ve hazır boss yok: sıradaki boss'a kadar son boss'un üstünde bekle
-			if (F.Boss or F.Beast or F.DailyBoss) and lastGiver and lastGiver.Parent then goSafe(lastGiver) end
+			if (F.Boss or F.DailyBoss) and lastGiver and lastGiver.Parent then goSafe(lastGiver) end
 		end)
 		HUB.FarmBusy = false
 		if not farmAlive() then leaveSafe() end
 		if not ok then error(err, 0) end
 	end)
 
-	-- DogeHub'ın "Quests" sayfası gibi: Auto Farm · Configurations · Boss Farm Settings · Beasts Farm Settings
+	-- DogeHub'ın "Quests" sayfası gibi: Auto Farm · Configurations · Boss Farm Settings
 	local Q = QuestPage:Card({ Title = "Auto Farm", Icon = "scroll-text" })
 	local function farmToggle(card, title, key)
 		card:Toggle({ Title = title, Flag = "farm_" .. key:lower(), Default = false, Callback = function(on)
@@ -2038,7 +2021,6 @@ do
 	end
 	farmToggle(Q, "Green Scroll Farm", "Scroll")
 	farmToggle(Q, "Boss Farm", "Boss")
-	farmToggle(Q, "Beasts Farm", "Beast")
 
 	local Conf = QuestPage:Card({ Title = "Configurations", Icon = "sliders-horizontal", Side = "Right" })
 	Conf:Toggle({ Title = "Legacy Farm Mode", Flag = "farm_legacy", Default = true, Callback = function(v)
@@ -2056,7 +2038,7 @@ do
 		-- toplu seçim: birden fazla boss işaretlenebilir, sırayla hangisi hazırsa o alınır (hiçbiri seçili değilse Random gibi)
 		local dd = C:Dropdown({ Title = "Specific " .. what:lower() .. " to kill", Flag = flagPrefix .. "pick", Items = list, Default = {}, Multi = true,
 			AllowNone = true, Search = true, Callback = function(v) F[keySel] = type(v) == "table" and v or { v } end })
-		C:Toggle({ Title = "Random " .. what .. (what == "Beast" and "s" or "es"), Flag = flagPrefix .. "random", Default = true, Callback = function(v)
+		C:Toggle({ Title = "Random " .. what .. "es", Flag = flagPrefix .. "random", Default = true, Callback = function(v)
 			if v then Window:SetFlag(flagPrefix .. "specific", false) end
 		end })
 		return C, dd
@@ -2067,8 +2049,6 @@ do
 	local bossBar = BossSet:Progress({ Title = "Bosses on map", Desc = "Ready to fight", Value = 0, Max = 1,
 		Format = function(v) return bossTotal > 0 and ("%d / %d ready"):format(v, bossTotal) or "none" end })
 	local sessionRow = BossSet:Info({ Title = "Bosses this session", Value = "0" })
-	local beastList = names(beastGivers())
-	local _, beastDD = pickCard("Beasts Farm Settings", "flame", "Beast", beastList, "BeastSpecific", "BeastSel", "farm_beast")
 
 	local function refreshList(dd, list, keySel, flag)
 		dd:SetItems(list, true)
@@ -2078,7 +2058,6 @@ do
 	end
 	local function refreshBosses()
 		refreshList(bossDD, names(bossGivers()), "BossSel", "farm_bosspick")
-		refreshList(beastDD, names(beastGivers()), "BeastSel", "farm_beastpick")
 	end
 	-- boss sayaçları: "hazır / toplam" (hazır = süresi dolmuş, kimse almamış)
 	local function updateCounts()
@@ -2102,25 +2081,18 @@ do
 		task.delay(0.5, function() pending = false if HUB.Running then pcall(refreshBosses) end end)
 	end
 	local watched = {}
-	local function watchBossFolder(f, initial)                     -- boss klasörleri + beast klasörleri (missions'ı olan)
-		if watched[f] or BEAST_SKIP[f.Name] and not table.find(BOSS_FOLDERS, f.Name) then return end
-		if not (table.find(BOSS_FOLDERS, f.Name) or f:FindFirstChild("missions")) then return end
+	local function watchBossFolder(f)
+		if watched[f] or not table.find(BOSS_FOLDERS, f.Name) then return end
 		watched[f] = true
 		hubConnect(f.DescendantAdded, queueRefresh)                  -- missions klasörü de sonradan gelebilir
 		hubConnect(f.DescendantRemoving, queueRefresh)
-		if not initial then queueRefresh({ Name = "missiongiver" }) end
+		queueRefresh({ Name = "missiongiver" })
 	end
-	for _, f in ipairs(workspace:GetChildren()) do watchBossFolder(f, true) end
-	hubConnect(workspace.ChildAdded, function(f)
-		watchBossFolder(f)
-		if not watched[f] and f:IsA("Folder") and not BEAST_SKIP[f.Name] then   -- missions klasörü sonradan gelirse
-			local c
-			c = f.ChildAdded:Connect(function(ch)
-				if ch.Name == "missions" then c:Disconnect() watchBossFolder(f) end
-			end)
-			table.insert(HUB.Cleanup, function() c:Disconnect() end)
-		end
-	end)
+	for _, folderName in ipairs(BOSS_FOLDERS) do
+		local f = workspace:FindFirstChild(folderName)
+		if f then watched[f] = true hubConnect(f.DescendantAdded, queueRefresh) hubConnect(f.DescendantRemoving, queueRefresh) end
+	end
+	hubConnect(workspace.ChildAdded, watchBossFolder)
 
 	local Rank = QuestPage:Card({ Title = "Auto rank", Icon = "crown", Side = "Right" })
 	Rank:Toggle({ Title = "Auto rank", Desc = "Ranks up at level 1000", Flag = "rank_on", Default = false, Callback = function(v) F.AutoRank = v end })
