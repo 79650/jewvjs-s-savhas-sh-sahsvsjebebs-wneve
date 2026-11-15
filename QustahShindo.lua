@@ -1,5 +1,5 @@
 --[[
-    Qustāh · Shindo Life  ·  V1.31
+    Qustāh · Shindo Life  ·  V1.32
     UI: qustah-ui-lib · sadece Shindo Life'ta açılır (GameId kontrolü)
 
     Sekmeler: Dashboard · Farm · Spin · Combat · Visuals · Player · Teleport · Loadout · Server · Settings
@@ -365,7 +365,7 @@ hubConnect(RunService.Heartbeat, function()
 end)
 
 -- bir NPC'ye saldır: üstünde/arkasında dur, kameranı çevir, tuş + m1
-local Attack = { Height = 0, Distance = 10, Mode = "Jutsu (E)" }
+local Attack = { Height = 0, Distance = 10, Mode = "Legacy (M1 + E)" }   -- Height / Distance sabit (ayarı yok); Legacy varsayılan açık (DogeHub gibi)
 -- Melee / Legacy mesafesi dövüş stiline göre (DogeHub'daki gibi): kısa menzilli stiller 7, diğerleri 10 stud
 local SHORT_STYLES = { [""] = true, boxing = true, jeetkunedo = true, muaythai = true, mma = true }
 local function meleeDistance()
@@ -397,7 +397,7 @@ end
 ------------------------------------------------------------------ PENCERE
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.31",
+	Version = "V1.32",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -1813,14 +1813,16 @@ do
 	local DailyPage = Farm:Page("Daily")
 
 	local F = {
-		Scroll = false, Boss = false, BossPick = "Random",
-		StuckAfter = 60,
+		Scroll = false, Boss = false, Beast = false,
+		BossSpecific = false, BossSel = nil, BeastSpecific = false, BeastSel = nil,   -- DogeHub gibi: Specific / Random
+		StuckAfter = 60,                                         -- takılan görevi iptal (ayar yok, scriptin kendi işi)
 		Done = { Boss = 0 },                                     -- bu oturumda alınan boss görevleri
 		Stats = {}, AutoRank = false, RankAfterMax = false, RankRC = false, RankStop = false, RankStopAt = 500,
 		-- Mentor ve Daily ayrı anahtarlar: birini kapatmak ötekini durdurmasın
 		PunchM = false, PunchD = false, TreeM = false, TreeD = false, Shoot = false, Rush = false, Chi = false, DailyBoss = false,
 	}
 	local GREEN_SCROLL = "http://www.roblox.com/asset/?id=5459241648"
+	if ENV.QustahShindoCore then ENV.QustahShindoCore.Farm = F end   -- testler için
 
 	local function timerReady(giver)                            -- boss/beast görev vericisinin süresi doldu mu
 		local ok, txt = pcall(function() return giver.missiongiver.timer.time.time.Text end)
@@ -1847,13 +1849,26 @@ do
 		end
 		return out
 	end
+	-- Beast (kuyruklu canavar) görevleri: missions klasörü olan diğer klasörler (tailbeastbossmission vb.), DogeHub'daki gibi
+	local BEAST_SKIP = { sensei = true, bossdropmission = true, sengokubossfight = true }
+	local function beastGivers()
+		local out = {}
+		for _, f in ipairs(workspace:GetChildren()) do
+			local missions = not BEAST_SKIP[f.Name] and f:FindFirstChild("missions")
+			if missions then
+				for _, g in ipairs(missions:GetChildren()) do
+					if g:FindFirstChild("missiongiver") then out[#out + 1] = g end
+				end
+			end
+		end
+		return out
+	end
 	local function names(list)
 		local out, seen = {}, {}
 		for _, g in ipairs(list) do
 			if not seen[g.Name] then seen[g.Name] = true out[#out + 1] = g.Name end
 		end
 		table.sort(out)
-		table.insert(out, 1, "Random")
 		return out
 	end
 	local function greenInfo(v)                                       -- yeşil "defeat" vericisi mi, şu an görev veriyor mu
@@ -1948,7 +1963,7 @@ do
 
 	local lastMission
 	local function farmAlive()
-		return HUB.Running and (F.Scroll or F.Boss or F.DailyBoss)
+		return HUB.Running and (F.Scroll or F.Boss or F.Beast or F.DailyBoss)
 	end
 	local function dailyBossGivers()
 		local s = statz()
@@ -1991,7 +2006,10 @@ do
 			end
 			if inMission() then killMissionMobs(farmAlive) return end
 			bossGiver, bossKilled = nil, false                       -- görev bitti
-			if F.Boss and acceptFrom(bossGivers(), F.BossPick, function() return HUB.Running and F.Boss end) then
+			if F.Beast and acceptFrom(beastGivers(), (F.BeastSpecific and F.BeastSel) or "Random", function() return HUB.Running and F.Beast end) then
+				return
+			end
+			if F.Boss and acceptFrom(bossGivers(), (F.BossSpecific and F.BossSel) or "Random", function() return HUB.Running and F.Boss end) then
 				F.Done.Boss += 1
 				return
 			end
@@ -2002,38 +2020,63 @@ do
 				return
 			end
 			-- sadece boss farm açık ve hazır boss yok: sıradaki boss'a kadar son boss'un üstünde bekle
-			if (F.Boss or F.DailyBoss) and lastGiver and lastGiver.Parent then goSafe(lastGiver) end
+			if (F.Boss or F.Beast or F.DailyBoss) and lastGiver and lastGiver.Parent then goSafe(lastGiver) end
 		end)
 		HUB.FarmBusy = false
 		if not farmAlive() then leaveSafe() end
 		if not ok then error(err, 0) end
 	end)
 
-	local Q = QuestPage:Card({ Title = "Auto farm", Icon = "scroll-text", Desc = "Take a mission, kill the mobs, repeat" })
-	local function farmToggle(card, title, key, desc)
-		card:Toggle({ Title = title, Desc = desc, Flag = "farm_" .. key:lower(), Default = false, Callback = function(on)
+	-- DogeHub'ın "Quests" sayfası gibi: Auto Farm · Configurations · Boss Farm Settings · Beasts Farm Settings
+	local Q = QuestPage:Card({ Title = "Auto Farm", Icon = "scroll-text" })
+	local function farmToggle(card, title, key)
+		card:Toggle({ Title = title, Flag = "farm_" .. key:lower(), Default = false, Callback = function(on)
 			if on ~= F[key] then if on then platformOn() else platformOff() end end
 			F[key] = on
 		end })
 	end
-	farmToggle(Q, "Green scroll farm", "Scroll", "Green 'defeat' missions")
-	farmToggle(Q, "Boss farm", "Boss", "Boss mission givers")
-	local bossTotal = 0
-	local bossBar = Q:Progress({ Title = "Bosses on map", Desc = "Ready to fight", Value = 0, Max = 1,
-		Format = function(v, m) return bossTotal > 0 and ("%d / %d ready"):format(v, bossTotal) or "none" end })
-	local function bossDesc(n) return n > 0 and ("Bosses on this map: %d"):format(n) or "No bosses on this map" end
-	local bossList = names(bossGivers())
-	local bossDD = Q:Dropdown({ Title = "Boss", Flag = "farm_bosspick", Items = bossList, Default = "Random", Search = true,
-		Desc = bossDesc(#bossList - 1), Callback = function(v) F.BossPick = v end })
-	local function refreshBosses()
-		local list = names(bossGivers())
-		bossDD:SetItems(list, true)
-		bossDD:SetDesc(bossDesc(#list - 1))
-		if F.BossPick ~= "Random" and not table.find(list, F.BossPick) then   -- seçili boss bu haritada yoksa Random'a dön
-			Window:SetFlag("farm_bosspick", "Random")
-		end
+	farmToggle(Q, "Green Scroll Farm", "Scroll")
+	farmToggle(Q, "Boss Farm", "Boss")
+	farmToggle(Q, "Beasts Farm", "Beast")
+
+	local Conf = QuestPage:Card({ Title = "Configurations", Icon = "sliders-horizontal", Side = "Right" })
+	Conf:Toggle({ Title = "Legacy Farm Mode", Flag = "farm_legacy", Default = true, Callback = function(v)
+		Attack.Mode = v and "Legacy (M1 + E)" or "Jutsu (E)"
+	end })
+	Conf:Toggle({ Title = "NPC Kill Aura", Flag = "farm_aura", Default = false, Callback = function(v) HUB.FarmAura = v end })
+
+	-- Specific / Random: biri açılınca öteki kapanır (DogeHub'daki gibi)
+	local function pickCard(title, icon, what, list, keySpecific, keySel, flagPrefix)
+		local C = QuestPage:Card({ Title = title, Icon = icon })
+		C:Toggle({ Title = "Specific " .. what, Flag = flagPrefix .. "specific", Default = false, Callback = function(v)
+			F[keySpecific] = v
+			if v then Window:SetFlag(flagPrefix .. "random", false) end
+		end })
+		local dd = C:Dropdown({ Title = "Specific " .. what:lower() .. " to kill", Flag = flagPrefix .. "pick", Items = list, Default = list[1], Search = true,
+			Callback = function(v) F[keySel] = v end })
+		F[keySel] = list[1]
+		C:Toggle({ Title = "Random " .. what .. (what == "Beast" and "s" or "es"), Flag = flagPrefix .. "random", Default = true, Callback = function(v)
+			if v then Window:SetFlag(flagPrefix .. "specific", false) end
+		end })
+		return C, dd
 	end
-	local sessionRow = Q:Info({ Title = "Bosses this session", Value = "0" })
+	local bossList = names(bossGivers())
+	local BossSet, bossDD = pickCard("Boss Farm Settings", "skull", "Boss", bossList, "BossSpecific", "BossSel", "farm_boss")
+	local bossTotal = 0
+	local bossBar = BossSet:Progress({ Title = "Bosses on map", Desc = "Ready to fight", Value = 0, Max = 1,
+		Format = function(v) return bossTotal > 0 and ("%d / %d ready"):format(v, bossTotal) or "none" end })
+	local sessionRow = BossSet:Info({ Title = "Bosses this session", Value = "0" })
+	local beastList = names(beastGivers())
+	local _, beastDD = pickCard("Beasts Farm Settings", "flame", "Beast", beastList, "BeastSpecific", "BeastSel", "farm_beast")
+
+	local function refreshList(dd, list, keySel, flag)
+		dd:SetItems(list, true)
+		if not table.find(list, F[keySel]) then Window:SetFlag(flag, list[1]) F[keySel] = list[1] end   -- seçili olan bu haritada yoksa
+	end
+	local function refreshBosses()
+		refreshList(bossDD, names(bossGivers()), "BossSel", "farm_bosspick")
+		refreshList(beastDD, names(beastGivers()), "BeastSel", "farm_beastpick")
+	end
 	-- boss sayaçları: "hazır / toplam" (hazır = süresi dolmuş, kimse almamış)
 	local function updateCounts()
 		local bReady, bTotal = 0, 0
@@ -2048,8 +2091,7 @@ do
 	end
 	pcall(updateCounts)
 	loop("Farm counts", 2, updateCounts)
-	Q:Button({ Title = "Refresh lists", Icon = "refresh-cw", Style = "Ghost", Callback = function() refreshBosses() updateCounts() end })
-	-- Boss NPC'leri sonradan yüklenebilir (uzaktakiler): missiongiver gelince / gidince liste kendiliğinden yenilenir
+	-- Boss NPC'leri sonradan yüklenebilir (uzaktakiler): missiongiver gelince / gidince listeler kendiliğinden yenilenir
 	local pending = false
 	local function queueRefresh(obj)
 		if obj.Name ~= "missiongiver" or pending then return end
@@ -2057,29 +2099,25 @@ do
 		task.delay(0.5, function() pending = false if HUB.Running then pcall(refreshBosses) end end)
 	end
 	local watched = {}
-	local function watchBossFolder(f)
-		if watched[f] or not table.find(BOSS_FOLDERS, f.Name) then return end
+	local function watchBossFolder(f, initial)                     -- boss klasörleri + beast klasörleri (missions'ı olan)
+		if watched[f] or BEAST_SKIP[f.Name] and not table.find(BOSS_FOLDERS, f.Name) then return end
+		if not (table.find(BOSS_FOLDERS, f.Name) or f:FindFirstChild("missions")) then return end
 		watched[f] = true
 		hubConnect(f.DescendantAdded, queueRefresh)                  -- missions klasörü de sonradan gelebilir
 		hubConnect(f.DescendantRemoving, queueRefresh)
-		queueRefresh({ Name = "missiongiver" })
+		if not initial then queueRefresh({ Name = "missiongiver" }) end
 	end
-	for _, folderName in ipairs(BOSS_FOLDERS) do
-		local f = workspace:FindFirstChild(folderName)
-		if f then watched[f] = true hubConnect(f.DescendantAdded, queueRefresh) hubConnect(f.DescendantRemoving, queueRefresh) end
-	end
-	hubConnect(workspace.ChildAdded, watchBossFolder)
-
-	local Conf = QuestPage:Card({ Title = "Attack", Icon = "sword", Side = "Right" })
-	Conf:Segment({ Title = "Mode", Flag = "farm_mode", Items = { "Jutsu (E)", "Melee (M1)", "Legacy (M1 + E)" }, Default = "Jutsu (E)", Callback = function(v) Attack.Mode = v end })
-	Conf:Slider({ Title = "Height", Flag = "farm_height", Min = -5, Max = 5, Default = 0, Suffix = " studs",
-		DependsOn = { Flag = "farm_mode", Value = "Jutsu (E)", Reason = "" }, Callback = function(v) Attack.Height = v end })
-	Conf:Slider({ Title = "Distance", Flag = "farm_dist", Min = -10, Max = 10, Default = 10, Suffix = " studs",
-		DependsOn = { Flag = "farm_mode", Value = "Jutsu (E)", Reason = "" }, Callback = function(v) Attack.Distance = v end })
-	Conf:Slider({ Title = "Cancel stuck mission", Desc = "Cancels the mission after this many seconds without progress (0 = off)", Flag = "farm_stuck",
-		Min = 0, Max = 300, Step = 5, Default = 60, Suffix = " s", Callback = function(v) F.StuckAfter = v end })
-	Conf:Info({ Title = "Melee distance", Value = "By style (7 / 10)",
-		DependsOn = { Flag = "farm_mode", Value = "Jutsu (E)", Not = true, Mode = "Hide", Reason = "" } })
+	for _, f in ipairs(workspace:GetChildren()) do watchBossFolder(f, true) end
+	hubConnect(workspace.ChildAdded, function(f)
+		watchBossFolder(f)
+		if not watched[f] and f:IsA("Folder") and not BEAST_SKIP[f.Name] then   -- missions klasörü sonradan gelirse
+			local c
+			c = f.ChildAdded:Connect(function(ch)
+				if ch.Name == "missions" then c:Disconnect() watchBossFolder(f) end
+			end)
+			table.insert(HUB.Cleanup, function() c:Disconnect() end)
+		end
+	end)
 
 	local Rank = QuestPage:Card({ Title = "Auto rank", Icon = "crown", Side = "Right" })
 	Rank:Toggle({ Title = "Auto rank", Desc = "Ranks up at level 1000", Flag = "rank_on", Default = false, Callback = function(v) F.AutoRank = v end })
@@ -2537,7 +2575,7 @@ end
 ------------------------------------------------------------------ PLAYER › Shindo
 do
 	local P = Tabs.Player:Page("Shindo")
-	local G = { NoCombat = false, Unbreak = false, Aura = false, AuraRange = 0, Scroll = false, ScrollSpawn = true }
+	local G = { NoCombat = false, Unbreak = false, Aura = false, Scroll = false, ScrollSpawn = true }
 
 	local Game = P:Card({ Title = "Game", Icon = "wand-sparkles" })
 	Game:Toggle({ Title = "Disable in combat", Desc = "Teleport / leave even while in combat", Flag = "sh_nocombat", Default = false, Callback = function(v) G.NoCombat = v end })
@@ -2587,16 +2625,33 @@ do
 	end)
 
 	local Aura = P:Card({ Title = "NPC kill aura", Icon = "skull", Side = "Right" })
-	Aura:Toggle({ Title = "Kill aura", Desc = "Sets nearby NPCs' health to 0 (client side)", Flag = "sh_aura", Default = false, Callback = function(v) G.Aura = v end })
-	Aura:Slider({ Title = "Range", Desc = "0 = unlimited", Flag = "sh_aurarange", Min = 0, Max = 500, Default = 0, Suffix = " studs", DependsOn = { Flag = "sh_aura", Reason = "" },
-		Callback = function(v) G.AuraRange = v end })
-	loop("Kill aura", 0.08, function()
-		if not G.Aura then return end
+	Aura:Toggle({ Title = "NPC Kill Aura", Flag = "sh_aura", Default = false, Callback = function(v) G.Aura = v end })
+	-- DogeHub'ın NPCKEELAURA'sının birebir aynısı: her Heartbeat'te, menzil sınırı yok (KILL_RANGE = 0),
+	-- workspace.npc'deki geçerli her NPC'nin canı 4 kez 0'a çekilir (istemci tarafı).
+	-- Tek fark: DogeHub'da Misc ve Quests'teki iki toggle'ın İKİSİ de açık olmadan çalışmıyordu (keel and keel2);
+	-- burada ikisinden biri yeterli (Player > NPC kill aura ya da Farm > Configurations).
+	local function isValidNPC(npc)
+		return npc:IsA("Model")
+			and npc:FindFirstChild("npctype")
+			and npc.Name:lower():find("npc")
+			and npc:FindFirstChild("HumanoidRootPart")
+			and npc:FindFirstChild("Humanoid")
+			and npc:FindFirstChild("Head") and npc.Head.CFrame.Y > -1000
+			and npc.Humanoid.Health > 0
+	end
+	hubConnect(RunService.Heartbeat, function()
+		if not (G.Aura or HUB.FarmAura) then return end
 		local r = rootPart()
-		if not r then return end
-		for _, v in ipairs(npcs()) do
-			if G.AuraRange == 0 or (v.HumanoidRootPart.Position - r.Position).Magnitude <= G.AuraRange then
-				pcall(function() v.Humanoid.Health = 0 end)
+		local folder = workspace:FindFirstChild("npc")
+		if not (r and folder) then return end
+		for _, npc in ipairs(folder:GetChildren()) do
+			if isValidNPC(npc) then
+				pcall(function()
+					npc.Humanoid.Health = 0
+					npc.Humanoid.Health = 0
+					npc.Humanoid.Health = 0
+					npc.Humanoid.Health = 0
+				end)
 			end
 		end
 	end)
