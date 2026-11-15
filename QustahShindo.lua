@@ -1,5 +1,5 @@
 --[[
-    Qustāh · Shindo Life  ·  V1.25
+    Qustāh · Shindo Life  ·  V1.26
     UI: qustah-ui-lib · sadece Shindo Life'ta açılır (GameId kontrolü)
 
     Sekmeler: Dashboard · Farm · Spin · Combat · Visuals · Player · Teleport · Loadout · Server · Settings
@@ -276,22 +276,16 @@ end
 -- Güvenli bölge: istemci tarafında 85x85'lik bir zemin. Üstünde serbestçe dolaşırsın (sürekli ışınlama yok);
 -- zeminin dışına çıkar ya da düşersen ortasına geri konursun.
 local SAFE_SIZE = Vector3.new(85, 2, 85)
--- Kök parçanın ayak tabanına uzaklığı: karakterin en alt noktasından ölçülür (Shindo karakterleri ölçekli olabiliyor,
--- sabit 3.5 kullanınca zeminin biraz içine giriyordun ve fizik seni dışarı iterken kayıyordun)
+-- Kök parçanın ayak tabanına uzaklığı (ayakta dururken). Animasyondaki bacak konumuna bakmak yanıltıyor
+-- (QustahInfo: koşarken 3.26, düşerken 2.04 çıktı, gerçek zemin mesafesi 2.88). Bu yüzden rig'in kendi ölçüsü kullanılır:
+-- R6: kökün yarısı + bacak boyu (0.96 + 1.92 = 2.88) · R15: HipHeight + kökün yarısı.
 local function rootToFeet(c, r)
-	local lowest
-	for _, p in ipairs(c:GetChildren()) do
-		if p:IsA("BasePart") and p ~= r then
-			local bottom = p.Position.Y - p.Size.Y / 2
-			if not lowest or bottom < lowest then lowest = bottom end
-		end
-	end
 	local h = c:FindFirstChildOfClass("Humanoid")
 	local r15 = h and select(2, pcall(function() return h.RigType == Enum.HumanoidRigType.R15 end)) == true
-	local fallback = r15 and (h.HipHeight + r.Size.Y / 2) or (r.Size.Y / 2 + 2)
-	local d = lowest and (r.Position.Y - lowest) or fallback
-	if d < 1 or d > 15 then d = fallback end                       -- saçma bir değer çıkarsa (ragdoll vb.) yedeği kullan
-	return d
+	if r15 and h.HipHeight > 0 then return h.HipHeight + r.Size.Y / 2 end
+	local leg = c:FindFirstChild("Left Leg") or c:FindFirstChild("Right Leg")
+	if leg and leg:IsA("BasePart") then return r.Size.Y / 2 + leg.Size.Y end
+	return r.Size.Y / 2 + 2
 end
 local function safeStandCF(part)                                  -- zeminin tam üstü (+0.15 pay), içine girmeden
 	local c, r = character(), rootPart()
@@ -324,10 +318,25 @@ local function goSafe(giver)
 	if r and not onSafePart(r, part) then tpTo(safeStandCF(part)) r.AssemblyLinearVelocity = Vector3.zero end
 	return true
 end
+-- Oyunun kendi su üstünde yürüme parçası (Camera.waterwalk, 4x0.5x4, çarpışmalı). Güvenli zemindeyken ayağının altına
+-- girip seni itmesin diye orada çarpışması kapatılır, zeminden çıkınca eski haline döner.
+local waterwalkOff
+local function setWaterwalk(off)
+	local cam = workspace.CurrentCamera
+	local ww = cam and cam:FindFirstChild("waterwalk")
+	if off then
+		if ww and ww:IsA("BasePart") and ww.CanCollide then ww.CanCollide = false waterwalkOff = ww end
+	elseif waterwalkOff then
+		pcall(function() if waterwalkOff.Parent then waterwalkOff.CanCollide = true end end)
+		waterwalkOff = nil
+	end
+end
 local function leaveSafe()
 	platformFixed = nil
+	setWaterwalk(false)
 	if SafePart then SafePart:Destroy() SafePart = nil end
 end
+table.insert(HUB.Cleanup, function() setWaterwalk(false) end)
 -- Kaymayı önle: güvenli zeminde tuşa basmıyorsan yatay hızın sıfırlanır (ışınlanmadan kalan ivme vb.)
 hubConnect(RunService.Heartbeat, function()
 	if not SafePart then return end
@@ -335,6 +344,7 @@ hubConnect(RunService.Heartbeat, function()
 	local r = c and c:FindFirstChild("HumanoidRootPart")
 	local h = c and c:FindFirstChildOfClass("Humanoid")
 	if not (r and h and onSafePart(r, SafePart)) then return end
+	setWaterwalk(true)
 	if h.MoveDirection.Magnitude < 0.05 then
 		local v = r.AssemblyLinearVelocity
 		if math.abs(v.X) + math.abs(v.Z) > 0.1 then r.AssemblyLinearVelocity = Vector3.new(0, v.Y, 0) end
@@ -374,7 +384,7 @@ end
 ------------------------------------------------------------------ PENCERE
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.25",
+	Version = "V1.26",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
