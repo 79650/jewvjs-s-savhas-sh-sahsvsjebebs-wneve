@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.49
+-- Qustāh · Shindo Life · V1.50
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -391,11 +391,12 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.49",
+	Version = "V1.50",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
 	Size = Vector2.new(600, 440),
+	PageTabs = "Header",                                          -- page names sit in the title row, like Dashboard / Settings
 	OnClose = function() if unloadThis then unloadThis() end end,
 })
 
