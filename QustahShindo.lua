@@ -1,5 +1,5 @@
 --[[
-    Qustāh · Shindo Life  ·  V1.35
+    Qustāh · Shindo Life  ·  V1.36
     UI: qustah-ui-lib · sadece Shindo Life'ta açılır (GameId kontrolü)
 
     Sekmeler: Dashboard · Farm · Spin · Combat · Visuals · Player · Teleport · Loadout · Server · Settings
@@ -397,7 +397,7 @@ end
 ------------------------------------------------------------------ PENCERE
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.35",
+	Version = "V1.36",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -406,7 +406,7 @@ Window = Lib:CreateWindow({
 })
 
 Window:DashboardTab({ Info = {
-	{ "Konum", placeName() },
+	{ "Location", placeName() },
 	{ "Spin", tostring(statz() and statz():FindFirstChild("spins") and statz().spins.Value or "-") },
 	{ "Rank", tostring(statz() and statz():FindFirstChild("prestige") and statz().prestige:FindFirstChild("rank") and statz().prestige.rank.Value or "-") },
 	{ "queue_on_teleport", queue and "Yes" or "No" },
@@ -417,6 +417,7 @@ local Tabs = {
 	Spin = Window:Tab({ Title = "Spin", Icon = "dices" }),
 	Combat = Window:Tab({ Title = "Combat", Icon = "crosshair" }),
 	Visuals = Window:Tab({ Title = "Visuals", Icon = "eye" }),
+	Movement = Window:Tab({ Title = "Movement", Icon = "footprints" }),
 	Player = Window:Tab({ Title = "Player", Icon = "person-standing" }),
 	Teleport = Window:Tab({ Title = "Teleport", Icon = "map-pin" }),
 	Loadout = Window:Tab({ Title = "Loadout", Icon = "dna" }),
@@ -489,8 +490,7 @@ local S = {
     CustomAmbient = false, Ambient = C3(0.7, 0.7, 0.7),
     -- player
     SpeedOn = false, WalkSpeed = 16, JumpOn = false, JumpPower = 50, InfJump = false,
-    Fly = false, FlySpeed = 60, NoClip = false, AntiAfk = true, ClickTP = false,
-    CamFOV = 70, OverrideFOV = false, UnlockZoom = false,
+    NoClip = false, AntiAfk = true, ClickTP = false, UnlockZoom = false,
     -- server
     StaffAlert = false, StaffGroup = 0, StaffRank = 1, StaffAction = "Notify", AutoRejoin = false,
 }
@@ -1218,13 +1218,7 @@ local function stopNoClip()
     table.clear(NoClipParts)
 end
 local Defaults = setmetatable({}, { __mode = "k" })
-local Cameras = setmetatable({}, { __mode = "k" })
 local originalZoom
-local flyRoot
-local function restoreCamera()
-    for cam, fov in pairs(Cameras) do cam.FieldOfView = fov end
-    table.clear(Cameras)
-end
 local function restorePlayer()
     for hum, d in pairs(Defaults) do
         if d.WalkSpeed then pcall(function() hum.WalkSpeed = d.WalkSpeed end) end
@@ -1234,9 +1228,6 @@ local function restorePlayer()
     end
     table.clear(Defaults)
     if originalZoom then LocalPlayer.CameraMaxZoomDistance = originalZoom originalZoom = nil end
-    if flyRoot and flyRoot.Parent then flyRoot.AssemblyLinearVelocity = Vector3.zero end
-    flyRoot = nil
-    restoreCamera()
 end
 HUB.Cleanup[#HUB.Cleanup + 1] = restorePlayer
 
@@ -1265,16 +1256,6 @@ connect(RunService.Heartbeat, function()
         originalZoom = originalZoom or LocalPlayer.CameraMaxZoomDistance
         LocalPlayer.CameraMaxZoomDistance = 1e4
     end
-    if Camera and S.OverrideFOV then
-        if Cameras[Camera] == nil then Cameras[Camera] = Camera.FieldOfView end
-        if Camera.FieldOfView ~= S.CamFOV then Camera.FieldOfView = S.CamFOV end
-    elseif not S.OverrideFOV and next(Cameras) then
-        restoreCamera()
-    end
-    if flyRoot and (not S.Fly or flyRoot ~= root) then
-        if flyRoot.Parent then flyRoot.AssemblyLinearVelocity = Vector3.zero end
-        flyRoot = nil
-    end
     if not char then return end
     local d = Defaults[hum] or {}
     Defaults[hum] = d
@@ -1290,18 +1271,6 @@ connect(RunService.Heartbeat, function()
     elseif d.JumpPower then
         hum.JumpPower, hum.UseJumpPower = d.JumpPower, d.UseJumpPower
         d.JumpPower, d.UseJumpPower = nil, nil
-    end
-    if S.Fly and Camera then                                                -- WASD + Space / LeftCtrl, kamera yönünde
-        local look = Camera.CFrame
-        local move = Vector3.zero
-        if UserInputService:IsKeyDown(Enum.KeyCode.W) then move += look.LookVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= look.LookVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += look.RightVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= look.RightVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move += V3(0, 1, 0) end
-        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then move -= V3(0, 1, 0) end
-        flyRoot = root
-        root.AssemblyLinearVelocity = (move.Magnitude > 0 and move.Unit or Vector3.zero) * S.FlySpeed
     end
 end)
 
@@ -1558,21 +1527,399 @@ end
 
 ------------------------------------------------------------------------ PLAYER
 do
-local PlayerTab = Tabs.Player:Page("Movement")
-local Move = PlayerTab:Card({ Title = "Movement", Icon = "footprints" })
-Move:Toggle({ Title = "Fly", Desc = "WASD + Space / Ctrl", Icon = "plane", Flag = "p_fly", Default = false, Bind = Enum.KeyCode.F, Bindable = true, Callback = set("Fly") })
-Move:Slider({ Title = "Fly speed", Flag = "p_flyspeed", Min = 10, Max = 300, Default = 60, DependsOn = { Flag = "p_fly", Reason = "" }, Callback = set("FlySpeed") })
-Move:Toggle({ Title = "NoClip", Icon = "ghost", Flag = "p_noclip", Default = false, Bind = Enum.KeyCode.N, Bindable = true, Callback = set("NoClip") })
+------------------------------------------------------------------ MOVEMENT (kullanıcının verdiği kaynaklar: Always Run · Fly FOV · Puppet · Wider dash)
+-- Her biri açılınca kurulur, kapanınca bütün bağlantıları kopar. Aynı scriptler tek başına da çalıştırıldıysa
+-- (getgenv().AlwaysRunStop / fv / puppetdash / WiderDashStop) önce onlar durdurulur, iki kopya çalışmasın.
+local Move = {}
+local MoveCfg = { PuppetSpeed = 200, PuppetLimit = 5, PuppetGap = 0.3, DashSpeed = 125 }
+local genv = (getgenv and getgenv()) or _G
 
-local Misc = PlayerTab:Card({ Title = "Misc", Icon = "wand-sparkles", Side = "Right" })
-Misc:Toggle({ Title = "Anti-AFK", Desc = "Prevents the 20 minute idle kick", Flag = "p_antiafk", Default = true, Callback = set("AntiAfk") })
-Misc:Toggle({ Title = "Click TP", Desc = "Ctrl + left click", Flag = "p_clicktp", Default = false, Callback = set("ClickTP") })
-Misc:Toggle({ Title = "Override FOV", Flag = "p_camfov_on", Default = false, Callback = set("OverrideFOV") })
-Misc:Slider({ Title = "Camera FOV", Flag = "p_camfov", Min = 30, Max = 120, Default = 70,
-    DependsOn = { Flag = "p_camfov_on", Reason = "" }, Callback = set("CamFOV") })
-Misc:Toggle({ Title = "Unlock zoom", Flag = "p_zoom", Default = false, Callback = set("UnlockZoom") })
+-- Always Run: combat.run hep açık
+function Move.alwaysRun()
+    if type(genv.AlwaysRunStop) == "function" then genv.AlwaysRunStop() end
+    local p = LocalPlayer
+    local links, watched = {}, {}
+    local function clear()
+        for _, c in ipairs(links) do c:Disconnect() end
+        for _, c in pairs(watched) do c:Disconnect() end
+        links, watched = {}, {}
+    end
+    local function bind(h)
+        clear()
+        local function check(v)
+            if watched[v] or v.Name ~= "run" or not v:IsA("BoolValue")
+                or v.Parent ~= h:FindFirstChild("combat") then return end
+            local function apply()
+                if v:IsDescendantOf(h) and not v.Value then v.Value = true end
+            end
+            watched[v] = v:GetPropertyChangedSignal("Value"):Connect(apply)
+            apply()
+        end
+        links[1] = h.DescendantAdded:Connect(check)
+        links[2] = h.DescendantRemoving:Connect(function(v)
+            if watched[v] then watched[v]:Disconnect() watched[v] = nil end
+        end)
+        for _, v in ipairs(h:GetDescendants()) do check(v) end
+    end
+    local a = p.CharacterAdded:Connect(bind)
+    local b = p.CharacterRemoving:Connect(clear)
+    if p.Character then bind(p.Character) end
+    return function() a:Disconnect() b:Disconnect() clear() end
+end
 
-local Spec = PlayerTab:Card({ Title = "Spectate", Icon = "video", Side = "Right" })
+-- Fly FOV: flyjutsu açıkken (ve kapandıktan sonraki 1.2 sn tween boyunca) kamera FOV'u değişmesin
+function Move.flyFov()
+    if type(genv.fv) == "function" then genv.fv() end
+    local p = LocalPlayer
+    local connections, characterConnections = {}, {}
+    local cameraConnection, camera, character
+    local locked, saved, writing, alive = false, nil, false, true
+    local revision = 0
+    local function isFly(v)
+        return v.Name == "flyjutsu" and v:IsA("LocalScript")
+    end
+    local function hasFly()
+        if character then
+            for _, v in ipairs(character:GetChildren()) do
+                if isFly(v) then return true end
+            end
+        end
+        return false
+    end
+    local function enforce()
+        if locked and camera and saved and not writing and camera.FieldOfView ~= saved then
+            writing = true
+            camera.FieldOfView = saved
+            writing = false
+        end
+    end
+    local function bindCamera()
+        if cameraConnection then cameraConnection:Disconnect() end
+        camera = workspace.CurrentCamera
+        if not camera then return end
+        if not locked or saved == nil then saved = camera.FieldOfView end
+        cameraConnection = camera:GetPropertyChangedSignal("FieldOfView"):Connect(enforce)
+        enforce()
+    end
+    local function begin()
+        revision = revision + 1
+        if not locked then saved = camera and camera.FieldOfView or nil end
+        locked = true
+        enforce()
+    end
+    local function finish()
+        if hasFly() then return end
+        revision = revision + 1
+        local token = revision
+        -- flyjutsu biterken FOV'u 1 sn'lik tween'le değiştiriyor
+        task.delay(1.2, function()
+            if alive and revision == token and not hasFly() then
+                enforce()
+                locked = false
+            end
+        end)
+    end
+    local function bindCharacter(h)
+        for _, c in ipairs(characterConnections) do c:Disconnect() end
+        characterConnections = {}
+        revision = revision + 1
+        locked = false
+        character = h
+        characterConnections[1] = h.ChildAdded:Connect(function(v)
+            if isFly(v) then begin() end
+        end)
+        characterConnections[2] = h.ChildRemoved:Connect(function(v)
+            if isFly(v) then finish() end
+        end)
+        if hasFly() then begin() end
+    end
+    bindCamera()
+    connections[1] = workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindCamera)
+    connections[2] = p.CharacterAdded:Connect(bindCharacter)
+    if p.Character then bindCharacter(p.Character) end
+    return function()
+        alive = false
+        revision = revision + 1
+        locked = false
+        if cameraConnection then cameraConnection:Disconnect() end
+        for _, c in ipairs(connections) do c:Disconnect() end
+        for _, c in ipairs(characterConnections) do c:Disconnect() end
+    end
+end
+
+-- Puppet: havada en fazla LIMIT kez, aralarında GAP sn olacak şekilde yönlü puppet zıplaması (hız SPEED)
+function Move.puppet()
+    if type(genv.puppetdash) == "function" then genv.puppetdash() end
+    if type(genv.pd) == "function" then genv.pd() end
+    local p = LocalPlayer
+    local u = UserInputService
+    local r = RunService
+    local alive, connections, characterLinks = true, {}, {}
+    local h, hum, root, animator, used, last, epoch = nil, nil, nil, nil, 0, 0, 0
+    local tracks, owned = {}, {}
+    local baseJumpPower, appliedJumpPower, jumpSound
+    local pending = false
+    local ids = { front = "13193731783", right = "13193698000", left = "13193705218", back = "13193769102" }
+    local byId = {}
+    for direction, id in pairs(ids) do byId[id] = direction end
+    local function restoreJump()
+        if hum and hum.Parent and appliedJumpPower and hum.JumpPower == appliedJumpPower and baseJumpPower then
+            hum.JumpPower = baseJumpPower
+        end
+        appliedJumpPower = nil
+    end
+    local function clear()
+        restoreJump()
+        epoch = epoch + 1
+        pending = false
+        for _, c in ipairs(characterLinks) do c:Disconnect() end
+        characterLinks = {}
+        for _, t in pairs(tracks) do pcall(function() t:Stop() t:Destroy() end) end
+        tracks, owned = {}, {}
+        if jumpSound then jumpSound:Destroy() jumpSound = nil end
+    end
+    local function allowed()
+        if not h or p.Character ~= h or not hum or not root or not animator or hum.Health <= 0 or root.Anchored then return false end
+        if hum.FloorMaterial ~= Enum.Material.Air or hum.PlatformStand or h:FindFirstChild("stayonground") then return false end
+        local fake = h:FindFirstChild("fakehealth")
+        if fake and fake.Value <= 0 then return false end
+        local c = h:FindFirstChild("combat")
+        if not c or c:FindFirstChild("attacked") or c:FindFirstChild("landed") then return false end
+        for _, name in ipairs({ "wallwalk", "ragdoll", "disable", "canrun", "canrunfromslice" }) do
+            local v = c:FindFirstChild(name)
+            if v and v.Value then return false end
+        end
+        if root:FindFirstChild("flyattachment") or root:FindFirstChild("stick") then return false end
+        local statz = p:FindFirstChild("statz")
+        local race = statz and statz:FindFirstChild("race")
+        return (race and race.Value == "puppet") or workspace:FindFirstChild("EggEvent") ~= nil
+    end
+    local function cameraDirection(dir, fallback)
+        local camera = workspace.CurrentCamera
+        local d = camera and ((dir == "left" or dir == "right") and camera.CFrame.RightVector or camera.CFrame.LookVector) or fallback
+        d = Vector3.new(d.X, 0, d.Z)
+        if d.Magnitude <= .001 then d = Vector3.new(fallback.X, 0, fallback.Z) end
+        d = d.Magnitude > .001 and d.Unit or Vector3.new(0, 0, -1)
+        return (dir == "back" or dir == "right") and -d or d
+    end
+    local function direction()
+        local d = hum.MoveDirection
+        d = Vector3.new(d.X, 0, d.Z)
+        if d.Magnitude <= .001 then return end
+        d = d.Unit
+        local camera = workspace.CurrentCamera
+        local dir = "front"
+        if camera then
+            local cf = CFrame.lookAt(root.Position, root.Position + d)
+            local offset = camera.CFrame.Position - root.Position
+            local function near(axis)
+                return offset.Magnitude > .001 and offset.Unit:Dot(axis.Unit) >= .5
+            end
+            if near((cf * CFrame.Angles(0, math.pi / 2, 0)).LookVector) then dir = "right"
+            elseif near((cf * CFrame.Angles(0, -math.pi / 2, 0)).LookVector) then dir = "left"
+            elseif near(cf.LookVector) then dir = "back" end
+        end
+        return dir, cameraDirection(dir, d)
+    end
+    local function releaseDash()
+        local v = root:FindFirstChild("dashvelocity")
+        if not v or not v:IsA("LinearVelocity") or v.VelocityConstraintMode ~= Enum.VelocityConstraintMode.Plane then return end
+        local q = root.AssemblyLinearVelocity
+        local a, b = v.PrimaryTangentAxis, v.SecondaryTangentAxis
+        local d = a * v.PlaneVelocity.X + b * v.PlaneVelocity.Y
+        if d.Magnitude > 150 then d = d.Unit * 150 end
+        v:Destroy()
+        root.AssemblyLinearVelocity = q - a * q:Dot(a) - b * q:Dot(b) + d
+        local attachment = root:FindFirstChild("DashAttachment")
+        if attachment and not root:FindFirstChild("dashvelocity") then attachment:Destroy() end
+    end
+    local function boost(d)
+        if not root or not root.Parent then return end
+        local q = root.AssemblyLinearVelocity
+        root.AssemblyLinearVelocity = Vector3.new(d.X * MoveCfg.PuppetSpeed, q.Y, d.Z * MoveCfg.PuppetSpeed)
+    end
+    local function bind(character)
+        clear()
+        h, hum, root, animator = character, nil, nil, nil
+        used, last = 0, 0
+        local token = epoch
+        task.spawn(function()
+            local a = character:WaitForChild("Humanoid", 5)
+            local b = character:WaitForChild("HumanoidRootPart", 5)
+            local c = a and a:WaitForChild("Animator", 5)
+            if not alive or token ~= epoch or not a or not b or not c then return end
+            hum, root, animator = a, b, c
+            baseJumpPower = a.FloorMaterial ~= Enum.Material.Air and a.JumpPower or nil
+            appliedJumpPower = nil
+            jumpSound = Instance.new("Sound")
+            jumpSound.SoundId = "rbxassetid://9165300727"
+            jumpSound.Volume = 1
+            jumpSound.Parent = character
+            local function landed()
+                if used == 0 and not appliedJumpPower then return end
+                used = 0 epoch = epoch + 1 last = 0 pending = false
+                for _, track in pairs(tracks) do
+                    if track.IsPlaying then track:Stop(.05) end
+                end
+                restoreJump()
+            end
+            characterLinks[#characterLinks + 1] = a.StateChanged:Connect(function(_, state)
+                if state == Enum.HumanoidStateType.Landed or state == Enum.HumanoidStateType.Dead then landed() end
+            end)
+            characterLinks[#characterLinks + 1] = a:GetPropertyChangedSignal("FloorMaterial"):Connect(function()
+                if a.FloorMaterial ~= Enum.Material.Air then landed() end
+            end)
+            characterLinks[#characterLinks + 1] = c.AnimationPlayed:Connect(function(track)
+                local id = track.Animation and track.Animation.AnimationId:match("%d+")
+                if not byId[id] or owned[track] or a.FloorMaterial ~= Enum.Material.Air then return end
+                used = used + 1 last = os.clock()
+                -- oyunun kendi puppet zıplaması, animasyonu oynatmadan önce zıplama gücünü 1.5 katına çıkarıyor
+                baseJumpPower = a.JumpPower / 1.5
+                local d = cameraDirection(byId[id], a.MoveDirection)
+                local currentRoot, currentEpoch = root, epoch
+                task.spawn(function()
+                    r.PreSimulation:Wait()
+                    if alive and epoch == currentEpoch and root == currentRoot and currentRoot.Parent and a.FloorMaterial == Enum.Material.Air then boost(d) end
+                end)
+            end)
+        end)
+    end
+    connections[#connections + 1] = u.JumpRequest:Connect(function()
+        local LIMIT, GAP = MoveCfg.PuppetLimit, MoveCfg.PuppetGap
+        if not alive or pending or used < 2 or used >= LIMIT or os.clock() - last < GAP or not allowed() then return end
+        local token, count = epoch, used
+        local dir, d = direction()
+        if not dir then return end
+        pending = true
+        task.delay(.05, function()
+            if not alive or token ~= epoch then return end
+            pending = false
+            if used ~= count or used >= LIMIT or os.clock() - last < GAP or not allowed() then return end
+            used = used + 1
+            last = os.clock()
+            releaseDash()
+            if baseJumpPower then
+                appliedJumpPower = baseJumpPower * 1.5
+                hum.JumpPower = appliedJumpPower
+            end
+            local combat = h:FindFirstChild("combat")
+            local remote = combat and combat:FindFirstChild("update")
+            if remote and remote:IsA("RemoteEvent") then
+                remote:FireServer("puppetboost")
+                local deflect = combat:FindFirstChild("deflect")
+                if deflect and deflect.Value then remote:FireServer("sublog") end
+            end
+            boost(d)
+            local t = tracks[dir]
+            if not t then
+                local animation = Instance.new("Animation")
+                animation.AnimationId = "rbxassetid://" .. ids[dir]
+                local ok, value = pcall(function() return animator:LoadAnimation(animation) end)
+                animation:Destroy()
+                if ok then t = value tracks[dir] = t owned[t] = true end
+            end
+            for _, other in ipairs(animator:GetPlayingAnimationTracks()) do
+                local id = other.Animation and other.Animation.AnimationId:match("%d+")
+                if byId[id] then other:Stop() end
+            end
+            if t then t.Priority = Enum.AnimationPriority.Action4 t:Play() end
+            local jump = tracks.jump
+            if not jump then
+                local animation = Instance.new("Animation")
+                animation.AnimationId = "rbxassetid://9126997146"
+                local ok, value = pcall(function() return animator:LoadAnimation(animation) end)
+                animation:Destroy()
+                if ok then jump = value tracks.jump = jump owned[jump] = true end
+            end
+            if jump then jump.Priority = Enum.AnimationPriority.Action3 jump:Play() end
+            if jumpSound then jumpSound:Play() end
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+            for _, other in ipairs(animator:GetPlayingAnimationTracks()) do
+                if other.Animation and other.Animation.AnimationId:match("%d+") == "9102156017" then other:Stop() end
+            end
+            local marker = Instance.new("IntValue")
+            marker.Name = "dbljump" marker.Parent = h
+            game:GetService("Debris"):AddItem(marker, 1)
+            last = os.clock()
+        end)
+    end)
+    connections[#connections + 1] = p.CharacterAdded:Connect(bind)
+    connections[#connections + 1] = p.CharacterRemoving:Connect(function(character)
+        if character == h then clear() h, hum, root, animator = nil, nil, nil, nil end
+    end)
+    if p.Character then bind(p.Character) end
+    return function()
+        alive = false clear()
+        for _, c in ipairs(connections) do c:Disconnect() end
+    end
+end
+
+-- Wider dash: dash hızı sabit SPEED (sağ tık basılıyken dokunmaz)
+function Move.widerDash()
+    if type(genv.WiderDashStop) == "function" then genv.WiderDashStop() end
+    local connection = RunService.PreSimulation:Connect(function()
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if not root or UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+            return
+        end
+        local dash = root:FindFirstChild("dashvelocity")
+        if not dash or not dash:IsA("LinearVelocity")
+            or dash.VelocityConstraintMode ~= Enum.VelocityConstraintMode.Plane then
+            return
+        end
+        local velocity = dash.PlaneVelocity
+        if velocity.Magnitude > 0 then
+            dash.PlaneVelocity = velocity.Unit * MoveCfg.DashSpeed
+        end
+    end)
+    return function() connection:Disconnect() end
+end
+
+local moveStops = {}
+local function moveToggle(key)                                      -- toggle → kur / durdur
+    return function(on)
+        if moveStops[key] then pcall(moveStops[key]) moveStops[key] = nil end
+        if on then
+            local ok, stop = pcall(Move[key])
+            if ok then moveStops[key] = stop else hubError(key, stop) end
+        end
+    end
+end
+HUB.Cleanup[#HUB.Cleanup + 1] = function()
+    for k, stop in pairs(moveStops) do pcall(stop) moveStops[k] = nil end
+end
+HUB.MoveStops = moveStops                                           -- testler için
+
+local MV = Tabs.Movement
+local Basic = MV:Card({ Title = "Movement", Icon = "footprints" })
+Basic:Toggle({ Title = "Always run", Flag = "mv_run", Default = false, Callback = moveToggle("alwaysRun") })
+Basic:Toggle({ Title = "NoClip", Icon = "ghost", Flag = "p_noclip", Default = false, Bind = Enum.KeyCode.N, Bindable = true, Callback = set("NoClip") })
+Basic:Toggle({ Title = "Click TP", Desc = "Ctrl + left click", Flag = "p_clicktp", Default = false, Callback = set("ClickTP") })
+
+local Puppet = MV:Card({ Title = "Puppet", Icon = "zap", Side = "Right" })
+Puppet:Toggle({ Title = "Puppet boost", Desc = "Extra directional air jumps (puppet race)", Flag = "mv_puppet", Default = false, Callback = moveToggle("puppet") })
+Puppet:Slider({ Title = "Speed", Flag = "mv_puppetspeed", Min = 50, Max = 400, Default = 200, DependsOn = { Flag = "mv_puppet", Reason = "" },
+    Callback = function(v) MoveCfg.PuppetSpeed = v end })
+Puppet:Slider({ Title = "Count", Flag = "mv_puppetcount", Min = 2, Max = 10, Default = 5, DependsOn = { Flag = "mv_puppet", Reason = "" },
+    Callback = function(v) MoveCfg.PuppetLimit = v end })
+Puppet:Slider({ Title = "Gap", Flag = "mv_puppetgap", Min = 0.1, Max = 1, Step = 0.05, Default = 0.3, Suffix = " s", DependsOn = { Flag = "mv_puppet", Reason = "" },
+    Callback = function(v) MoveCfg.PuppetGap = v end })
+
+local Cam = MV:Card({ Title = "Camera", Icon = "camera" })
+Cam:Toggle({ Title = "Lock FOV while flying", Desc = "Fly jutsu doesn't change your FOV", Flag = "mv_flyfov", Default = false, Callback = moveToggle("flyFov") })
+Cam:Toggle({ Title = "Unlock zoom", Flag = "p_zoom", Default = false, Callback = set("UnlockZoom") })
+
+local Dash = MV:Card({ Title = "Wider dash", Icon = "wind", Side = "Right" })
+Dash:Toggle({ Title = "Wider dash", Desc = "Hold right click for a normal dash", Flag = "mv_dash", Default = false, Callback = moveToggle("widerDash") })
+Dash:Slider({ Title = "Speed", Flag = "mv_dashspeed", Min = 50, Max = 300, Default = 125, Suffix = " studs/s", DependsOn = { Flag = "mv_dash", Reason = "" },
+    Callback = function(v) MoveCfg.DashSpeed = v end })
+
+------------------------------------------------------------------------ PLAYER (genel kısım; Shindo kartları aşağıda aynı sayfaya eklenir)
+local PlayerMisc = Tabs.Player:Card({ Title = "Misc", Icon = "wand-sparkles", Side = "Right" })
+PlayerMisc:Toggle({ Title = "Anti-AFK", Desc = "Prevents the 20 minute idle kick", Flag = "p_antiafk", Default = true, Callback = set("AntiAfk") })
+
+local Spec = Tabs.Player:Card({ Title = "Spectate", Icon = "video", Side = "Right" })
 local specList = Spec:PlayerList({ Title = "Player", Multi = false, Height = 120 })
 local specRow = Spec:Row({ Widths = { 2, 1 } })
 specRow:Button({ Title = "Spectate", Icon = "eye", Style = "Primary", Callback = function()
@@ -1580,6 +1927,7 @@ specRow:Button({ Title = "Spectate", Icon = "eye", Style = "Primary", Callback =
     if chosen and chosen[1] then spectate(chosen[1]) end
 end })
 specRow:Button({ Title = "Stop", Icon = "square", Style = "Ghost", Callback = function() spectate(nil) end })
+HUB.PlayerLateCards = { PlayerMisc, Spec }                          -- Shindo kartlarının altına itilecek
 end
 
 ------------------------------------------------------------------------ SERVER
@@ -1821,7 +2169,7 @@ do
 		PunchM = false, PunchD = false, TreeM = false, TreeD = false, Shoot = false, Rush = false, Chi = false, DailyBoss = false,
 	}
 	local GREEN_SCROLL = "http://www.roblox.com/asset/?id=5459241648"
-	if ENV.QustahShindoCore then ENV.QustahShindoCore.Farm = F end   -- testler için
+	if ENV.QustahShindoCore then ENV.QustahShindoCore.Farm, ENV.QustahShindoCore.Hub = F, HUB end   -- testler için
 
 	local function timerReady(giver)                            -- boss görev vericisinin süresi doldu mu
 		local ok, txt = pcall(function() return giver.missiongiver.timer.time.time.Text end)
@@ -2545,7 +2893,7 @@ end
 
 ------------------------------------------------------------------ PLAYER › Shindo
 do
-	local P = Tabs.Player:Page("Shindo")
+	local P = Tabs.Player                                     -- tek sayfa: Game · NPC kill aura · Scroll snipe, altında Misc / Spectate
 	local G = { NoCombat = false, Unbreak = false, Aura = false, Scroll = false, ScrollSpawn = true }
 
 	local Game = P:Card({ Title = "Game", Icon = "wand-sparkles" })
@@ -2684,6 +3032,10 @@ do
 			end
 		end
 	end)
+	-- Misc ve Spectate önce oluşturuldu; Shindo kartları üstte görünsün diye sıraları sona alınır
+	for i, card in ipairs(HUB.PlayerLateCards or {}) do
+		pcall(function() card.frame.LayoutOrder = 1000 + i end)
+	end
 end
 
 ------------------------------------------------------------------ TELEPORT
