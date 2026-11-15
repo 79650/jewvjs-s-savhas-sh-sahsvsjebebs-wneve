@@ -1,5 +1,5 @@
 --[[
-    Qustāh · Shindo Life  ·  V1.34
+    Qustāh · Shindo Life  ·  V1.35
     UI: qustah-ui-lib · sadece Shindo Life'ta açılır (GameId kontrolü)
 
     Sekmeler: Dashboard · Farm · Spin · Combat · Visuals · Player · Teleport · Loadout · Server · Settings
@@ -397,7 +397,7 @@ end
 ------------------------------------------------------------------ PENCERE
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.34",
+	Version = "V1.35",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -1816,7 +1816,6 @@ do
 		Scroll = false, Boss = false,
 		BossSpecific = false, BossSel = {},   -- DogeHub gibi: Specific (toplu seçim) / Random
 		StuckAfter = 60,                                         -- takılan görevi iptal (ayar yok, scriptin kendi işi)
-		Done = { Boss = 0 },                                     -- bu oturumda alınan boss görevleri
 		Stats = {}, AutoRank = false, RankAfterMax = false, RankRC = false, RankStop = false, RankStopAt = 500,
 		-- Mentor ve Daily ayrı anahtarlar: birini kapatmak ötekini durdurmasın
 		PunchM = false, PunchD = false, TreeM = false, TreeD = false, Shoot = false, Rush = false, Chi = false, DailyBoss = false,
@@ -1994,7 +1993,6 @@ do
 			if inMission() then killMissionMobs(farmAlive) return end
 			bossGiver, bossKilled = nil, false                       -- görev bitti
 			if F.Boss and acceptFrom(bossGivers(), (F.BossSpecific and #F.BossSel > 0 and F.BossSel) or "Random", function() return HUB.Running and F.Boss end) then
-				F.Done.Boss += 1
 				return
 			end
 			if HUB.Running and F.DailyBoss and acceptFrom(dailyBossGivers(), "Random", function() return HUB.Running and F.DailyBoss end) then return end
@@ -2048,7 +2046,6 @@ do
 	local bossTotal = 0
 	local bossBar = BossSet:Progress({ Title = "Bosses on map", Desc = "Ready to fight", Value = 0, Max = 1,
 		Format = function(v) return bossTotal > 0 and ("%d / %d ready"):format(v, bossTotal) or "none" end })
-	local sessionRow = BossSet:Info({ Title = "Bosses this session", Value = "0" })
 
 	local function refreshList(dd, list, keySel, flag)
 		dd:SetItems(list, true)
@@ -2069,7 +2066,6 @@ do
 		bossTotal = bTotal
 		bossBar:SetMax(math.max(bTotal, 1))
 		bossBar:Set(bReady)
-		sessionRow:Set(tostring(F.Done.Boss))
 	end
 	pcall(updateCounts)
 	loop("Farm counts", 2, updateCounts)
