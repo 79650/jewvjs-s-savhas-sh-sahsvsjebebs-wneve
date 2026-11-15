@@ -1,9 +1,9 @@
--- Qustāh · Shindo Life · V1.44
+-- Qustāh · Shindo Life · V1.45
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
-local SCRIPT_URL = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
+local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
 
-local ENV = (getgenv and getgenv()) or _G
+local env = (getgenv and getgenv()) or _G
 
 if game.GameId ~= 1511883870 then                               -- Shindo Life only
 	warn("Qustāh Shindo: this game is not Shindo Life, script not loaded")
@@ -11,8 +11,8 @@ if game.GameId ~= 1511883870 then                               -- Shindo Life o
 end
 repeat task.wait() until game:IsLoaded()
 
-if ENV.QustahShindoCore and ENV.QustahShindoCore.Unload then
-	pcall(ENV.QustahShindoCore.Unload)
+if env.QustahShindoCore and env.QustahShindoCore.Unload then
+	pcall(env.QustahShindoCore.Unload)
 end
 local Lib = loadstring(game:HttpGet("https://raw.githubusercontent.com/79650/gwanjkcdsjawbdnjascdas-ui-lib/refs/heads/main/qustah-ui-lib/dist/qustah-ui-lib.lua"))()
 
@@ -24,31 +24,31 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
 ----- Places -----
-local PLACE = {
-	MAIN_MENU = 4616652839, MY_HOME = 5451410109, DUNGEON_SELECT = 7524809704, TOURNAMENT = 6602058266,
+local places = {
+	mainMenu = 4616652839, myHome = 5451410109, dungeonSelect = 7524809704, tournament = 6602058266,
 }
 local function placeKind()
 	local id = game.PlaceId
-	if id == PLACE.MAIN_MENU then return "menu" end
-	if id == PLACE.MY_HOME then return "home" end
-	if id == PLACE.DUNGEON_SELECT then return "dungeonselect" end
-	if id == PLACE.TOURNAMENT then return "tournament" end
+	if id == places.mainMenu then return "menu" end
+	if id == places.myHome then return "home" end
+	if id == places.dungeonSelect then return "dungeonselect" end
+	if id == places.tournament then return "tournament" end
 	if workspace:FindFirstChild("dungeons") then return "dungeon" end
 	if workspace:FindFirstChild("cutscene") then return "eventboss" end
 	if workspace:FindFirstChild("bossbattle") then return "bossbattle" end
 	return "map"
 end
-local KIND = placeKind()
-local KIND_NAME = {
+local placeType = placeKind()
+local placeTypeNames = {
 	menu = "Main menu", home = "My Home", dungeonselect = "Dungeon select", tournament = "Tournament",
 	dungeon = "Dungeon", eventboss = "Event boss", bossbattle = "Boss battle", map = "Map",
 }
-local function placeName() return KIND_NAME[KIND] or "Map" end
+local function placeName() return placeTypeNames[placeType] or "Map" end
 
 local queue = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
 local hubQueued = false
-local HUB_QUEUE_STOP = "QustahShindoHub.stop"
-local RELL_QUEUE_STOP = "QustahShindoRELL.stop"
+local hubStopFile = "QustahShindoHub.stop"
+local rellStopFile = "QustahShindoRELL.stop"
 local function queuePermission(path, allowed)
 	if not (isfile and writefile and delfile) then return false end
 	return pcall(function()
@@ -64,9 +64,9 @@ local function guardQueue(path, code)
 end
 local function queueHub()                                       -- re-open the hub after a teleport
 	if not queue or not (isfile and writefile and delfile) then return end
-	if not queuePermission(HUB_QUEUE_STOP, true) or hubQueued then return end
-	local code = ("loadstring(game:HttpGet(%q, true))()"):format(SCRIPT_URL)
-	local ok, result = pcall(queue, guardQueue(HUB_QUEUE_STOP, code))
+	if not queuePermission(hubStopFile, true) or hubQueued then return end
+	local code = ("loadstring(game:HttpGet(%q, true))()"):format(rawLink)
+	local ok, result = pcall(queue, guardQueue(hubStopFile, code))
 	hubQueued = ok and result ~= false
 end
 
@@ -181,18 +181,18 @@ end
 
 local Window, unloadThis
 -- Hub loops: all of them stop on Unload, an error in one iteration does not kill the loop, and errors are reported to Settings › Info.
-local HUB = { Running = true, Conns = {}, Err = {}, Cleanup = {} }
+local hub = { Running = true, Conns = {}, Err = {}, Cleanup = {} }
 local function hubError(tag, err)
 	local now = os.clock()
-	if HUB.Err[tag] and now - HUB.Err[tag] < 10 then return end    -- report the same source at most once every 10 s
-	HUB.Err[tag] = now
+	if hub.Err[tag] and now - hub.Err[tag] < 10 then return end    -- report the same source at most once every 10 s
+	hub.Err[tag] = now
 	if Window then pcall(function() Window:ReportError(tag, tostring(err)) end) end
 end
 local function loop(tag, interval, fn)                          -- interval: a number or a function returning a number
 	task.spawn(function()
-		while HUB.Running do
+		while hub.Running do
 			task.wait(type(interval) == "function" and interval() or interval)
-			if not HUB.Running then break end
+			if not hub.Running then break end
 			local ok, err = pcall(fn)
 			if not ok then hubError(tag, err) end
 		end
@@ -200,11 +200,11 @@ local function loop(tag, interval, fn)                          -- interval: a n
 end
 local function hubConnect(signal, fn)
 	local c = signal:Connect(function(...)
-		if not HUB.Running then return end
+		if not hub.Running then return end
 		local ok, err = pcall(fn, ...)
 		if not ok then hubError("Event", err) end
 	end)
-	HUB.Conns[#HUB.Conns + 1] = c
+	hub.Conns[#hub.Conns + 1] = c
 	return c
 end
 local function notify(title, content, icon, color)
@@ -246,13 +246,13 @@ local function platformOff()
 	if platformUsers == 0 and Platform then Platform:Destroy() Platform = nil end
 end
 local function hubStop()                                         -- Unload: loops, events, platform
-	HUB.Running = false
-	queuePermission(HUB_QUEUE_STOP, false)
-	queuePermission(RELL_QUEUE_STOP, false)
-	for _, fn in ipairs(HUB.Cleanup) do pcall(fn) end
-	table.clear(HUB.Cleanup)
-	for _, c in ipairs(HUB.Conns) do pcall(function() c:Disconnect() end) end
-	table.clear(HUB.Conns)
+	hub.Running = false
+	queuePermission(hubStopFile, false)
+	queuePermission(rellStopFile, false)
+	for _, fn in ipairs(hub.Cleanup) do pcall(fn) end
+	table.clear(hub.Cleanup)
+	for _, c in ipairs(hub.Conns) do pcall(function() c:Disconnect() end) end
+	table.clear(hub.Conns)
 	platformUsers = 0
 	platformFixed = nil
 	if Platform then pcall(function() Platform:Destroy() end) Platform = nil end
@@ -260,14 +260,14 @@ local function hubStop()                                         -- Unload: loop
 end
 -- Boss safe spot: 1000 studs above the mission giver's talk part (the part with the scroll).
 -- The mission does not end right after the boss dies and full-susanoo bosses cannot be hit, so we wait here until the next boss.
-local SAFE_HEIGHT = 1000
+local safeHeight = 1000
 local function giverTalkPart(giver)
 	local mg = giver and giver:FindFirstChild("missiongiver")
 	return mg and mg:FindFirstChild("HumanoidRootPart")
 end
 -- Safe zone: an 85x85 client-side floor. You can move freely on it (no constant teleporting);
 -- if you walk off or fall, you are put back in the middle.
-local SAFE_SIZE = Vector3.new(85, 2, 85)
+local safeSize = Vector3.new(85, 2, 85)
 -- Distance from the root part to the feet while standing. Reading the animated leg position is unreliable
 -- (QustahInfo measured 3.26 while running and 2.04 while falling; the real floor distance was 2.88), so the rig's own size is used:
 -- R6: half the root + leg height (0.96 + 1.92 = 2.88) · R15: HipHeight + half the root.
@@ -311,7 +311,7 @@ local function safePartAt(cf)
 		SafePart = (ok and clone) or Instance.new("Part")
 		pcall(function() SafePart:ClearAllChildren() end)           -- do not copy textures, scripts etc.
 		SafePart.Name = "QustahSafe"
-		SafePart.Anchored, SafePart.CanCollide, SafePart.Size = true, true, SAFE_SIZE
+		SafePart.Anchored, SafePart.CanCollide, SafePart.Size = true, true, safeSize
 		pcall(function() SafePart.CanQuery, SafePart.CanTouch = true, true end)
 		pcall(function() SafePart.Shape = Enum.PartType.Block end)
 		SafePart.Transparency = 0.6
@@ -333,7 +333,7 @@ end
 local function goSafe(giver)
 	local talk = giverTalkPart(giver)
 	if not talk then return false end
-	local part = safePartAt(CFrame.new(talk.Position + Vector3.new(0, SAFE_HEIGHT, 0)))
+	local part = safePartAt(CFrame.new(talk.Position + Vector3.new(0, safeHeight, 0)))
 	platformFixed = part.CFrame * CFrame.new(0, -12, 0)            -- the follow platform is parked below the floor so the two do not overlap and push you around
 	local r = rootPart()
 	if r and not onSafePart(r, part) then tpTo(safeStandCF(part)) r.AssemblyLinearVelocity = Vector3.zero end
@@ -359,11 +359,11 @@ end)
 -- attack an NPC: stand above / behind it, face it, press keys + M1
 local Attack = { Height = 0, Distance = 10, Mode = "Legacy (M1 + E)" }   -- Height / Distance are fixed (no setting); Legacy is on by default (as in DogeHub)
 -- Melee / Legacy distance depends on the fighting style (as in DogeHub): short-range styles 7, others 10 studs
-local SHORT_STYLES = { [""] = true, boxing = true, jeetkunedo = true, muaythai = true, mma = true }
+local shortStyles = { [""] = true, boxing = true, jeetkunedo = true, muaythai = true, mma = true }
 local function meleeDistance()
 	local st = LocalPlayer:FindFirstChild("statz")
 	local fs = st and st:FindFirstChild("fightingstyle")
-	if not fs or SHORT_STYLES[fs.Value] then return 7 end
+	if not fs or shortStyles[fs.Value] then return 7 end
 	return 10
 end
 local function attackNPC(v)
@@ -384,13 +384,13 @@ local function attackNPC(v)
 		for _ = 1, 3 do combat("key", "e") combat("key", "eend") end
 	end
 	pcall(function() v.Humanoid.Health = -v.Humanoid.Health end)   -- set health to its negative, as NukePlat does (client side)
-	HUB.AuraTarget = v                                           -- let the kill aura hit the farm's current target
+	hub.AuraTarget = v                                           -- let the kill aura hit the farm's current target
 end
 
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.44",
+	Version = "V1.45",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -417,7 +417,7 @@ local Tabs = {
 	Server = Window:Tab({ Title = "Server", Icon = "server" }),
 }
 
-if KIND == "tournament" then
+if placeType == "tournament" then
 	Window:Notify({ Title = "Tournament", Content = "You are in tournament mode. Exploiting here can easily get you banned.", Icon = "triangle-alert", Color = "warning" })
 end
 
@@ -444,7 +444,7 @@ local Camera = Workspace.CurrentCamera
 local RealWorkspace = workspace
 local FindFirstChild = game.FindFirstChild                      -- a plain call so no namecall happens inside the hook
 
-local ENV = (getgenv and getgenv()) or _G
+local env = (getgenv and getgenv()) or _G
 
 local Running = true
 local Connections = {}
@@ -455,39 +455,39 @@ local function connect(signal, fn)
 end
 
 local newcclosure = newcclosure or function(f) return f end
-local V2, V3, CF, C3 = Vector2.new, Vector3.new, CFrame.new, Color3.new
+local vec2, vec3, cframe, rgb = Vector2.new, Vector3.new, CFrame.new, Color3.new
 local floor, clamp, max, min, rad, tan = math.floor, math.clamp, math.max, math.min, math.rad, math.tan
-local BLACK, WHITE = C3(0, 0, 0), C3(1, 1, 1)
+local black, white = rgb(0, 0, 0), rgb(1, 1, 1)
 
 ----- Settings -----
-local S = {
+local settings = {
     -- silent aim
     SA_Enabled = false, SA_HitChance = 100, SA_Part = "Head", SA_Priority = "Mouse",
     SA_Methods = { Raycast = true, FindPartOnRay = true, ["Mouse.Hit"] = true },
     SA_TeamCheck = false, SA_VisCheck = false, SA_IgnoreFriends = false, SA_MaxDist = 1000, SA_SafeOrigin = true,
     SA_Predict = false, SA_PredStrength = 100, SA_Whitelist = {},
     -- fov
-    FOV_Show = true, FOV_Radius = 120, FOV_Sides = 64, FOV_Thick = 1, FOV_Color = C3(1, 1, 1), FOV_Alpha = 0,
+    FOV_Show = true, FOV_Radius = 120, FOV_Sides = 64, FOV_Thick = 1, FOV_Color = rgb(1, 1, 1), FOV_Alpha = 0,
     FOV_Filled = false, FOV_Origin = "Mouse", FOV_TargetLine = false,
     -- esp
     ESP_Enabled = false, ESP_TeamCheck = true, ESP_MaxDist = 1500,
     Box = true, BoxStyle = "Corner", BoxCorner = 30, BoxFill = false, BoxFillAlpha = 0.85, HealthBar = true, Outline = true,
     Name = true, DisplayName = true, HealthText = true, Distance = true, DistUnit = "Studs", Weapon = true, TextSize = 13,
-    Chams = false, ChamsWalls = true, ChamsFill = 0.6, ChamsOutline = C3(1, 1, 1),
+    Chams = false, ChamsWalls = true, ChamsFill = 0.6, ChamsOutline = rgb(1, 1, 1),
     Tracer = false, TracerFrom = "Bottom", Skeleton = false, LookDir = false, HeadDot = false,
     Arrows = false, ArrowRadius = 150, ArrowSize = 14,
-    ColEnemy = C3(1, 0.23, 0.23), ColAlly = C3(0.23, 1, 0.42), ColHidden = C3(1, 0.69, 0.23), ColTarget = C3(0.75, 0.45, 1),
+    ColEnemy = rgb(1, 0.23, 0.23), ColAlly = rgb(0.23, 1, 0.42), ColHidden = rgb(1, 0.69, 0.23), ColTarget = rgb(0.75, 0.45, 1),
     UseTeamColor = false, VisColor = true, Fade = true, Perf = false,
     -- world
     Fullbright = false, NoFog = false, CustomTime = false, ClockTime = 14, NoShadows = false,
-    CustomAmbient = false, Ambient = C3(0.7, 0.7, 0.7),
+    CustomAmbient = false, Ambient = rgb(0.7, 0.7, 0.7),
     -- player
     SpeedOn = false, WalkSpeed = 16, JumpOn = false, JumpPower = 50, InfJump = false,
     NoClip = false, AntiAfk = true, ClickTP = false, UnlockZoom = false,
     -- server
     StaffAlert = false, StaffGroup = 0, StaffRank = 1, StaffAction = "Notify", AutoRejoin = false,
 }
-local function set(key) return function(v) S[key] = v end end
+local function set(key) return function(v) settings[key] = v end end
 local function toSet(list)
     local out = {}
     for _, v in ipairs(type(list) == "table" and list or {}) do out[v] = true end
@@ -523,7 +523,7 @@ local Shim, Dirty = {}, {}
 local function frame(props)
     local f = Instance.new("Frame")
     f.BorderSizePixel = 0
-    f.AnchorPoint = V2(0.5, 0.5)
+    f.AnchorPoint = vec2(0.5, 0.5)
     f.Visible = false
     for k, v in pairs(props or {}) do f[k] = v end
     f.Parent = Overlay
@@ -597,8 +597,8 @@ local Apply = {
             for i = 1, n do
                 edges[i] = edges[i] or frame()
                 local a, b = (i - 1) * step, i * step
-                placeLine(edges[i], center + V2(math.cos(a), math.sin(a)) * r,
-                    center + V2(math.cos(b), math.sin(b)) * r, p)
+                placeLine(edges[i], center + vec2(math.cos(a), math.sin(a)) * r,
+                    center + vec2(math.cos(b), math.sin(b)) * r, p)
             end
         end
     end,
@@ -611,7 +611,7 @@ local Apply = {
         l.TextColor3 = p.Color
         l.TextTransparency = 1 - (p.Transparency or 1)
         l.TextStrokeTransparency = p.Outline and (1 - (p.Transparency or 1)) * 0.6 + 0.4 or 1
-        l.AnchorPoint = p.Center and V2(0.5, 0) or Vector2.zero
+        l.AnchorPoint = p.Center and vec2(0.5, 0) or Vector2.zero
         local b = l.TextBounds
         l.Size = UDim2.fromOffset(b.X, b.Y)
         l.Position = UDim2.fromOffset((p.Position or Vector2.zero).X, (p.Position or Vector2.zero).Y)
@@ -655,12 +655,12 @@ ShimMeta.__newindex = function(self, k, v)
     end
 end
 function Shim.new(kind)
-    local o = { kind = kind, p = { Visible = false, Color = WHITE, Transparency = 1, Thickness = 1, ZIndex = 1 }, dirty = false }
+    local o = { kind = kind, p = { Visible = false, Color = white, Transparency = 1, Thickness = 1, ZIndex = 1 }, dirty = false }
     if kind == "Text" then
         local l = Instance.new("TextLabel")
         l.BackgroundTransparency = 1
         l.Font = Enum.Font.Code
-        l.TextStrokeColor3 = BLACK
+        l.TextStrokeColor3 = black
         l.Visible = false
         l.Parent = Overlay
         o.f = l
@@ -717,7 +717,7 @@ local function isTeammate(plr)
 end
 local function toScreen(pos)
     local v, on = Camera:WorldToViewportPoint(pos)
-    return V2(v.X, v.Y), on, v.Z
+    return vec2(v.X, v.Y), on, v.Z
 end
 local function healthColor(p)
     p = clamp(p, 0, 1)
@@ -757,7 +757,7 @@ local CanHook = typeof(hookmetamethod) == "function" and typeof(getnamecallmetho
 local RandomPick = {}
 
 local function pickPart(plr, char, mousePos)
-    local mode = S.SA_Part
+    local mode = settings.SA_Part
     if mode == "Head" then return char:FindFirstChild("Head") end
     if mode == "Torso" then
         return char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or char:FindFirstChild("HumanoidRootPart")
@@ -788,32 +788,32 @@ local function pickPart(plr, char, mousePos)
 end
 
 local function fovOrigin()
-    if S.FOV_Origin == "Center" then return Camera.ViewportSize / 2 end
+    if settings.FOV_Origin == "Center" then return Camera.ViewportSize / 2 end
     return UserInputService:GetMouseLocation()
 end
 
 local function findTarget()
-    if not S.SA_Enabled then return nil end
+    if not settings.SA_Enabled then return nil end
     local origin = fovOrigin()
     local best, bestScore = nil, math.huge
     for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and not S.SA_Whitelist[plr.UserId] then
+        if plr ~= LocalPlayer and not settings.SA_Whitelist[plr.UserId] then
             local char, hum, root = getCharacter(plr)
-            if char and isAlive(hum) and not (S.SA_TeamCheck and isTeammate(plr)) and not (S.SA_IgnoreFriends and isFriend(plr)) then
+            if char and isAlive(hum) and not (settings.SA_TeamCheck and isTeammate(plr)) and not (settings.SA_IgnoreFriends and isFriend(plr)) then
                 local dist = (root.Position - Camera.CFrame.Position).Magnitude
-                if dist <= S.SA_MaxDist then
+                if dist <= settings.SA_MaxDist then
                     local part = pickPart(plr, char, origin)
                     if part then
                         local sp, on = toScreen(part.Position)
                         local fovDist = (sp - origin).Magnitude
-                        if on and fovDist <= S.FOV_Radius and (not S.SA_VisCheck or isVisible(plr, char, part)) then
+                        if on and fovDist <= settings.FOV_Radius and (not settings.SA_VisCheck or isVisible(plr, char, part)) then
                             local score = fovDist
-                            if S.SA_Priority == "Distance" then score = dist
-                            elseif S.SA_Priority == "Health" then score = hum.Health end
+                            if settings.SA_Priority == "Distance" then score = dist
+                            elseif settings.SA_Priority == "Health" then score = hum.Health end
                             if score < bestScore then
                                 local pos = part.Position
-                                if S.SA_Predict and S.SA_PredStrength > 0 then              -- 100% = a 1000 studs/s projectile
-                                    pos = pos + part.AssemblyLinearVelocity * (dist / 1000) * (S.SA_PredStrength / 100)
+                                if settings.SA_Predict and settings.SA_PredStrength > 0 then              -- 100% = a 1000 studs/s projectile
+                                    pos = pos + part.AssemblyLinearVelocity * (dist / 1000) * (settings.SA_PredStrength / 100)
                                 end
                                 best, bestScore = { Player = plr, Part = part, Position = pos }, score
                             end
@@ -826,9 +826,9 @@ local function findTarget()
     return best
 end
 
-local function roll() return math.random(1, 100) <= S.SA_HitChance end
+local function roll() return math.random(1, 100) <= settings.SA_HitChance end
 local function fromShooter(origin)                               -- only redirect rays fired from your own weapon
-    if not S.SA_SafeOrigin then return true end
+    if not settings.SA_SafeOrigin then return true end
     if (origin - Camera.CFrame.Position).Magnitude < 25 then return true end
     -- note: calling char:FindFirstChild (a namecall) inside the hook breaks the game's original call
     local char = LocalPlayer.Character
@@ -845,12 +845,12 @@ local function installNamecallHook()
         return old(self, ...)
     end
     local wrapper = newcclosure(function(self, ...)
-        if Running and S.SA_Enabled and not checkcaller() then
+        if Running and settings.SA_Enabled and not checkcaller() then
             local t = Silent.Target
             if t then
                 local method = getnamecallmethod()
                 if self == RealWorkspace then
-                    if method == "Raycast" and S.SA_Methods.Raycast then
+                    if method == "Raycast" and settings.SA_Methods.Raycast then
                         local origin, direction = ...
                         if typeof(origin) == "Vector3" and typeof(direction) == "Vector3" and fromShooter(origin) and roll() then
                             local args = table.pack(...)
@@ -859,7 +859,7 @@ local function installNamecallHook()
                             return callOld(method, self, table.unpack(args, 1, args.n))
                         end
                     elseif (method == "FindPartOnRay" or method == "FindPartOnRayWithIgnoreList" or method == "FindPartOnRayWithWhitelist")
-                        and S.SA_Methods.FindPartOnRay then
+                        and settings.SA_Methods.FindPartOnRay then
                         local ray = ...
                         if typeof(ray) == "Ray" and fromShooter(ray.Origin) and roll() then
                             local args = table.pack(...)
@@ -869,7 +869,7 @@ local function installNamecallHook()
                         end
                     end
                 elseif self == Camera and (method == "ScreenPointToRay" or method == "ViewportPointToRay")
-                    and S.SA_Methods.ScreenPointToRay and roll() then
+                    and settings.SA_Methods.ScreenPointToRay and roll() then
                     local origin = Camera.CFrame.Position
                     return Ray.new(origin, (t.Position - origin).Unit)
                 end
@@ -891,11 +891,11 @@ local function installIndexHook()                                -- Mouse.Hit / 
     if Silent.IndexHooked or not CanHook then return Silent.IndexHooked end
     local old
     local wrapper = newcclosure(function(self, key)
-        if Running and self == Mouse and S.SA_Enabled and not checkcaller() then
+        if Running and self == Mouse and settings.SA_Enabled and not checkcaller() then
             local t = Silent.Target
             if t then
-                if key == "Hit" and S.SA_Methods["Mouse.Hit"] and roll() then return CF(t.Position) end
-                if key == "Target" and S.SA_Methods["Mouse.Target"] and roll() then return t.Part end
+                if key == "Hit" and settings.SA_Methods["Mouse.Hit"] and roll() then return cframe(t.Position) end
+                if key == "Target" and settings.SA_Methods["Mouse.Target"] and roll() then return t.Part end
             end
         end
         return old(self, key)
@@ -911,21 +911,21 @@ local function installIndexHook()                                -- Mouse.Hit / 
 end
 
 ----- ESP -----
-local ESP = { Entries = {}, Frame = 0 }
-local SKELETON_R15 = {
+local esp = { Entries = {}, Frame = 0 }
+local skeletonR15 = {
     { "Head", "UpperTorso" }, { "UpperTorso", "LowerTorso" },
     { "UpperTorso", "LeftUpperArm" }, { "LeftUpperArm", "LeftLowerArm" }, { "LeftLowerArm", "LeftHand" },
     { "UpperTorso", "RightUpperArm" }, { "RightUpperArm", "RightLowerArm" }, { "RightLowerArm", "RightHand" },
     { "LowerTorso", "LeftUpperLeg" }, { "LeftUpperLeg", "LeftLowerLeg" }, { "LeftLowerLeg", "LeftFoot" },
     { "LowerTorso", "RightUpperLeg" }, { "RightUpperLeg", "RightLowerLeg" }, { "RightLowerLeg", "RightFoot" },
 }
-local SKELETON_R6 = { { "Head", "Torso" }, { "Torso", "Left Arm" }, { "Torso", "Right Arm" }, { "Torso", "Left Leg" }, { "Torso", "Right Leg" } }
+local skeletonR6 = { { "Head", "Torso" }, { "Torso", "Left Arm" }, { "Torso", "Right Arm" }, { "Torso", "Left Leg" }, { "Torso", "Right Leg" } }
 
 local function entry(plr)
-    local e = ESP.Entries[plr]
+    local e = esp.Entries[plr]
     if not e then
         e = { Obj = {}, Stamp = {}, Vis = {} }
-        ESP.Entries[plr] = e
+        esp.Entries[plr] = e
     end
     return e
 end
@@ -935,7 +935,7 @@ local function use(e, key, kind)                                 -- objects are 
         o = Render.new(kind)
         e.Obj[key] = o
     end
-    e.Stamp[key] = ESP.Frame
+    e.Stamp[key] = esp.Frame
     e.Vis[key] = true
     return o
 end
@@ -943,26 +943,26 @@ end
 -- properties cannot be read (o.Visible always returns nil), which used to leave ESP on screen after a player left the view.
 local function hideUnused(e, all)
     for key, o in pairs(e.Obj) do
-        if e.Vis[key] and (all or e.Stamp[key] ~= ESP.Frame) then
+        if e.Vis[key] and (all or e.Stamp[key] ~= esp.Frame) then
             e.Vis[key] = false
             pcall(function() o.Visible = false end)
         end
     end
 end
 local function removeEntry(plr)
-    local e = ESP.Entries[plr]
+    local e = esp.Entries[plr]
     if not e then return end
     for _, o in pairs(e.Obj) do Render.remove(o) end
     if e.Highlight then e.Highlight:Destroy() end
-    ESP.Entries[plr] = nil
+    esp.Entries[plr] = nil
     VisCache[plr] = nil
     RandomPick[plr] = nil
 end
 
 local function drawLine(e, key, a, b, color, thick, alpha)
-    if S.Outline then
+    if settings.Outline then
         local o = use(e, key .. "_o", "Line")
-        o.From, o.To, o.Color, o.Thickness, o.Transparency, o.ZIndex, o.Visible = a, b, BLACK, thick + 2, alpha, 1, true
+        o.From, o.To, o.Color, o.Thickness, o.Transparency, o.ZIndex, o.Visible = a, b, black, thick + 2, alpha, 1, true
     end
     local l = use(e, key, "Line")
     l.From, l.To, l.Color, l.Thickness, l.Transparency, l.ZIndex, l.Visible = a, b, color, thick, alpha, 2, true
@@ -987,54 +987,54 @@ local function updateChams(e, char, color, show)
     end
     if h.Adornee ~= char then h.Adornee = char end
     h.FillColor = color
-    h.FillTransparency = S.ChamsFill
-    h.OutlineColor = S.ChamsOutline
+    h.FillTransparency = settings.ChamsFill
+    h.OutlineColor = settings.ChamsOutline
     h.OutlineTransparency = 0
-    h.DepthMode = S.ChamsWalls and Enum.HighlightDepthMode.AlwaysOnTop or Enum.HighlightDepthMode.Occluded
+    h.DepthMode = settings.ChamsWalls and Enum.HighlightDepthMode.AlwaysOnTop or Enum.HighlightDepthMode.Occluded
     h.Enabled = true
 end
 
 local function updatePlayer(plr)
     local e = entry(plr)
     local char, hum, root = getCharacter(plr)
-    if not (S.ESP_Enabled and char and isAlive(hum)) or (S.ESP_TeamCheck and isTeammate(plr)) then
+    if not (settings.ESP_Enabled and char and isAlive(hum)) or (settings.ESP_TeamCheck and isTeammate(plr)) then
         updateChams(e, nil, nil, false)
         return hideUnused(e)
     end
     local dist = (root.Position - Camera.CFrame.Position).Magnitude
-    if dist > S.ESP_MaxDist then
+    if dist > settings.ESP_MaxDist then
         updateChams(e, nil, nil, false)
         return hideUnused(e)
     end
-    if S.Perf and dist > 400 and (ESP.Frame + plr.UserId) % 2 == 1 then   -- far players every other frame
-        for key in pairs(e.Obj) do e.Stamp[key] = ESP.Frame end
+    if settings.Perf and dist > 400 and (esp.Frame + plr.UserId) % 2 == 1 then   -- far players every other frame
+        for key in pairs(e.Obj) do e.Stamp[key] = esp.Frame end
         return
     end
 
     local head = char:FindFirstChild("Head") or root
     local enemy = not isTeammate(plr)
-    local color = enemy and S.ColEnemy or S.ColAlly
-    if S.UseTeamColor and plr.Team then color = plr.TeamColor.Color end
+    local color = enemy and settings.ColEnemy or settings.ColAlly
+    if settings.UseTeamColor and plr.Team then color = plr.TeamColor.Color end
     local visible = true
-    if S.VisColor and enemy then
+    if settings.VisColor and enemy then
         visible = isVisible(plr, char, head)
-        if not visible then color = S.ColHidden end
+        if not visible then color = settings.ColHidden end
     end
-    if Silent.Target and Silent.Target.Player == plr then color = S.ColTarget end
-    local alpha = S.Fade and clamp(1 - dist / (S.ESP_MaxDist * 1.15), 0.35, 1) or 1
+    if Silent.Target and Silent.Target.Player == plr then color = settings.ColTarget end
+    local alpha = settings.Fade and clamp(1 - dist / (settings.ESP_MaxDist * 1.15), 0.35, 1) or 1
 
-    updateChams(e, char, color, S.Chams)
+    updateChams(e, char, color, settings.Chams)
 
     local rootScreen, onScreen = toScreen(root.Position)
     if not onScreen then
-        if S.Arrows then                                         -- off-screen arrow
+        if settings.Arrows then                                         -- off-screen arrow
             local rel = Camera.CFrame:PointToObjectSpace(root.Position)
-            local dir = V2(rel.X, rel.Z)
+            local dir = vec2(rel.X, rel.Z)
             if dir.Magnitude > 0 then
                 dir = dir.Unit
                 local center = Camera.ViewportSize / 2
-                local r, s = S.ArrowRadius, S.ArrowSize
-                local perp = V2(-dir.Y, dir.X)
+                local r, s = settings.ArrowRadius, settings.ArrowSize
+                local perp = vec2(-dir.Y, dir.X)
                 local base = center + dir * r
                 local tri = use(e, "arrow", "Triangle")
                 tri.PointA, tri.PointB, tri.PointC = base + perp * (s / 2), center + dir * (r + s * 2), base - perp * (s / 2)
@@ -1045,86 +1045,86 @@ local function updatePlayer(plr)
     end
 
     -- box: the top of the head and the bottom of the feet are projected (stable, not affected by accessories)
-    local top = toScreen(root.Position + V3(0, 2.6, 0))
-    local bottom = toScreen(root.Position - V3(0, 3, 0))
+    local top = toScreen(root.Position + vec3(0, 2.6, 0))
+    local bottom = toScreen(root.Position - vec3(0, 3, 0))
     local h = max(bottom.Y - top.Y, 6)
     local w = h * 0.62
-    local L, T = floor(rootScreen.X - w / 2), floor(top.Y)
-    local R, B = floor(L + w), floor(T + h)
+    local boxLeft, boxTop = floor(rootScreen.X - w / 2), floor(top.Y)
+    local boxRight, boxBottom = floor(boxLeft + w), floor(boxTop + h)
 
-    if S.Box then
-        if S.BoxFill then
+    if settings.Box then
+        if settings.BoxFill then
             local f = use(e, "fill", "Square")
-            f.Position, f.Size, f.Color, f.Filled, f.Transparency, f.ZIndex, f.Visible = V2(L, T), V2(R - L, B - T), color, true, (1 - S.BoxFillAlpha) * alpha, 0, true
+            f.Position, f.Size, f.Color, f.Filled, f.Transparency, f.ZIndex, f.Visible = vec2(boxLeft, boxTop), vec2(boxRight - boxLeft, boxBottom - boxTop), color, true, (1 - settings.BoxFillAlpha) * alpha, 0, true
         end
-        local frac = S.BoxStyle == "Full" and 1 or S.BoxCorner / 100
-        local cx, cy = (R - L) / 2 * frac, (B - T) / 2 * frac
-        drawLine(e, "b1", V2(L, T), V2(L + cx, T), color, 1, alpha)
-        drawLine(e, "b2", V2(L, T), V2(L, T + cy), color, 1, alpha)
-        drawLine(e, "b3", V2(R, T), V2(R - cx, T), color, 1, alpha)
-        drawLine(e, "b4", V2(R, T), V2(R, T + cy), color, 1, alpha)
-        drawLine(e, "b5", V2(L, B), V2(L + cx, B), color, 1, alpha)
-        drawLine(e, "b6", V2(L, B), V2(L, B - cy), color, 1, alpha)
-        drawLine(e, "b7", V2(R, B), V2(R - cx, B), color, 1, alpha)
-        drawLine(e, "b8", V2(R, B), V2(R, B - cy), color, 1, alpha)
+        local frac = settings.BoxStyle == "Full" and 1 or settings.BoxCorner / 100
+        local cx, cy = (boxRight - boxLeft) / 2 * frac, (boxBottom - boxTop) / 2 * frac
+        drawLine(e, "b1", vec2(boxLeft, boxTop), vec2(boxLeft + cx, boxTop), color, 1, alpha)
+        drawLine(e, "b2", vec2(boxLeft, boxTop), vec2(boxLeft, boxTop + cy), color, 1, alpha)
+        drawLine(e, "b3", vec2(boxRight, boxTop), vec2(boxRight - cx, boxTop), color, 1, alpha)
+        drawLine(e, "b4", vec2(boxRight, boxTop), vec2(boxRight, boxTop + cy), color, 1, alpha)
+        drawLine(e, "b5", vec2(boxLeft, boxBottom), vec2(boxLeft + cx, boxBottom), color, 1, alpha)
+        drawLine(e, "b6", vec2(boxLeft, boxBottom), vec2(boxLeft, boxBottom - cy), color, 1, alpha)
+        drawLine(e, "b7", vec2(boxRight, boxBottom), vec2(boxRight - cx, boxBottom), color, 1, alpha)
+        drawLine(e, "b8", vec2(boxRight, boxBottom), vec2(boxRight, boxBottom - cy), color, 1, alpha)
     end
 
     local hp = clamp(hum.Health / max(hum.MaxHealth, 1), 0, 1)
-    local barX = L - 6
-    if S.HealthBar and h >= 18 then
+    local barX = boxLeft - 6
+    if settings.HealthBar and h >= 18 then
         local bg = use(e, "hb_bg", "Square")
-        bg.Position, bg.Size, bg.Color, bg.Filled, bg.Transparency, bg.ZIndex, bg.Visible = V2(barX - 1, T - 1), V2(4, h + 2), BLACK, true, alpha, 1, true
+        bg.Position, bg.Size, bg.Color, bg.Filled, bg.Transparency, bg.ZIndex, bg.Visible = vec2(barX - 1, boxTop - 1), vec2(4, h + 2), black, true, alpha, 1, true
         local bar = use(e, "hb", "Square")
-        bar.Position, bar.Size, bar.Color, bar.Filled, bar.Transparency, bar.ZIndex, bar.Visible = V2(barX, T + h * (1 - hp)), V2(2, h * hp), healthColor(hp), true, alpha, 2, true
+        bar.Position, bar.Size, bar.Color, bar.Filled, bar.Transparency, bar.ZIndex, bar.Visible = vec2(barX, boxTop + h * (1 - hp)), vec2(2, h * hp), healthColor(hp), true, alpha, 2, true
     end
 
-    local size = S.TextSize
-    if S.Name then
-        local name = S.DisplayName and plr.DisplayName or plr.Name
-        drawText(e, "name", name, V2(rootScreen.X, T - size - 4), color, size, alpha, true)
+    local size = settings.TextSize
+    if settings.Name then
+        local name = settings.DisplayName and plr.DisplayName or plr.Name
+        drawText(e, "name", name, vec2(rootScreen.X, boxTop - size - 4), color, size, alpha, true)
     end
-    if S.HealthText and hp < 1 then                              -- the health number follows the top of the bar
+    if settings.HealthText and hp < 1 then                              -- the health number follows the top of the bar
         local txt = tostring(floor(hum.Health + 0.5))
-        local t = drawText(e, "hp", txt, V2(0, 0), healthColor(hp), size - 1, alpha, false)
+        local t = drawText(e, "hp", txt, vec2(0, 0), healthColor(hp), size - 1, alpha, false)
         local okB, bounds = pcall(function() return t.TextBounds end)  -- some Drawing implementations have no TextBounds
         local tw = (okB and typeof(bounds) == "Vector2" and bounds.X > 0) and bounds.X or #txt * (size - 1) * 0.55
-        local bx = (S.HealthBar and barX - 3 or L - 3) - tw
-        t.Position = V2(bx, clamp(T + h * (1 - hp) - size / 2, T - 2, B - size))
+        local bx = (settings.HealthBar and barX - 3 or boxLeft - 3) - tw
+        t.Position = vec2(bx, clamp(boxTop + h * (1 - hp) - size / 2, boxTop - 2, boxBottom - size))
     end
     local bottomLine = {}
-    if S.Distance then
-        bottomLine[#bottomLine + 1] = S.DistUnit == "Meters" and (floor(dist * 0.28) .. "m") or (floor(dist) .. " studs")
+    if settings.Distance then
+        bottomLine[#bottomLine + 1] = settings.DistUnit == "Meters" and (floor(dist * 0.28) .. "m") or (floor(dist) .. " studs")
     end
-    if S.Weapon then
+    if settings.Weapon then
         local tool = char:FindFirstChildOfClass("Tool")
         if tool then bottomLine[#bottomLine + 1] = tool.Name end
     end
     if #bottomLine > 0 then
-        drawText(e, "info", table.concat(bottomLine, "  ·  "), V2(rootScreen.X, B + 3), C3(0.87, 0.87, 0.87), size - 1, alpha, true)
+        drawText(e, "info", table.concat(bottomLine, "  ·  "), vec2(rootScreen.X, boxBottom + 3), rgb(0.87, 0.87, 0.87), size - 1, alpha, true)
     end
-    if not visible and S.VisColor then
-        drawText(e, "wall", "behind wall", V2(rootScreen.X, B + 4 + size), S.ColHidden, size - 2, alpha * 0.9, true)
+    if not visible and settings.VisColor then
+        drawText(e, "wall", "behind wall", vec2(rootScreen.X, boxBottom + 4 + size), settings.ColHidden, size - 2, alpha * 0.9, true)
     end
 
-    if S.HeadDot then
+    if settings.HeadDot then
         local hs = toScreen(head.Position)
         local c = use(e, "head", "Circle")
         c.Position, c.Radius, c.Color, c.Filled, c.NumSides, c.Thickness, c.Transparency, c.ZIndex, c.Visible =
             hs, max(2, h / 22), color, true, 12, 1, alpha, 2, true
     end
-    if S.Tracer then
+    if settings.Tracer then
         local vs = Camera.ViewportSize
-        local from = S.TracerFrom == "Mouse" and UserInputService:GetMouseLocation()
-            or S.TracerFrom == "Center" and vs / 2 or V2(vs.X / 2, vs.Y)
-        drawLine(e, "tracer", from, V2(rootScreen.X, B), color, 1, alpha * 0.8)
+        local from = settings.TracerFrom == "Mouse" and UserInputService:GetMouseLocation()
+            or settings.TracerFrom == "Center" and vs / 2 or vec2(vs.X / 2, vs.Y)
+        drawLine(e, "tracer", from, vec2(rootScreen.X, boxBottom), color, 1, alpha * 0.8)
     end
-    if S.LookDir then
+    if settings.LookDir then
         local a = toScreen(head.Position)
         local b = toScreen(head.Position + head.CFrame.LookVector * 4)
         drawLine(e, "look", a, b, color, 1, alpha)
     end
-    if S.Skeleton then
-        local pairsList = char:FindFirstChild("UpperTorso") and SKELETON_R15 or SKELETON_R6
+    if settings.Skeleton then
+        local pairsList = char:FindFirstChild("UpperTorso") and skeletonR15 or skeletonR6
         for i, pair in ipairs(pairsList) do
             local p1, p2 = char:FindFirstChild(pair[1]), char:FindFirstChild(pair[2])
             if p1 and p2 then
@@ -1140,17 +1140,17 @@ end
 -- FOV circle and target line (global objects)
 local Global = { Obj = {}, Stamp = {}, Vis = {} }
 local function updateGlobal()
-    if S.SA_Enabled and S.FOV_Show then
+    if settings.SA_Enabled and settings.FOV_Show then
         local c = use(Global, "fov", "Circle")
         c.Position, c.Radius, c.Color, c.NumSides, c.Thickness, c.Filled, c.Transparency, c.ZIndex, c.Visible =
-            fovOrigin(), S.FOV_Radius, S.FOV_Color, S.FOV_Sides, S.FOV_Thick, S.FOV_Filled, (1 - S.FOV_Alpha) * (S.FOV_Filled and 0.25 or 1), 4, true
+            fovOrigin(), settings.FOV_Radius, settings.FOV_Color, settings.FOV_Sides, settings.FOV_Thick, settings.FOV_Filled, (1 - settings.FOV_Alpha) * (settings.FOV_Filled and 0.25 or 1), 4, true
     end
     local t = Silent.Target
-    if S.SA_Enabled and S.FOV_TargetLine and t then
+    if settings.SA_Enabled and settings.FOV_TargetLine and t then
         local sp, on = toScreen(t.Position)
         if on then
             local l = use(Global, "tline", "Line")
-            l.From, l.To, l.Color, l.Thickness, l.Transparency, l.ZIndex, l.Visible = fovOrigin(), sp, S.ColTarget, 1, 1, 4, true
+            l.From, l.To, l.Color, l.Thickness, l.Transparency, l.ZIndex, l.Visible = fovOrigin(), sp, settings.ColTarget, 1, 1, 4, true
         end
     end
     hideUnused(Global)
@@ -1187,19 +1187,19 @@ local function restoreWorld()
     for key in pairs(WorldOriginal) do worldProperty(key, nil) end
     fogDensity(false)
 end
-local brightAmbient = C3(0.7, 0.7, 0.7)
+local brightAmbient = rgb(0.7, 0.7, 0.7)
 local function updateWorld()
-    local ambient = (S.CustomAmbient and S.Ambient) or (S.Fullbright and brightAmbient) or nil
+    local ambient = (settings.CustomAmbient and settings.Ambient) or (settings.Fullbright and brightAmbient) or nil
     local shadows
-    if S.NoShadows or S.Fullbright then shadows = false end
-    worldProperty("Brightness", S.Fullbright and 2 or nil)
+    if settings.NoShadows or settings.Fullbright then shadows = false end
+    worldProperty("Brightness", settings.Fullbright and 2 or nil)
     worldProperty("Ambient", ambient)
     worldProperty("OutdoorAmbient", ambient)
     worldProperty("GlobalShadows", shadows)
-    worldProperty("ClockTime", S.CustomTime and S.ClockTime or nil)
-    worldProperty("FogStart", S.NoFog and 1e6 or nil)
-    worldProperty("FogEnd", S.NoFog and 1e6 or nil)
-    fogDensity(S.NoFog)
+    worldProperty("ClockTime", settings.CustomTime and settings.ClockTime or nil)
+    worldProperty("FogStart", settings.NoFog and 1e6 or nil)
+    worldProperty("FogEnd", settings.NoFog and 1e6 or nil)
+    fogDensity(settings.NoFog)
 end
 
 ----- Player (movement) -----
@@ -1222,12 +1222,12 @@ local function restorePlayer()
     table.clear(Defaults)
     if originalZoom then LocalPlayer.CameraMaxZoomDistance = originalZoom originalZoom = nil end
 end
-HUB.Cleanup[#HUB.Cleanup + 1] = restorePlayer
+hub.Cleanup[#hub.Cleanup + 1] = restorePlayer
 
 connect(RunService.Stepped, function()
     if not Running then return end
     local char = LocalPlayer.Character
-    if S.NoClip and char then
+    if settings.NoClip and char then
         for _, p in ipairs(char:GetDescendants()) do
             if p:IsA("BasePart") and p.CanCollide then
                 if NoClipParts[p] == nil then NoClipParts[p] = true end
@@ -1242,25 +1242,25 @@ end)
 connect(RunService.Heartbeat, function()
     if not Running then return end
     local char, hum, root = getCharacter(LocalPlayer)
-    if originalZoom and not S.UnlockZoom then
+    if originalZoom and not settings.UnlockZoom then
         LocalPlayer.CameraMaxZoomDistance = originalZoom
         originalZoom = nil
-    elseif S.UnlockZoom then
+    elseif settings.UnlockZoom then
         originalZoom = originalZoom or LocalPlayer.CameraMaxZoomDistance
         LocalPlayer.CameraMaxZoomDistance = 1e4
     end
     if not char then return end
     local d = Defaults[hum] or {}
     Defaults[hum] = d
-    if S.SpeedOn then
+    if settings.SpeedOn then
         d.WalkSpeed = d.WalkSpeed or hum.WalkSpeed
-        hum.WalkSpeed = S.WalkSpeed
+        hum.WalkSpeed = settings.WalkSpeed
     elseif d.WalkSpeed then
         hum.WalkSpeed, d.WalkSpeed = d.WalkSpeed, nil
     end
-    if S.JumpOn then
+    if settings.JumpOn then
         if d.JumpPower == nil then d.JumpPower, d.UseJumpPower = hum.JumpPower, hum.UseJumpPower end
-        hum.UseJumpPower, hum.JumpPower = true, S.JumpPower
+        hum.UseJumpPower, hum.JumpPower = true, settings.JumpPower
     elseif d.JumpPower then
         hum.JumpPower, hum.UseJumpPower = d.JumpPower, d.UseJumpPower
         d.JumpPower, d.UseJumpPower = nil, nil
@@ -1268,22 +1268,22 @@ connect(RunService.Heartbeat, function()
 end)
 
 connect(UserInputService.JumpRequest, function()
-    if not (Running and S.InfJump) then return end
+    if not (Running and settings.InfJump) then return end
     local _, hum = getCharacter(LocalPlayer)
     if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
 end)
 
 connect(UserInputService.InputBegan, function(input, processed)
-    if processed or not (Running and S.ClickTP) then return end
+    if processed or not (Running and settings.ClickTP) then return end
     if input.UserInputType == Enum.UserInputType.MouseButton1 and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
         local _, _, root = getCharacter(LocalPlayer)
         local hit = Mouse.Hit
-        if root and hit then root.CFrame = CF(hit.Position + V3(0, 3, 0)) * (root.CFrame - root.CFrame.Position) end
+        if root and hit then root.CFrame = cframe(hit.Position + vec3(0, 3, 0)) * (root.CFrame - root.CFrame.Position) end
     end
 end)
 
 connect(LocalPlayer.Idled, function()
-    if not (Running and S.AntiAfk) then return end
+    if not (Running and settings.AntiAfk) then return end
     pcall(function()
         VirtualUser:CaptureController()
         VirtualUser:ClickButton2(Vector2.zero)
@@ -1343,13 +1343,13 @@ local function serverHop(mode)
 end
 
 local function checkStaff(plr)
-    if not (S.StaffAlert and S.StaffGroup > 0) or plr == LocalPlayer then return end
+    if not (settings.StaffAlert and settings.StaffGroup > 0) or plr == LocalPlayer then return end
     task.spawn(function()
-        local ok, rank = pcall(function() return plr:GetRankInGroup(S.StaffGroup) end)
-        if not (ok and rank and rank >= S.StaffRank) then return end
+        local ok, rank = pcall(function() return plr:GetRankInGroup(settings.StaffGroup) end)
+        if not (ok and rank and rank >= settings.StaffRank) then return end
         notify("Staff in game", ("%s (rank %d) joined the server"):format(plr.Name, rank), "shield-alert", "danger")
-        if S.StaffAction == "Hop" then serverHop("Random")
-        elseif S.StaffAction == "Leave" then LocalPlayer:Kick("Qustāh: staff joined, left the game") end
+        if settings.StaffAction == "Hop" then serverHop("Random")
+        elseif settings.StaffAction == "Leave" then LocalPlayer:Kick("Qustāh: staff joined, left the game") end
     end)
 end
 
@@ -1361,11 +1361,11 @@ if not CanHook then
     Combat.Pages[1]:Warning("Your executor doesn't support hookmetamethod; Silent Aim won't work.", { Title = "No hook", Level = "danger" })
 end
 local function refreshAimStatus()
-    local m = S.SA_Methods
+    local m = settings.SA_Methods
     local wantsNamecall = m.Raycast or m.FindPartOnRay or m.ScreenPointToRay
     local wantsIndex = m["Mouse.Hit"] or m["Mouse.Target"]
     local active, failed = false, false
-    if S.SA_Enabled and CanHook then
+    if settings.SA_Enabled and CanHook then
         if wantsNamecall then
             local ok = installNamecallHook()
             active, failed = active or ok, failed or not ok
@@ -1375,13 +1375,13 @@ local function refreshAimStatus()
             active, failed = active or ok, failed or not ok
         end
     end
-    local limited = not CanHook or S.SA_Enabled and (failed or not active)
+    local limited = not CanHook or settings.SA_Enabled and (failed or not active)
     Window:SetModule("Silent Aim", limited and "Limited" or (active and "On" or "Off"),
         limited and "Hook unavailable or no method selected" or nil, { Icon = "target", Tab = "Combat" })
 end
 local saToggle = Aim:Toggle({ Title = "Enabled", Flag = "sa_enabled", Default = false, Bindable = true,
     Callback = function(on)
-        S.SA_Enabled = on
+        settings.SA_Enabled = on
         if not on then Silent.Target = nil end
         refreshAimStatus()
     end })
@@ -1398,7 +1398,7 @@ Aim:Dropdown({ Title = "Methods", Flag = "sa_methods", Multi = true,
     Items = { "Raycast", "FindPartOnRay", "ScreenPointToRay", "Mouse.Hit", "Mouse.Target" },
     Default = { "Raycast", "FindPartOnRay", "Mouse.Hit" },
     Callback = function(list)
-        S.SA_Methods = toSet(list)
+        settings.SA_Methods = toSet(list)
         refreshAimStatus()
     end })
 
@@ -1413,17 +1413,17 @@ local FovCard = Combat:Card({ Title = "FOV", Icon = "circle-dashed" })
 local fovPreview
 local function refreshFov()
     if fovPreview then
-        fovPreview:Update({ Radius = S.FOV_Radius, Sides = S.FOV_Sides, Thickness = S.FOV_Thick, Color = S.FOV_Color,
-            Transparency = S.FOV_Alpha, Filled = S.FOV_Filled, FillColor = S.FOV_Color, FillTransparency = 0.85, Visible = S.FOV_Show })
+        fovPreview:Update({ Radius = settings.FOV_Radius, Sides = settings.FOV_Sides, Thickness = settings.FOV_Thick, Color = settings.FOV_Color,
+            Transparency = settings.FOV_Alpha, Filled = settings.FOV_Filled, FillColor = settings.FOV_Color, FillTransparency = 0.85, Visible = settings.FOV_Show })
     end
 end
-local function fovSet(key) return function(v) S[key] = v refreshFov() end end
+local function fovSet(key) return function(v) settings[key] = v refreshFov() end end
 FovCard:Toggle({ Title = "Show FOV", Flag = "fov_show", Default = true, Callback = fovSet("FOV_Show") })
 FovCard:Slider({ Title = "Radius", Flag = "fov_radius", Min = 10, Max = 600, Default = 120, Suffix = " px", Callback = fovSet("FOV_Radius") })
 FovCard:Slider({ Title = "Sides", Flag = "fov_sides", Min = 3, Max = 64, Default = 64, Callback = fovSet("FOV_Sides") })
 FovCard:Slider({ Title = "Thickness", Flag = "fov_thick", Min = 1, Max = 5, Default = 1, Callback = fovSet("FOV_Thick") })
-FovCard:ColorPicker({ Title = "Color", Flag = "fov_color", Default = WHITE, Alpha = true, Transparency = 0,
-    Callback = function(c, t) S.FOV_Color = c S.FOV_Alpha = t or 0 refreshFov() end })
+FovCard:ColorPicker({ Title = "Color", Flag = "fov_color", Default = white, Alpha = true, Transparency = 0,
+    Callback = function(c, t) settings.FOV_Color = c settings.FOV_Alpha = t or 0 refreshFov() end })
 FovCard:Toggle({ Title = "Filled", Flag = "fov_filled", Default = false, Callback = fovSet("FOV_Filled") })
 FovCard:Segment({ Title = "Origin", Flag = "fov_origin", Items = { "Mouse", "Center" }, Default = "Mouse", Callback = set("FOV_Origin") })
 FovCard:Toggle({ Title = "Target line", Desc = "Line from FOV center to target", Flag = "fov_tline", Default = false, Callback = set("FOV_TargetLine") })
@@ -1442,7 +1442,7 @@ local StylePage = Visuals:Page("Style")
 local General = EspPage:Card({ Title = "General", Icon = "scan-eye" })
 General:Toggle({ Title = "ESP enabled", Flag = "esp_enabled", Default = false, Bindable = true,
     Callback = function(on)
-        S.ESP_Enabled = on
+        settings.ESP_Enabled = on
         Window:SetModule("ESP", on and "On" or "Off", Render.Mode == "GUI" and "GUI mode" or nil, { Icon = "eye", Tab = "Visuals" })
     end })
 General:Toggle({ Title = "Team check", Desc = "Don't show teammates", Flag = "esp_team", Default = true, Callback = set("ESP_TeamCheck") })
@@ -1456,7 +1456,7 @@ BoxCard:Slider({ Title = "Corner size", Flag = "esp_corner", Min = 10, Max = 100
     DependsOn = { Flag = "esp_boxstyle", Value = "Corner", Mode = "Hide", Reason = "" }, Callback = set("BoxCorner") })
 BoxCard:Toggle({ Title = "Fill", Flag = "esp_fill", Default = false, Callback = set("BoxFill") })
 BoxCard:Slider({ Title = "Fill transparency", Flag = "esp_fillalpha", Min = 0, Max = 100, Default = 85, Suffix = "%", DependsOn = { Flag = "esp_fill", Reason = "" },
-    Callback = function(v) S.BoxFillAlpha = v / 100 end })
+    Callback = function(v) settings.BoxFillAlpha = v / 100 end })
 BoxCard:Toggle({ Title = "Health bar", Flag = "esp_hbar", Default = true, Callback = set("HealthBar") })
 BoxCard:Toggle({ Title = "Outline", Flag = "esp_outline", Default = true, Callback = set("Outline") })
 
@@ -1473,8 +1473,8 @@ local Chams = ExtraPage:Card({ Title = "Chams", Icon = "paint-bucket" })
 Chams:Toggle({ Title = "Chams", Desc = "Colors the character", Flag = "esp_chams", Default = false, Callback = set("Chams") })
 Chams:Toggle({ Title = "Through walls", Flag = "esp_chamswalls", Default = true, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsWalls") })
 Chams:Slider({ Title = "Fill transparency", Flag = "esp_chamsfill", Min = 0, Max = 100, Default = 60, Suffix = "%", DependsOn = { Flag = "esp_chams", Reason = "" },
-    Callback = function(v) S.ChamsFill = v / 100 end })
-Chams:ColorPicker({ Title = "Outline color", Flag = "esp_chamsout", Default = WHITE, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsOutline") })
+    Callback = function(v) settings.ChamsFill = v / 100 end })
+Chams:ColorPicker({ Title = "Outline color", Flag = "esp_chamsout", Default = white, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsOutline") })
 Chams:Paragraph({ Title = "Note", Content = "Roblox shows at most 31 Highlights at once; in full servers, far players may not be colored." })
 
 local Lines = ExtraPage:Card({ Title = "Lines", Icon = "spline", Side = "Right" })
@@ -1490,9 +1490,9 @@ Arrows:Slider({ Title = "Distance from center", Flag = "esp_arrowrad", Min = 80,
 Arrows:Slider({ Title = "Size", Flag = "esp_arrowsize", Min = 8, Max = 28, Default = 14, Suffix = " px", DependsOn = { Flag = "esp_arrows", Reason = "" }, Callback = set("ArrowSize") })
 
 local Colors = StylePage:Card({ Title = "Colors", Icon = "palette" })
-Colors:ColorPicker({ Title = "Enemy", Flag = "col_enemy", Default = S.ColEnemy, Callback = set("ColEnemy") })
-Colors:ColorPicker({ Title = "Behind wall", Flag = "col_hidden", Default = S.ColHidden, Callback = set("ColHidden") })
-Colors:ColorPicker({ Title = "Silent aim target", Flag = "col_target", Default = S.ColTarget, Callback = set("ColTarget") })
+Colors:ColorPicker({ Title = "Enemy", Flag = "col_enemy", Default = settings.ColEnemy, Callback = set("ColEnemy") })
+Colors:ColorPicker({ Title = "Behind wall", Flag = "col_hidden", Default = settings.ColHidden, Callback = set("ColHidden") })
+Colors:ColorPicker({ Title = "Silent aim target", Flag = "col_target", Default = settings.ColTarget, Callback = set("ColTarget") })
 Colors:Toggle({ Title = "Use team color", Flag = "col_team", Default = false, Callback = set("UseTeamColor") })
 
 local Filters = StylePage:Card({ Title = "Filters", Icon = "sliders-horizontal", Side = "Right" })
@@ -1510,7 +1510,7 @@ local TimeCard = World:Card({ Title = "Time and color", Icon = "clock", Side = "
 TimeCard:Toggle({ Title = "Custom time", Flag = "w_customtime", Default = false, Callback = set("CustomTime") })
 TimeCard:Slider({ Title = "Clock time", Flag = "w_clock", Min = 0, Max = 24, Step = 0.5, Default = 14, DependsOn = { Flag = "w_customtime", Reason = "" }, Callback = set("ClockTime") })
 TimeCard:Toggle({ Title = "Custom ambient", Flag = "w_customamb", Default = false, Callback = set("CustomAmbient") })
-TimeCard:ColorPicker({ Title = "Ambient", Flag = "w_ambient", Default = S.Ambient, DependsOn = { Flag = "w_customamb", Reason = "" }, Callback = set("Ambient") })
+TimeCard:ColorPicker({ Title = "Ambient", Flag = "w_ambient", Default = settings.Ambient, DependsOn = { Flag = "w_customamb", Reason = "" }, Callback = set("Ambient") })
 TimeCard:Button({ Title = "Restore lighting", Icon = "rotate-ccw", Style = "Ghost", Callback = function()
     for _, flag in ipairs({ "w_fullbright", "w_nofog", "w_noshadows", "w_customtime", "w_customamb" }) do Window:SetFlag(flag, false) end
     restoreWorld()
@@ -1522,7 +1522,7 @@ do
 -- Each feature is set up when switched on and drops all of its connections when switched off. If the same scripts were also
 -- run on their own (getgenv().AlwaysRunStop / fv / puppetdash / WiderDashStop), those are stopped first so two copies never run.
 local Move = {}
-local MoveCfg = { PuppetSpeed = 200, PuppetLimit = 5, PuppetGap = 0.3, DashSpeed = 125, Fov = nil }
+local moveCfg = { PuppetSpeed = 200, PuppetLimit = 5, PuppetGap = 0.3, DashSpeed = 125, Fov = nil }
 local genv = (getgenv and getgenv()) or _G
 
 -- Always Run: keeps combat.run on
@@ -1589,13 +1589,13 @@ function Move.flyFov()
         if cameraConnection then cameraConnection:Disconnect() end
         camera = workspace.CurrentCamera
         if not camera then return end
-        if not locked or saved == nil then saved = MoveCfg.Fov or camera.FieldOfView end
+        if not locked or saved == nil then saved = moveCfg.Fov or camera.FieldOfView end
         cameraConnection = camera:GetPropertyChangedSignal("FieldOfView"):Connect(enforce)
         enforce()
     end
     local function begin()
         revision = revision + 1
-        if not locked then saved = MoveCfg.Fov or (camera and camera.FieldOfView) or nil end
+        if not locked then saved = moveCfg.Fov or (camera and camera.FieldOfView) or nil end
         locked = true
         enforce()
     end
@@ -1630,7 +1630,7 @@ function Move.flyFov()
     connections[2] = p.CharacterAdded:Connect(bindCharacter)
     if p.Character then bindCharacter(p.Character) end
     Move.setFov = function(v)                                       -- slider: apply immediately; the value is also kept while flying
-        MoveCfg.Fov = v
+        moveCfg.Fov = v
         saved = v
         if camera then writing = true camera.FieldOfView = v writing = false end
     end
@@ -1645,7 +1645,7 @@ function Move.flyFov()
     end
 end
 
--- Puppet: directional puppet jumps in the air, at most LIMIT times, GAP seconds apart (speed SPEED)
+-- Puppet: directional puppet jumps in the air (count, gap and speed come from moveCfg)
 function Move.puppet()
     if type(genv.puppetdash) == "function" then genv.puppetdash() end
     if type(genv.pd) == "function" then genv.pd() end
@@ -1734,7 +1734,7 @@ function Move.puppet()
     local function boost(d)
         if not root or not root.Parent then return end
         local q = root.AssemblyLinearVelocity
-        root.AssemblyLinearVelocity = Vector3.new(d.X * MoveCfg.PuppetSpeed, q.Y, d.Z * MoveCfg.PuppetSpeed)
+        root.AssemblyLinearVelocity = Vector3.new(d.X * moveCfg.PuppetSpeed, q.Y, d.Z * moveCfg.PuppetSpeed)
     end
     local function bind(character)
         clear()
@@ -1783,8 +1783,8 @@ function Move.puppet()
         end)
     end
     connections[#connections + 1] = u.JumpRequest:Connect(function()
-        local LIMIT, GAP = MoveCfg.PuppetLimit, MoveCfg.PuppetGap
-        if not alive or pending or used < 2 or used >= LIMIT or os.clock() - last < GAP or not allowed() then return end
+        local limit, gap = moveCfg.PuppetLimit, moveCfg.PuppetGap
+        if not alive or pending or used < 2 or used >= limit or os.clock() - last < gap or not allowed() then return end
         local token, count = epoch, used
         local dir, d = direction()
         if not dir then return end
@@ -1792,7 +1792,7 @@ function Move.puppet()
         task.delay(.05, function()
             if not alive or token ~= epoch then return end
             pending = false
-            if used ~= count or used >= LIMIT or os.clock() - last < GAP or not allowed() then return end
+            if used ~= count or used >= limit or os.clock() - last < gap or not allowed() then return end
             used = used + 1
             last = os.clock()
             releaseDash()
@@ -1852,7 +1852,7 @@ function Move.puppet()
     end
 end
 
--- Wider dash: fixed dash speed SPEED (left alone while right click is held)
+-- Wider dash: fixed dash speed from moveCfg (left alone while right click is held)
 function Move.widerDash()
     if type(genv.WiderDashStop) == "function" then genv.WiderDashStop() end
     local connection = RunService.PreSimulation:Connect(function()
@@ -1868,7 +1868,7 @@ function Move.widerDash()
         end
         local velocity = dash.PlaneVelocity
         if velocity.Magnitude > 0 then
-            dash.PlaneVelocity = velocity.Unit * MoveCfg.DashSpeed
+            dash.PlaneVelocity = velocity.Unit * moveCfg.DashSpeed
         end
     end)
     return function() connection:Disconnect() end
@@ -1884,36 +1884,36 @@ local function moveToggle(key)                                      -- toggle �
         end
     end
 end
-HUB.Cleanup[#HUB.Cleanup + 1] = function()
+hub.Cleanup[#hub.Cleanup + 1] = function()
     for k, stop in pairs(moveStops) do pcall(stop) moveStops[k] = nil end
 end
-HUB.MoveStops = moveStops                                           -- for tests
+hub.MoveStops = moveStops                                           -- for tests
 
-local MV = Tabs.Movement
+local moveTab = Tabs.Movement
 moveStops.flyFov = Move.flyFov()                                    -- FOV protection is always on
 
-local Basic = MV:Card({ Title = "Movement", Icon = "footprints" })
+local Basic = moveTab:Card({ Title = "Movement", Icon = "footprints" })
 Basic:Toggle({ Title = "Always run", Flag = "mv_run", Default = false, Callback = moveToggle("alwaysRun") })
 Basic:Toggle({ Title = "NoClip", Icon = "ghost", Flag = "p_noclip", Default = false, Bind = Enum.KeyCode.N, Bindable = true, Callback = set("NoClip") })
 Basic:Toggle({ Title = "Click TP", Flag = "p_clicktp", Default = false, Callback = set("ClickTP") })
 
-local Puppet = MV:Card({ Title = "Puppet", Icon = "zap", Side = "Right" })
+local Puppet = moveTab:Card({ Title = "Puppet", Icon = "zap", Side = "Right" })
 Puppet:Toggle({ Title = "Puppet boost", Flag = "mv_puppet", Default = false, Callback = moveToggle("puppet") })
 Puppet:Slider({ Title = "Speed", Flag = "mv_puppetspeed", Min = 50, Max = 400, Default = 200, DependsOn = { Flag = "mv_puppet", Reason = "" },
-    Callback = function(v) MoveCfg.PuppetSpeed = v end })
+    Callback = function(v) moveCfg.PuppetSpeed = v end })
 Puppet:Slider({ Title = "Count", Flag = "mv_puppetcount", Min = 2, Max = 10, Default = 5, DependsOn = { Flag = "mv_puppet", Reason = "" },
-    Callback = function(v) MoveCfg.PuppetLimit = v end })
+    Callback = function(v) moveCfg.PuppetLimit = v end })
 
-local Cam = MV:Card({ Title = "Camera", Icon = "camera" })
+local Cam = moveTab:Card({ Title = "Camera", Icon = "camera" })
 Cam:Slider({ Title = "FOV", Flag = "mv_fov", Min = 30, Max = 120, Default = 70, Callback = function(v)
-    if Move.setFov then Move.setFov(v) else MoveCfg.Fov = v end
+    if Move.setFov then Move.setFov(v) else moveCfg.Fov = v end
 end })
 Cam:Toggle({ Title = "Unlock zoom", Flag = "p_zoom", Default = false, Callback = set("UnlockZoom") })
 
-local Dash = MV:Card({ Title = "Wider dash", Icon = "wind", Side = "Right" })
+local Dash = moveTab:Card({ Title = "Wider dash", Icon = "wind", Side = "Right" })
 Dash:Toggle({ Title = "Wider dash", Flag = "mv_dash", Default = false, Callback = moveToggle("widerDash") })
 Dash:Slider({ Title = "Speed", Flag = "mv_dashspeed", Min = 50, Max = 300, Default = 125, Suffix = " studs/s", DependsOn = { Flag = "mv_dash", Reason = "" },
-    Callback = function(v) MoveCfg.DashSpeed = v end })
+    Callback = function(v) moveCfg.DashSpeed = v end })
 
 ----- Player: general -----
 local PlayerMisc = Tabs.Player:Card({ Title = "Misc", Icon = "wand-sparkles", Side = "Right" })
@@ -1927,7 +1927,7 @@ specRow:Button({ Title = "Spectate", Icon = "eye", Style = "Primary", Callback =
     if chosen and chosen[1] then spectate(chosen[1]) end
 end })
 specRow:Button({ Title = "Stop", Icon = "square", Style = "Ghost", Callback = function() spectate(nil) end })
-HUB.PlayerLateCards = { PlayerMisc, Spec }                          -- moved below the Shindo cards
+hub.PlayerLateCards = { PlayerMisc, Spec }                          -- moved below the Shindo cards
 end
 
 ----- Server -----
@@ -1936,13 +1936,13 @@ local Server = Tabs.Server
 local SrvCard = Server:Card({ Title = "Servers", Icon = "server", Desc = "Pick by player count and ping" })
 
 -- ServerList: not part of the lib, drawn by hand into the card body (bound to theme colours)
-local UI_ = Lib.Util
-local TH = Lib.Theme
-local srvBox = UI_.create("Frame", { Name = "ServerList", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0),
+local util = Lib.Util
+local theme = Lib.Theme
+local srvBox = util.create("Frame", { Name = "ServerList", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0),
     AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = SrvCard:_order(), Parent = SrvCard.body })
-UI_.list(srvBox, 5)
+util.list(srvBox, 5)
 local srvRows, srvCache, srvSort = {}, {}, "Asc"
-local SRV_MAX = 8
+local maxServers = 8
 
 local function pingLevel(ms)
     if ms < 80 then return 4 elseif ms < 150 then return 3 elseif ms < 250 then return 2 end
@@ -1954,37 +1954,37 @@ local function myPing()
 end
 
 local function srvRow(order, s, current)
-    local row = UI_.create("Frame", { Name = "Server", Size = UDim2.new(1, 0, 0, 32), BorderSizePixel = 0, LayoutOrder = order, Parent = srvBox })
-    TH.bind(row, "BackgroundColor3", "input")
-    UI_.corner(row, 8)
-    TH.bind(UI_.stroke(row), "Color", current and "edge" or "line")
-    local id = UI_.label(row, "#" .. string.sub(s.id or "", 1, 6), 10, { Position = UDim2.new(0, 9, 0, 0), Size = UDim2.new(0.2, -4, 1, 0) })
-    TH.bind(id, "TextColor3", current and "heading" or "text")
+    local row = util.create("Frame", { Name = "Server", Size = UDim2.new(1, 0, 0, 32), BorderSizePixel = 0, LayoutOrder = order, Parent = srvBox })
+    theme.bind(row, "BackgroundColor3", "input")
+    util.corner(row, 8)
+    theme.bind(util.stroke(row), "Color", current and "edge" or "line")
+    local id = util.label(row, "#" .. string.sub(s.id or "", 1, 6), 10, { Position = UDim2.new(0, 9, 0, 0), Size = UDim2.new(0.2, -4, 1, 0) })
+    theme.bind(id, "TextColor3", current and "heading" or "text")
     local pct = (s.maxPlayers or 0) > 0 and math.clamp((s.playing or 0) / s.maxPlayers, 0, 1) or 0
-    local bar = UI_.create("Frame", { AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0.2, 4, 0.5, 0), Size = UDim2.new(0.17, 0, 0, 4), BorderSizePixel = 0, Parent = row })
-    TH.bind(bar, "BackgroundColor3", "buttonEdge")
-    UI_.corner(bar, 2)
-    local fill = UI_.create("Frame", { Size = UDim2.new(pct, 0, 1, 0), BorderSizePixel = 0, Parent = bar })
-    TH.bind(fill, "BackgroundColor3", "accent")
-    UI_.corner(fill, 2)
-    local cnt = UI_.label(row, ("%d/%d"):format(s.playing or 0, s.maxPlayers or 0), 9, { Position = UDim2.new(0.39, 4, 0, 0), Size = UDim2.new(0.12, 0, 1, 0) })
-    TH.bind(cnt, "TextColor3", "muted")
+    local bar = util.create("Frame", { AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0.2, 4, 0.5, 0), Size = UDim2.new(0.17, 0, 0, 4), BorderSizePixel = 0, Parent = row })
+    theme.bind(bar, "BackgroundColor3", "buttonEdge")
+    util.corner(bar, 2)
+    local fill = util.create("Frame", { Size = UDim2.new(pct, 0, 1, 0), BorderSizePixel = 0, Parent = bar })
+    theme.bind(fill, "BackgroundColor3", "accent")
+    util.corner(fill, 2)
+    local cnt = util.label(row, ("%d/%d"):format(s.playing or 0, s.maxPlayers or 0), 9, { Position = UDim2.new(0.39, 4, 0, 0), Size = UDim2.new(0.12, 0, 1, 0) })
+    theme.bind(cnt, "TextColor3", "muted")
     local ms = floor(s.ping or 0)
     local lvl = pingLevel(ms)
     for k = 1, 4 do
-        local b = UI_.create("Frame", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0.52, (k - 1) * 4, 0.5, 6), Size = UDim2.fromOffset(2.5, 2 + k * 2), BorderSizePixel = 0, Parent = row })
-        TH.bind(b, "BackgroundColor3", k <= lvl and (lvl >= 3 and "success" or "warning") or "buttonEdge")
-        UI_.corner(b, 1)
+        local b = util.create("Frame", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0.52, (k - 1) * 4, 0.5, 6), Size = UDim2.fromOffset(2.5, 2 + k * 2), BorderSizePixel = 0, Parent = row })
+        theme.bind(b, "BackgroundColor3", k <= lvl and (lvl >= 3 and "success" or "warning") or "buttonEdge")
+        util.corner(b, 1)
     end
-    local pl = UI_.label(row, ms > 0 and (ms .. " ms") or "-", 9, { Position = UDim2.new(0.52, 20, 0, 0), Size = UDim2.new(0.16, 0, 1, 0) })
-    TH.bind(pl, "TextColor3", "muted")
-    local btn = UI_.create("TextButton", { Text = current and "Rejoin" or "Join", TextSize = 9, Font = Enum.Font.GothamMedium, AutoButtonColor = false,
+    local pl = util.label(row, ms > 0 and (ms .. " ms") or "-", 9, { Position = UDim2.new(0.52, 20, 0, 0), Size = UDim2.new(0.16, 0, 1, 0) })
+    theme.bind(pl, "TextColor3", "muted")
+    local btn = util.create("TextButton", { Text = current and "Rejoin" or "Join", TextSize = 9, Font = Enum.Font.GothamMedium, AutoButtonColor = false,
         AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -6, 0.5, 0), Size = UDim2.fromOffset(54, 20), BorderSizePixel = 0, Parent = row })
-    TH.bind(btn, "BackgroundColor3", "buttonEdge")
-    TH.bind(btn, "TextColor3", "heading")
-    UI_.corner(btn, 6)
-    btn.MouseEnter:Connect(function() TH.tweenTo(btn, "BackgroundColor3", "hover", 0.1) end)
-    btn.MouseLeave:Connect(function() TH.tweenTo(btn, "BackgroundColor3", "buttonEdge", 0.1) end)
+    theme.bind(btn, "BackgroundColor3", "buttonEdge")
+    theme.bind(btn, "TextColor3", "heading")
+    util.corner(btn, 6)
+    btn.MouseEnter:Connect(function() theme.tweenTo(btn, "BackgroundColor3", "hover", 0.1) end)
+    btn.MouseLeave:Connect(function() theme.tweenTo(btn, "BackgroundColor3", "buttonEdge", 0.1) end)
     btn.Activated:Connect(function()
         if current then rejoin() return end
         notify("Server", ("Joining a server with %d/%d players"):format(s.playing or 0, s.maxPlayers or 0), "log-in")
@@ -2000,7 +2000,7 @@ local function drawServers()
     local list = table.clone(srvCache)
     if srvSort == "Smallest" then table.sort(list, function(a, b) return (a.playing or 0) < (b.playing or 0) end)
     elseif srvSort == "Ping" then table.sort(list, function(a, b) return (a.ping or 9999) < (b.ping or 9999) end) end
-    for i = 1, math.min(#list, SRV_MAX) do srvRows[#srvRows + 1] = srvRow(10 + i, list[i], false) end
+    for i = 1, math.min(#list, maxServers) do srvRows[#srvRows + 1] = srvRow(10 + i, list[i], false) end
     SrvCard:SetDesc(#srvCache > 0 and ("Servers: %d · %s"):format(#srvCache, srvSort == "Smallest" and "emptiest first" or srvSort == "Ping" and "lowest ping first" or "default order")
         or "No servers found · press Refresh")
 end
@@ -2036,19 +2036,19 @@ end }
 
 local Opt = Server:Card({ Title = "Options", Icon = "settings-2", Side = "Right" })
 Opt:ListItem({ Title = "Staff alert", Icon = "shield-alert", Toggle = true, Flag = "s_staff", Default = false, Callback = function(on)
-    S.StaffAlert = on
+    settings.StaffAlert = on
     if on then for _, p in ipairs(Players:GetPlayers()) do checkStaff(p) end end
 end })
-local STAFF_DEP = { Flag = "s_staff", Mode = "Hide", Reason = "" }
-Opt:Input({ Title = "Group ID", Placeholder = "game's group ID", Flag = "s_group", Numeric = true, DependsOn = STAFF_DEP,
-    Callback = function(text) S.StaffGroup = tonumber(text) or 0 end })
-Opt:Slider({ Title = "Min rank", Flag = "s_rank", Min = 1, Max = 255, Default = 1, DependsOn = STAFF_DEP, Callback = set("StaffRank") })
-Opt:Segment({ Title = "Action", Flag = "s_action", Items = { "Notify", "Hop", "Leave" }, Default = "Notify", DependsOn = STAFF_DEP, Callback = set("StaffAction") })
+local staffDependency = { Flag = "s_staff", Mode = "Hide", Reason = "" }
+Opt:Input({ Title = "Group ID", Placeholder = "game's group ID", Flag = "s_group", Numeric = true, DependsOn = staffDependency,
+    Callback = function(text) settings.StaffGroup = tonumber(text) or 0 end })
+Opt:Slider({ Title = "Min rank", Flag = "s_rank", Min = 1, Max = 255, Default = 1, DependsOn = staffDependency, Callback = set("StaffRank") })
+Opt:Segment({ Title = "Action", Flag = "s_action", Items = { "Notify", "Hop", "Leave" }, Default = "Notify", DependsOn = staffDependency, Callback = set("StaffAction") })
 Opt:ListItem({ Title = "Auto rejoin on kick", Icon = "refresh-cw", Toggle = true, Flag = "s_autorejoin", Default = false, Callback = set("AutoRejoin") })
 Opt:ListItem({ Title = "Re-execute after teleport", Icon = "scroll-text", Toggle = true, Flag = "misc_queue", Default = false,
     Desc = queue and "Hub reopens after teleport" or "Executor doesn't have queue_on_teleport",
     Callback = function(on)
-        if on then queueHub() else queuePermission(HUB_QUEUE_STOP, false) end
+        if on then queueHub() else queuePermission(hubStopFile, false) end
     end })
 
 local JobCard = Server:Card({ Title = "Job ID", Icon = "hash", Side = "Right" })
@@ -2071,7 +2071,7 @@ Window:SetModule("ESP", "Off", Render.Mode == "GUI" and "GUI mode" or nil, { Ico
 Window:SetModule("Silent Aim", CanHook and "Off" or "Limited", not CanHook and "no hook" or nil, { Icon = "target", Tab = "Combat" })
 
 Window:OnKick(function()
-    if S.AutoRejoin then task.delay(2, function() if Running and S.AutoRejoin then rejoin() end end) end
+    if settings.AutoRejoin then task.delay(2, function() if Running and settings.AutoRejoin then rejoin() end end) end
 end)
 
 ----- Loops -----
@@ -2096,13 +2096,13 @@ Render.safe = safe
 
 connect(RunService.RenderStepped, function()
     if not Running then return end
-    ESP.Frame += 1
+    esp.Frame += 1
     if not Camera then Silent.Target = nil return end
     if not safe("Silent Aim", function() Silent.Target = findTarget() end) then Silent.Target = nil end
     safe("FOV", updateGlobal)                                    -- FOV first: it is drawn whatever happens to the ESP
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and not safe("ESP", updatePlayer, plr) then
-            local e = ESP.Entries[plr]                           -- do not leave a half-drawn frame on screen
+            local e = esp.Entries[plr]                           -- do not leave a half-drawn frame on screen
             if e then hideUnused(e, true) end
         end
     end
@@ -2134,23 +2134,23 @@ task.spawn(function()                                            -- player table
 end)
 
 ----- Unload -----
-ENV.QustahShindoCore = {
+env.QustahShindoCore = {
     Unload = function()
         if not Running then return end
         Running = false
         pcall(hubStop)                                           -- farm / spin / player loops and the platform
         for _, c in ipairs(Connections) do pcall(function() c:Disconnect() end) end
-        for plr in pairs(ESP.Entries) do removeEntry(plr) end
+        for plr in pairs(esp.Entries) do removeEntry(plr) end
         for _, o in pairs(Global.Obj) do Render.remove(o) end
         stopNoClip()
         restoreWorld()
         spectate(nil)
         pcall(function() Overlay:Destroy() end)
-        ENV.QustahShindoCore = nil
+        env.QustahShindoCore = nil
         pcall(function() Window:Destroy() end)
     end,
 }
-unloadThis = ENV.QustahShindoCore.Unload
+unloadThis = env.QustahShindoCore.Unload
 end
 
 ----- Farm -----
@@ -2160,7 +2160,7 @@ do
 	local MentorPage = Farm:Page("Mentor")
 	local DailyPage = Farm:Page("Daily")
 
-	local F = {
+	local farm = {
 		Scroll = false, Boss = false,
 		BossSpecific = false, BossSel = {},   -- as in DogeHub: Specific (multi-select) / Random
 		StuckAfter = 60,                                         -- cancel stuck missions (no setting, handled internally)
@@ -2168,8 +2168,8 @@ do
 		-- Mentor and Daily use separate keys so turning one off does not stop the other
 		PunchM = false, PunchD = false, TreeM = false, TreeD = false, Shoot = false, Rush = false, Chi = false, DailyBoss = false,
 	}
-	local GREEN_SCROLL = "http://www.roblox.com/asset/?id=5459241648"
-	if ENV.QustahShindoCore then ENV.QustahShindoCore.Farm, ENV.QustahShindoCore.Hub = F, HUB end   -- for tests
+	local greenScroll = "http://www.roblox.com/asset/?id=5459241648"
+	if env.QustahShindoCore then env.QustahShindoCore.Farm, env.QustahShindoCore.Hub = farm, hub end   -- for tests
 
 	local function timerReady(giver)                            -- has the boss mission giver's cooldown finished
 		local ok, txt = pcall(function() return giver.missiongiver.timer.time.time.Text end)
@@ -2182,10 +2182,10 @@ do
 		mg.CLIENTTALK:FireServer(LocalPlayer)
 	end
 	-- the missions folder lists every boss; only the bosses on this map contain a "missiongiver" (the NPC you talk to)
-	local BOSS_FOLDERS = { "bossdropmission", "sengokubossfight" }
+	local bossFolders = { "bossdropmission", "sengokubossfight" }
 	local function bossGivers()
 		local out = {}
-		for _, folderName in ipairs(BOSS_FOLDERS) do
+		for _, folderName in ipairs(bossFolders) do
 			local f = workspace:FindFirstChild(folderName)
 			local missions = f and f:FindFirstChild("missions")
 			if missions then
@@ -2207,7 +2207,7 @@ do
 	local function greenInfo(v)                                       -- is this a green "defeat" giver, and is it giving a mission right now
 		local gm = v:FindFirstChild("Head") and v.Head:FindFirstChild("givemission")
 		local typ = v:FindFirstChild("Talk") and v.Talk:FindFirstChild("typ")
-		if not (gm and typ and typ.Value == "defeat" and gm:FindFirstChild("color") and gm.color.Image == GREEN_SCROLL) then return false end
+		if not (gm and typ and typ.Value == "defeat" and gm:FindFirstChild("color") and gm.color.Image == greenScroll) then return false end
 		return true, gm.Enabled and v:FindFirstChild("HumanoidRootPart") ~= nil and v:FindFirstChild("CLIENTTALK") ~= nil
 	end
 	local function acceptScrollQuest(alive)                          -- take a green scroll "defeat" mission
@@ -2297,7 +2297,7 @@ do
 
 	local lastMission
 	local function farmAlive()
-		return HUB.Running and (F.Scroll or F.Boss or F.DailyBoss)
+		return hub.Running and (farm.Scroll or farm.Boss or farm.DailyBoss)
 	end
 	local function dailyBossGivers()
 		local s = statz()
@@ -2318,8 +2318,8 @@ do
 	end
 	loop("Auto farm", 0.2, function()
 		if not farmAlive() then if SafePart or platformFixed then leaveSafe() end return end   -- farm turned off: remove the safe floor
-		if KIND ~= "map" or HUB.ScrollBusy then return end
-		HUB.FarmBusy = true
+		if placeType ~= "map" or hub.ScrollBusy then return end
+		hub.FarmBusy = true
 		local ok, err = pcall(function()
 			local cur = currentMission()
 			if cur ~= lastMission then lastMission, progressAt = cur, os.clock() end
@@ -2331,8 +2331,8 @@ do
 					return
 				end
 			end
-			if inMission() and F.StuckAfter > 0 and os.clock() - progressAt > F.StuckAfter then   -- stuck
-				if cancelMission() then notify("Auto farm", F.StuckAfter .. "s without progress, mission cancelled", "circle-x", "warning") end
+			if inMission() and farm.StuckAfter > 0 and os.clock() - progressAt > farm.StuckAfter then   -- stuck
+				if cancelMission() then notify("Auto farm", farm.StuckAfter .. "s without progress, mission cancelled", "circle-x", "warning") end
 				progressAt = os.clock()
 				leaveSafe()
 				task.wait(1)
@@ -2340,54 +2340,54 @@ do
 			end
 			if inMission() then killMissionMobs(farmAlive) return end
 			bossGiver, bossKilled = nil, false                       -- mission finished
-			if F.Boss and acceptFrom(bossGivers(), (F.BossSpecific and #F.BossSel > 0 and F.BossSel) or "Random", function() return HUB.Running and F.Boss end) then
+			if farm.Boss and acceptFrom(bossGivers(), (farm.BossSpecific and #farm.BossSel > 0 and farm.BossSel) or "Random", function() return hub.Running and farm.Boss end) then
 				return
 			end
-			if HUB.Running and F.DailyBoss and acceptFrom(dailyBossGivers(), "Random", function() return HUB.Running and F.DailyBoss end) then return end
-			if HUB.Running and F.Scroll and not inMission() then
+			if hub.Running and farm.DailyBoss and acceptFrom(dailyBossGivers(), "Random", function() return hub.Running and farm.DailyBoss end) then return end
+			if hub.Running and farm.Scroll and not inMission() then
 				leaveSafe()
-				acceptScrollQuest(function() return HUB.Running and F.Scroll end)
+				acceptScrollQuest(function() return hub.Running and farm.Scroll end)
 				return
 			end
 			-- only boss farm is on and no boss is ready: wait above the last boss until the next one
-			if (F.Boss or F.DailyBoss) and lastGiver and lastGiver.Parent then goSafe(lastGiver) end
+			if (farm.Boss or farm.DailyBoss) and lastGiver and lastGiver.Parent then goSafe(lastGiver) end
 		end)
-		HUB.FarmBusy = false
+		hub.FarmBusy = false
 		if not farmAlive() then leaveSafe() end
 		if not ok then error(err, 0) end
 	end)
 
 	-- Like DogeHub's "Quests" page: Auto Farm · Configurations · Boss Farm Settings
-	local Q = QuestPage:Card({ Title = "Auto Farm", Icon = "scroll-text" })
+	local autoFarmCard = QuestPage:Card({ Title = "Auto Farm", Icon = "scroll-text" })
 	local function farmToggle(card, title, key)
 		card:Toggle({ Title = title, Flag = "farm_" .. key:lower(), Default = false, Callback = function(on)
-			if on ~= F[key] then if on then platformOn() else platformOff() end end
-			F[key] = on
+			if on ~= farm[key] then if on then platformOn() else platformOff() end end
+			farm[key] = on
 		end })
 	end
-	farmToggle(Q, "Green Scroll Farm", "Scroll")
-	farmToggle(Q, "Boss Farm", "Boss")
+	farmToggle(autoFarmCard, "Green Scroll Farm", "Scroll")
+	farmToggle(autoFarmCard, "Boss Farm", "Boss")
 
 	local Conf = QuestPage:Card({ Title = "Configurations", Icon = "sliders-horizontal", Side = "Right" })
 	Conf:Toggle({ Title = "Legacy Farm Mode", Flag = "farm_legacy", Default = true, Callback = function(v)
 		Attack.Mode = v and "Legacy (M1 + E)" or "Jutsu (E)"
 	end })
-	Conf:Toggle({ Title = "NPC Kill Aura", Flag = "farm_aura", Default = false, Callback = function(v) HUB.FarmAura = v end })
+	Conf:Toggle({ Title = "NPC Kill Aura", Flag = "farm_aura", Default = false, Callback = function(v) hub.FarmAura = v end })
 
 	-- Specific / Random: turning one on turns the other off (as in DogeHub)
 	local function pickCard(title, icon, what, list, keySpecific, keySel, flagPrefix)
-		local C = QuestPage:Card({ Title = title, Icon = icon })
-		C:Toggle({ Title = "Specific " .. what, Flag = flagPrefix .. "specific", Default = false, Callback = function(v)
-			F[keySpecific] = v
+		local pickedCard = QuestPage:Card({ Title = title, Icon = icon })
+		pickedCard:Toggle({ Title = "Specific " .. what, Flag = flagPrefix .. "specific", Default = false, Callback = function(v)
+			farm[keySpecific] = v
 			if v then Window:SetFlag(flagPrefix .. "random", false) end
 		end })
 		-- multi-select: several bosses can be ticked and whichever is ready first is taken (nothing ticked behaves like Random)
-		local dd = C:Dropdown({ Title = "Specific " .. what:lower() .. " to kill", Flag = flagPrefix .. "pick", Items = list, Default = {}, Multi = true,
-			AllowNone = true, Search = true, Callback = function(v) F[keySel] = type(v) == "table" and v or { v } end })
-		C:Toggle({ Title = "Random " .. what .. "es", Flag = flagPrefix .. "random", Default = true, Callback = function(v)
+		local dd = pickedCard:Dropdown({ Title = "Specific " .. what:lower() .. " to kill", Flag = flagPrefix .. "pick", Items = list, Default = {}, Multi = true,
+			AllowNone = true, Search = true, Callback = function(v) farm[keySel] = type(v) == "table" and v or { v } end })
+		pickedCard:Toggle({ Title = "Random " .. what .. "es", Flag = flagPrefix .. "random", Default = true, Callback = function(v)
 			if v then Window:SetFlag(flagPrefix .. "specific", false) end
 		end })
-		return C, dd
+		return pickedCard, dd
 	end
 	local bossList = names(bossGivers())
 	local BossSet, bossDD = pickCard("Boss Farm Settings", "skull", "Boss", bossList, "BossSpecific", "BossSel", "farm_boss")
@@ -2398,8 +2398,8 @@ do
 	local function refreshList(dd, list, keySel, flag)
 		dd:SetItems(list, true)
 		local keep = {}                                          -- drop selections that are not on this map
-		for _, n in ipairs(F[keySel]) do if table.find(list, n) then keep[#keep + 1] = n end end
-		if #keep ~= #F[keySel] then Window:SetFlag(flag, keep) F[keySel] = keep end
+		for _, n in ipairs(farm[keySel]) do if table.find(list, n) then keep[#keep + 1] = n end end
+		if #keep ~= #farm[keySel] then Window:SetFlag(flag, keep) farm[keySel] = keep end
 	end
 	local function refreshBosses()
 		refreshList(bossDD, names(bossGivers()), "BossSel", "farm_bosspick")
@@ -2422,39 +2422,39 @@ do
 	local function queueRefresh(obj)
 		if obj.Name ~= "missiongiver" or pending then return end
 		pending = true
-		task.delay(0.5, function() pending = false if HUB.Running then pcall(refreshBosses) end end)
+		task.delay(0.5, function() pending = false if hub.Running then pcall(refreshBosses) end end)
 	end
 	local watched = {}
 	local function watchBossFolder(f)
-		if watched[f] or not table.find(BOSS_FOLDERS, f.Name) then return end
+		if watched[f] or not table.find(bossFolders, f.Name) then return end
 		watched[f] = true
 		hubConnect(f.DescendantAdded, queueRefresh)                  -- the missions folder itself may also arrive later
 		hubConnect(f.DescendantRemoving, queueRefresh)
 		queueRefresh({ Name = "missiongiver" })
 	end
-	for _, folderName in ipairs(BOSS_FOLDERS) do
+	for _, folderName in ipairs(bossFolders) do
 		local f = workspace:FindFirstChild(folderName)
 		if f then watched[f] = true hubConnect(f.DescendantAdded, queueRefresh) hubConnect(f.DescendantRemoving, queueRefresh) end
 	end
 	hubConnect(workspace.ChildAdded, watchBossFolder)
 
 	local Rank = QuestPage:Card({ Title = "Auto rank", Icon = "crown", Side = "Right" })
-	Rank:Toggle({ Title = "Auto rank", Desc = "Ranks up at level 1000", Flag = "rank_on", Default = false, Callback = function(v) F.AutoRank = v end })
-	Rank:Toggle({ Title = "Rank up after MAX", Flag = "rank_max", Default = false, Callback = function(v) F.RankAfterMax = v end })
-	Rank:Toggle({ Title = "Use RELL coins", Flag = "rank_rc", Default = false, Callback = function(v) F.RankRC = v end })
-	Rank:Toggle({ Title = "Stop at spins", Flag = "rank_stop", Default = false, Callback = function(v) F.RankStop = v end })
+	Rank:Toggle({ Title = "Auto rank", Desc = "Ranks up at level 1000", Flag = "rank_on", Default = false, Callback = function(v) farm.AutoRank = v end })
+	Rank:Toggle({ Title = "Rank up after MAX", Flag = "rank_max", Default = false, Callback = function(v) farm.RankAfterMax = v end })
+	Rank:Toggle({ Title = "Use RELL coins", Flag = "rank_rc", Default = false, Callback = function(v) farm.RankRC = v end })
+	Rank:Toggle({ Title = "Stop at spins", Flag = "rank_stop", Default = false, Callback = function(v) farm.RankStop = v end })
 	Rank:Slider({ Title = "Stop when spins reach", Flag = "rank_stopat", Min = 50, Max = 1000, Default = 500, DependsOn = { Flag = "rank_stop", Reason = "" },
-		Callback = function(v) F.RankStopAt = v end })
+		Callback = function(v) farm.RankStopAt = v end })
 	loop("Auto rank", 0.3, function()
 		local s = statz()
-		if not (F.AutoRank and s) then return end
+		if not (farm.AutoRank and s) then return end
 		local spins = s:FindFirstChild("spins")
-		if F.RankStop and spins and spins.Value >= F.RankStopAt then
+		if farm.RankStop and spins and spins.Value >= farm.RankStopAt then
 			Window:SetFlag("rank_on", false)
 			notify("Auto rank", "Spin target reached, stopped", "crown")
 			return
 		end
-		if F.RankRC then
+		if farm.RankRC then
 			if rellCoinOut() then
 				Window:SetFlag("rank_rc", false)
 				notify("Auto rank", "Out of RELL Coins", "triangle-alert", "warning")
@@ -2464,33 +2464,33 @@ do
 		end
 		local lvl = s:FindFirstChild("lvl") and s.lvl:FindFirstChild("lvl")
 		if lvl and lvl.Value >= 1000 then
-			fire(F.RankAfterMax and "maxlvlpres" or "rankup")
+			fire(farm.RankAfterMax and "maxlvlpres" or "rankup")
 		end
 	end)
 
 	local Stats = QuestPage:Card({ Title = "Auto stats", Icon = "gauge" })
 	Stats:Dropdown({ Title = "Stats", Flag = "farm_stats", Multi = true, Items = { "chakra", "ninjutsu", "taijutsu", "health" }, Default = {},
-		Callback = function(list) F.Stats = type(list) == "table" and list or {} end })
+		Callback = function(list) farm.Stats = type(list) == "table" and list or {} end })
 	loop("Auto stats", 0.25, function()
-		if #F.Stats == 0 then return end
+		if #farm.Stats == 0 then return end
 		local s = statz()
 		local pts = s and s:FindFirstChild("mastery") and s.mastery:FindFirstChild("points")
 		if pts and pts.Value > 0 then
-			for _, stat in ipairs(F.Stats) do
+			for _, stat in ipairs(farm.Stats) do
 				for _, amt in ipairs({ 1, 17, 288 }) do fire("addstat", stat, amt) end
 			end
 		end
 	end)
-	if KIND ~= "map" then QuestPage:Warning("Missions only work on a map (now: " .. placeName() .. ").", { Level = "info" }) end
+	if placeType ~= "map" then QuestPage:Warning("Missions only work on a map (now: " .. placeName() .. ").", { Level = "info" }) end
 
 	----- Mentor -----
-	local MENTORS = { "Narumaki", "Jiso Seishin", "Shindai Akuma", "Ryuji Kenichi", "Bruce Kenichi" }
+	local mentors = { "Narumaki", "Jiso Seishin", "Shindai Akuma", "Ryuji Kenichi", "Bruce Kenichi" }
 	local rank = statz() and statz():FindFirstChild("prestige") and statz().prestige:FindFirstChild("rank") and statz().prestige.rank.Value or "?"
-	local M = MentorPage:Card({ Title = "Mentor", Icon = "graduation-cap", Desc = "Requires S rank or higher (your rank: " .. tostring(rank) .. ")" })
-	M:Button({ Title = "Go to mentor", Icon = "map-pin", Style = "Primary", Callback = function()
+	local mentorCard = MentorPage:Card({ Title = "Mentor", Icon = "graduation-cap", Desc = "Requires S rank or higher (your rank: " .. tostring(rank) .. ")" })
+	mentorCard:Button({ Title = "Go to mentor", Icon = "map-pin", Style = "Primary", Callback = function()
 		local sensei = workspace:FindFirstChild("sensei")
 		if sensei and sensei:FindFirstChild("missions") then
-			for _, name in ipairs(MENTORS) do
+			for _, name in ipairs(mentors) do
 				local g = sensei.missions:FindFirstChild(name)
 				if g then talkTo(g) return notify("Mentor", name .. " talked to", "graduation-cap") end
 			end
@@ -2502,26 +2502,26 @@ do
 		end
 		notify("Mentor", "No mentor on this map", "triangle-alert", "warning")
 	end })
-	M:Toggle({ Title = "Auto punch", Desc = "Punch missions", Flag = "mt_punch", Default = false, Callback = function(v) F.PunchM = v end })
-	M:Toggle({ Title = "Auto tree jump", Desc = "Tree jump missions", Flag = "mt_tree", Default = false, Callback = function(v) F.TreeM = v end })
-	M:Toggle({ Title = "Auto kunai shoot", Desc = "Target board missions", Flag = "mt_shoot", Default = false, Callback = function(v) F.Shoot = v end })
-	M:Button({ Title = "Kenjutsu training", Icon = "sword", Callback = function() fire("trainkenmaster") end })
+	mentorCard:Toggle({ Title = "Auto punch", Desc = "Punch missions", Flag = "mt_punch", Default = false, Callback = function(v) farm.PunchM = v end })
+	mentorCard:Toggle({ Title = "Auto tree jump", Desc = "Tree jump missions", Flag = "mt_tree", Default = false, Callback = function(v) farm.TreeM = v end })
+	mentorCard:Toggle({ Title = "Auto kunai shoot", Desc = "Target board missions", Flag = "mt_shoot", Default = false, Callback = function(v) farm.Shoot = v end })
+	mentorCard:Button({ Title = "Kenjutsu training", Icon = "sword", Callback = function() fire("trainkenmaster") end })
 	loop("Mentor", 0.05, function()
-		if HUB.FarmBusy or HUB.ScrollBusy then return end
-		if F.PunchM or F.PunchD or F.Shoot then
-			if F.Shoot then
+		if hub.FarmBusy or hub.ScrollBusy then return end
+		if farm.PunchM or farm.PunchD or farm.Shoot then
+			if farm.Shoot then
 				local mine = workspace.Terrain:FindFirstChild(LocalPlayer.Name)
 				local aim = mine and mine:FindFirstChild("kunaiaim")
 				if aim then lookAt(aim.Position) end
 			end
 			combat("mouse1", true)
 		end
-		if F.TreeM or F.TreeD then combat("takemovement2") end
+		if farm.TreeM or farm.TreeD then combat("takemovement2") end
 	end)
 
 	----- Daily -----
-	local D = DailyPage:Card({ Title = "Rewards", Icon = "gift" })
-	D:Button({ Title = "Claim all missions", Icon = "gift", Style = "Primary", Callback = function()
+	local rewardsCard = DailyPage:Card({ Title = "Rewards", Icon = "gift" })
+	rewardsCard:Button({ Title = "Claim all missions", Icon = "gift", Style = "Primary", Callback = function()
 		local st = statz()
 		local m = st and st:FindFirstChild("mission")
 		if m then
@@ -2539,19 +2539,19 @@ do
 		end
 		notify("Missions", "Requested daily and main mission rewards", "gift")
 	end })
-	local DA = DailyPage:Card({ Title = "Auto daily", Icon = "repeat", Side = "Right" })
-	DA:Toggle({ Title = "M1", Flag = "dl_m1", Default = false, Callback = function(v) F.PunchD = v end })
-	DA:Toggle({ Title = "Rush", Flag = "dl_rush", Default = false, Callback = function(v) F.Rush = v end })
-	DA:Toggle({ Title = "Chi charge", Flag = "dl_chi", Default = false, Callback = function(v) F.Chi = v end })
-	DA:Toggle({ Title = "Tree jumps", Flag = "dl_tree", Default = false, Callback = function(v) F.TreeD = v end })
-	DA:Toggle({ Title = "Daily boss quests", Flag = "dl_boss", Default = false, Callback = function(v)
-		if v ~= F.DailyBoss then if v then platformOn() else platformOff() end end   -- platform, as in boss farm
-		F.DailyBoss = v
+	local autoDailyCard = DailyPage:Card({ Title = "Auto daily", Icon = "repeat", Side = "Right" })
+	autoDailyCard:Toggle({ Title = "M1", Flag = "dl_m1", Default = false, Callback = function(v) farm.PunchD = v end })
+	autoDailyCard:Toggle({ Title = "Rush", Flag = "dl_rush", Default = false, Callback = function(v) farm.Rush = v end })
+	autoDailyCard:Toggle({ Title = "Chi charge", Flag = "dl_chi", Default = false, Callback = function(v) farm.Chi = v end })
+	autoDailyCard:Toggle({ Title = "Tree jumps", Flag = "dl_tree", Default = false, Callback = function(v) farm.TreeD = v end })
+	autoDailyCard:Toggle({ Title = "Daily boss quests", Flag = "dl_boss", Default = false, Callback = function(v)
+		if v ~= farm.DailyBoss then if v then platformOn() else platformOff() end end   -- platform, as in boss farm
+		farm.DailyBoss = v
 	end })
 	loop("Daily", 0.05, function()
-		if HUB.FarmBusy or HUB.ScrollBusy then return end
-		if F.Rush then combat("rushw") end
-		if F.Chi then combat("key", "c") combat("key", "cend") end
+		if hub.FarmBusy or hub.ScrollBusy then return end
+		if farm.Rush then combat("rushw") end
+		if farm.Chi then combat("key", "c") combat("key", "cend") end
 	end)
 
 end
@@ -2563,8 +2563,8 @@ do
 	local RellPage = Spin:Page("Auto RELL")
 
 	----- Inf Spin -----
-	local SAVE_FILE = "QustahShindo/infspin.json"
-	local I = {
+	local saveFile = "QustahShindo/infspin.json"
+	local infSpin = {
 		Elements = {}, Bloodlines = {}, Kenjutsu = {}, Races = {},
 		ElemSlots = { "1", "2" }, BlSlots = { "1", "2" }, KenSlots = { "1" },
 		On = { Element = false, Bloodline = false, Kenjutsu = false, Race = false },
@@ -2574,15 +2574,15 @@ do
 		if not writefile then return end
 		pcall(function()
 			if makefolder and isfolder and not isfolder("QustahShindo") then makefolder("QustahShindo") end
-			writefile(SAVE_FILE, HttpService:JSONEncode(I))
+			writefile(saveFile, HttpService:JSONEncode(infSpin))
 		end)
 	end
 	local fromFile                                               -- state read from the json (restored after AutoLoad)
 	pcall(function()
-		if isfile and isfile(SAVE_FILE) then
-			local data = HttpService:JSONDecode(readfile(SAVE_FILE))
-			for k, v in pairs(data) do I[k] = v end
-			fromFile = HttpService:JSONDecode(readfile(SAVE_FILE))
+		if isfile and isfile(saveFile) then
+			local data = HttpService:JSONDecode(readfile(saveFile))
+			for k, v in pairs(data) do infSpin[k] = v end
+			fromFile = HttpService:JSONDecode(readfile(saveFile))
 		end
 	end)
 
@@ -2628,7 +2628,7 @@ do
 		for _, t in ipairs({ el, kg, ken, race }) do table.sort(t) end
 		return el, kg, ken, race
 	end
-	local EL, KGS, KEN, RACE = lists()
+	local elementList, bloodlineList, kenjutsuList, raceList = lists()
 	local function orDash(t) return #t > 0 and t or { "-" } end
 
 	local function has(list, v) return v ~= nil and v ~= "" and table.find(list, v) ~= nil end
@@ -2636,18 +2636,18 @@ do
 	local function saveAndLeave()
 		fire("band", "Eye")
 		task.wait(1)
-		if HUB.Running and not ENV.RELL_RUNNING then fire("arenateleport", PLACE.MY_HOME) end
+		if hub.Running and not env.RELL_RUNNING then fire("arenateleport", places.myHome) end
 	end
 	local function resetAndRejoin()
 		queueHub()
 		fire("band", "\128")
 		task.wait()
-		if HUB.Running and not ENV.RELL_RUNNING then TeleportService:Teleport(game.PlaceId, LocalPlayer) end
+		if hub.Running and not env.RELL_RUNNING then TeleportService:Teleport(game.PlaceId, LocalPlayer) end
 	end
 
 	-- single loop: for every enabled category, spin in turn until the wanted result arrives
 	-- A category that is on but has an empty "Wanted" or "Slots" list is skipped (an empty list used to count as "got it" and saved / left).
-	local CAT = {
+	local categories = {
 		{ on = "Element", flag = "is_elem_on", wanted = "Elements", slots = "ElemSlots", label = "Elements" },
 		{ on = "Bloodline", flag = "is_bl_on", wanted = "Bloodlines", slots = "BlSlots", label = "Bloodlines" },
 		{ on = "Kenjutsu", flag = "is_ken_on", wanted = "Kenjutsu", slots = "KenSlots", label = "Kenjutsu" },
@@ -2655,9 +2655,9 @@ do
 	}
 	local function asList(v) return type(v) == "table" and v or {} end
 	local function ready(c)                                     -- enabled and the list is not empty
-		if not I.On[c.on] then return false end
-		if #asList(I[c.wanted]) == 0 then return false, "Wanted is empty" end
-		if c.slots and #asList(I[c.slots]) == 0 then return false, "Slots is empty" end
+		if not infSpin.On[c.on] then return false end
+		if #asList(infSpin[c.wanted]) == 0 then return false, "Wanted is empty" end
+		if c.slots and #asList(infSpin[c.slots]) == 0 then return false, "Slots is empty" end
 		return true
 	end
 	local warned = {}
@@ -2666,12 +2666,12 @@ do
 		warned[key] = message
 		notify("Inf Spin", message, "triangle-alert", "warning")
 	end
-	loop("Inf Spin", function() return tonumber(I.Delay) or 0.25 end, function()
-		if KIND ~= "menu" or ENV.RELL_RUNNING or ENV.RELLOpening then return end
+	loop("Inf Spin", function() return tonumber(infSpin.Delay) or 0.25 end, function()
+		if placeType ~= "menu" or env.RELL_RUNNING or env.RELLOpening then return end
 		local s = statz()
 		if not (s and s:FindFirstChild("spins") and s:FindFirstChild("main")) then return end
 		local active = {}
-		for _, c in ipairs(CAT) do
+		for _, c in ipairs(categories) do
 			local ok, why = ready(c)
 			if ok then active[c.on] = true warned[c.on] = nil
 			elseif why and not warned[c.on] then
@@ -2680,19 +2680,19 @@ do
 			end
 		end
 		if not next(active) then return end
-		local delay = tonumber(I.Delay) or 0.25
+		local delay = tonumber(infSpin.Delay) or 0.25
 		local pending, blocked, low, sent = false, false, false, false
 		local function check(c, val, unlocked, cost, send, label)
-			if not HUB.Running or ENV.RELL_RUNNING or ENV.RELLOpening or not I.On[c] then blocked = true return end
+			if not hub.Running or env.RELL_RUNNING or env.RELLOpening or not infSpin.On[c] then blocked = true return end
 			if not val or not unlocked then
 				blocked = true
 				warning(label, label .. " slot not found or locked")
 				return
 			end
 			warned[label] = nil
-			if has(I[c == "Element" and "Elements" or c == "Bloodline" and "Bloodlines" or c == "Race" and "Races" or "Kenjutsu"], val.Value) then return end
+			if has(infSpin[c == "Element" and "Elements" or c == "Bloodline" and "Bloodlines" or c == "Race" and "Races" or "Kenjutsu"], val.Value) then return end
 			pending = true
-			if cost == 0 or s.spins.Value >= I.ResetAt + cost then
+			if cost == 0 or s.spins.Value >= infSpin.ResetAt + cost then
 				sent = cost > 0 or sent
 				send()
 				task.wait(delay)
@@ -2701,21 +2701,21 @@ do
 			end
 		end
 		if active.Element then
-			for _, n in ipairs(asList(I.ElemSlots)) do
+			for _, n in ipairs(asList(infSpin.ElemSlots)) do
 				local slot = "element" .. n
 				check("Element", s.main:FindFirstChild(slot), (tonumber(n) or 9) <= 2 or gp(slot), 1,
 					function() fire("spin", slot) end, slot)
 			end
 		end
 		if active.Bloodline then
-			for _, n in ipairs(asList(I.BlSlots)) do
+			for _, n in ipairs(asList(infSpin.BlSlots)) do
 				local slot = "kg" .. n
 				check("Bloodline", s.main:FindFirstChild(slot), (tonumber(n) or 9) <= 2 or gp("genkai" .. n), 1,
 					function() fire("spin", slot) end, slot)
 			end
 		end
 		if active.Kenjutsu then
-			for _, n in ipairs(asList(I.KenSlots)) do
+			for _, n in ipairs(asList(infSpin.KenSlots)) do
 				local key = n == "1" and "breathingstyle" or "breathingstyle2"
 				local unlocked = n == "1" or (s:FindFirstChild("unlocked") and s.unlocked:FindFirstChild("kenjutsuslot2"))
 				check("Kenjutsu", s:FindFirstChild(key), unlocked, 10, function()
@@ -2725,7 +2725,7 @@ do
 		end
 		if active.Race then
 			if rellCoinOut() then                                   -- out of coins: turn off the race spin instead of firing remotes for nothing
-				I.On.Race = false
+				infSpin.On.Race = false
 				Window:SetFlag("is_race_on", false)
 				persist()
 				notify("Inf Spin", "Out of RELL Coins, race spin stopped", "triangle-alert", "warning")
@@ -2735,14 +2735,14 @@ do
 				check("Race", s:FindFirstChild("race"), true, 0, function() fire("spinrace") end, "Race")
 			end
 		end
-		if not HUB.Running or ENV.RELL_RUNNING or ENV.RELLOpening or blocked then return end
+		if not hub.Running or env.RELL_RUNNING or env.RELLOpening or blocked then return end
 		if not pending then
-			for _, c in ipairs(CAT) do
-				if active[c.on] then I.On[c.on] = false Window:SetFlag(c.flag, false) end
+			for _, c in ipairs(categories) do
+				if active[c.on] then infSpin.On[c.on] = false Window:SetFlag(c.flag, false) end
 			end
 			persist()
-			notify("Inf Spin", "Got what you wanted" .. (I.AutoSave and ", kaydediliyor" or ""), "sparkles", "success")
-			if I.AutoSave then saveAndLeave() end
+			notify("Inf Spin", "Got what you wanted" .. (infSpin.AutoSave and ", kaydediliyor" or ""), "sparkles", "success")
+			if infSpin.AutoSave then saveAndLeave() end
 		elseif low and not sent then
 			persist()
 			notify("Inf Spin", "Out of spins, resetting and rejoining", "rotate-ccw")
@@ -2754,47 +2754,47 @@ do
 	local function category(page, side, title, icon, listKey, items, slotKey, slotItems, onFlag, onKey, desc)
 		local c = page:Card({ Title = title, Icon = icon, Side = side, Desc = desc })
 		-- lists show display names; saves and spin checks use code names
-		local dd = c:Dropdown({ Title = "Wanted", Flag = onFlag .. "_list", Multi = true, Items = orDash(items), Default = mapList(I[listKey], toLabel), Search = true,
-			Callback = function(list) I[listKey] = mapList(list, toCode) persist() end })
+		local dd = c:Dropdown({ Title = "Wanted", Flag = onFlag .. "_list", Multi = true, Items = orDash(items), Default = mapList(infSpin[listKey], toLabel), Search = true,
+			Callback = function(list) infSpin[listKey] = mapList(list, toCode) persist() end })
 		if slotKey then
-			c:Dropdown({ Title = "Slots", Flag = onFlag .. "_slots", Multi = true, Items = slotItems, Default = I[slotKey],
-				Callback = function(list) I[slotKey] = list persist() end })
+			c:Dropdown({ Title = "Slots", Flag = onFlag .. "_slots", Multi = true, Items = slotItems, Default = infSpin[slotKey],
+				Callback = function(list) infSpin[slotKey] = list persist() end })
 		end
-		c:Toggle({ Title = "Start spinning", Flag = onFlag, Default = I.On[onKey], Callback = function(on)
-			if on and (ENV.RELL_RUNNING or ENV.RELLOpening) then
+		c:Toggle({ Title = "Start spinning", Flag = onFlag, Default = infSpin.On[onKey], Callback = function(on)
+			if on and (env.RELL_RUNNING or env.RELLOpening) then
 				task.defer(function() Window:SetFlag(onFlag, false) end)
 				return notify("Inf Spin", "Stop Auto Spin RELL first", "triangle-alert", "warning")
 			end
-			I.On[onKey] = on
+			infSpin.On[onKey] = on
 			persist()
-			if on and KIND ~= "menu" then notify("Inf Spin", "Only works in the main menu", "triangle-alert", "warning") end
+			if on and placeType ~= "menu" then notify("Inf Spin", "Only works in the main menu", "triangle-alert", "warning") end
 		end })
 		return dd
 	end
-	local ddE = category(InfPage, "Left", "Elements", "flame", "Elements", EL, "ElemSlots", { "1", "2", "3", "4" }, "is_elem_on", "Element")
-	local ddB = category(InfPage, "Right", "Bloodlines", "dna", "Bloodlines", KGS, "BlSlots", { "1", "2", "3", "4" }, "is_bl_on", "Bloodline")
-	local ddK = category(InfPage, "Left", "Kenjutsu", "sword", "Kenjutsu", KEN, "KenSlots", { "1", "2" }, "is_ken_on", "Kenjutsu", "Each spin costs 10 spins")
-	local ddR = category(InfPage, "Right", "Race", "user-round", "Races", RACE, nil, nil, "is_race_on", "Race", "Costs RELL Coins, not reset")
+	local ddE = category(InfPage, "Left", "Elements", "flame", "Elements", elementList, "ElemSlots", { "1", "2", "3", "4" }, "is_elem_on", "Element")
+	local ddB = category(InfPage, "Right", "Bloodlines", "dna", "Bloodlines", bloodlineList, "BlSlots", { "1", "2", "3", "4" }, "is_bl_on", "Bloodline")
+	local ddK = category(InfPage, "Left", "Kenjutsu", "sword", "Kenjutsu", kenjutsuList, "KenSlots", { "1", "2" }, "is_ken_on", "Kenjutsu", "Each spin costs 10 spins")
+	local ddR = category(InfPage, "Right", "Race", "user-round", "Races", raceList, nil, nil, "is_race_on", "Race", "Costs RELL Coins, not reset")
 
 	local Set = InfPage:Card({ Title = "Settings", Icon = "settings-2", Wide = "Bottom" })
 	Set:Slider({ Title = "Reset when spins reach", Desc = "Rolls back the save and rejoins when spins drop to this", Flag = "is_reset", Min = 0, Max = 100,
-		Default = I.ResetAt, Callback = function(v) I.ResetAt = v persist() end })
-	Set:Slider({ Title = "Spin delay", Flag = "is_delay", Min = 0.1, Max = 2, Step = 0.05, Default = I.Delay, Suffix = " s",
-		Callback = function(v) I.Delay = v persist() end })
-	Set:Toggle({ Title = "Save when done", Desc = "Saves and goes to My Home when you get what you want", Flag = "is_autosave", Default = I.AutoSave,
-		Callback = function(v) I.AutoSave = v persist() end })
+		Default = infSpin.ResetAt, Callback = function(v) infSpin.ResetAt = v persist() end })
+	Set:Slider({ Title = "Spin delay", Flag = "is_delay", Min = 0.1, Max = 2, Step = 0.05, Default = infSpin.Delay, Suffix = " s",
+		Callback = function(v) infSpin.Delay = v persist() end })
+	Set:Toggle({ Title = "Save when done", Desc = "Saves and goes to My Home when you get what you want", Flag = "is_autosave", Default = infSpin.AutoSave,
+		Callback = function(v) infSpin.AutoSave = v persist() end })
 	local row = Set:Row()
 	row:Button({ Title = "Refresh lists", Icon = "refresh-cw", Callback = function()
-		EL, KGS, KEN, RACE = lists()
-		ddE:SetItems(orDash(EL), true) ddB:SetItems(orDash(KGS), true) ddK:SetItems(orDash(KEN), true) ddR:SetItems(orDash(RACE), true)
+		elementList, bloodlineList, kenjutsuList, raceList = lists()
+		ddE:SetItems(orDash(elementList), true) ddB:SetItems(orDash(bloodlineList), true) ddK:SetItems(orDash(kenjutsuList), true) ddR:SetItems(orDash(raceList), true)
 	end })
 	row:Button({ Title = "Reset spins", Icon = "rotate-ccw", Confirm = "Sure?", Callback = resetAndRejoin })
 	row:Button({ Title = "Save spins", Icon = "save", Style = "Soft", Confirm = "Sure?", Callback = saveAndLeave })
-	if KIND ~= "menu" then InfPage:Warning("Inf Spin only works in the main menu (now: " .. placeName() .. "). Your picks are saved.", { Level = "info" }) end
-	if (I.On.Element or I.On.Bloodline or I.On.Kenjutsu) and KIND == "menu" then queueHub() end
+	if placeType ~= "menu" then InfPage:Warning("Inf Spin only works in the main menu (now: " .. placeName() .. "). Your picks are saved.", { Level = "info" }) end
+	if (infSpin.On.Element or infSpin.On.Bloodline or infSpin.On.Kenjutsu) and placeType == "menu" then queueHub() end
 	-- Do not let the settings profile (AutoLoad) turn Inf Spin off: restore the json state after a rejoin
-	HUB.AfterAutoLoad = HUB.AfterAutoLoad or {}
-	HUB.AfterAutoLoad[#HUB.AfterAutoLoad + 1] = function()
+	hub.AfterAutoLoad = hub.AfterAutoLoad or {}
+	hub.AfterAutoLoad[#hub.AfterAutoLoad + 1] = function()
 		if type(fromFile) ~= "table" then return end
 		local function put(flag, v) if v ~= nil then Window:SetFlag(flag, v) end end
 		put("is_elem_on_list", fromFile.Elements) put("is_bl_on_list", fromFile.Bloodlines)
@@ -2802,65 +2802,65 @@ do
 		put("is_elem_on_slots", fromFile.ElemSlots) put("is_bl_on_slots", fromFile.BlSlots) put("is_ken_on_slots", fromFile.KenSlots)
 		put("is_reset", fromFile.ResetAt) put("is_delay", fromFile.Delay) put("is_autosave", fromFile.AutoSave)
 		local on = type(fromFile.On) == "table" and fromFile.On or {}
-		for _, c in ipairs(CAT) do put(c.flag, on[c.on] == true) end
+		for _, c in ipairs(categories) do put(c.flag, on[c.on] == true) end
 	end
 
 	----- Auto Spin RELL -----
 	-- Auto Spin RELL now loads from its own raw link (not embedded in this script) and reloads itself from that link after a rejoin
-	local RELL_URL = "https://raw.githubusercontent.com/79650/dg3b2352313124scjd3124sanhgcdsahncdas457hs1amgdcankjcj/refs/heads/main/rellauto"
+	local rellLink = "https://raw.githubusercontent.com/79650/dg3b2352313124scjd3124sanhgcdsahncdas457hs1amgdcankjcj/refs/heads/main/rellauto"
 	local function openRell()
-		if ENV.RELL_RUNNING then return true end
-		if ENV.RELLOpening then return false end
-		for _, c in ipairs(CAT) do
-			if I.On[c.on] then
+		if env.RELL_RUNNING then return true end
+		if env.RELLOpening then return false end
+		for _, c in ipairs(categories) do
+			if infSpin.On[c.on] then
 				notify("Auto Spin RELL", "Stop Inf Spin first", "triangle-alert", "warning")
 				return false
 			end
 		end
-		queuePermission(RELL_QUEUE_STOP, not ENV.RELL_NOQUEUE)
-		ENV.RELLOpening = true
-		ENV.RELL_BOOT_CANCEL = false
-		local okGet, src = pcall(function() return game:HttpGet(RELL_URL, true) end)
+		queuePermission(rellStopFile, not env.RELL_NOQUEUE)
+		env.RELLOpening = true
+		env.RELL_BOOT_CANCEL = false
+		local okGet, src = pcall(function() return game:HttpGet(rellLink, true) end)
 		local fn = okGet and type(src) == "string" and loadstring(src)
 		if not fn then
-			ENV.RELLOpening = false
+			env.RELLOpening = false
 			notify("Auto Spin RELL", "Couldn't download the script (raw link)", "triangle-alert", "danger")
 			return false
 		end
 		task.spawn(function()                                  -- it waits for the menu to load while opening: do not lock the button
 			local ok, err = pcall(fn)
-			if not ok then warn("Auto Spin RELL:", err) if ENV.RELLStop then pcall(ENV.RELLStop) end end
+			if not ok then warn("Auto Spin RELL:", err) if env.RELLStop then pcall(env.RELLStop) end end
 		end)
 		for _ = 1, 40 do                                        -- wait up to ~20 s for it to start running
-			if ENV.RELL_RUNNING or ENV.RELL_BOOT_CANCEL then break end
+			if env.RELL_RUNNING or env.RELL_BOOT_CANCEL then break end
 			task.wait(0.5)
 		end
-		ENV.RELLOpening = false
-		return ENV.RELL_RUNNING == true
+		env.RELLOpening = false
+		return env.RELL_RUNNING == true
 	end
-	HUB.Cleanup[#HUB.Cleanup + 1] = function()
-		ENV.RELL_BOOT_CANCEL = true
-		if ENV.RELLStop then ENV.RELLStop() end
+	hub.Cleanup[#hub.Cleanup + 1] = function()
+		env.RELL_BOOT_CANCEL = true
+		if env.RELLStop then env.RELLStop() end
 	end
 	local RellCard = RellPage:Card({ Title = "Auto Spin RELL", Icon = "dices", Desc = "Spins bloodlines until you get RELL" })
 	RellCard:Button({ Title = "Open Auto Spin RELL", Icon = "app-window", Style = "Primary", Callback = function()
-		if KIND ~= "menu" then
+		if placeType ~= "menu" then
 			return notify("Auto Spin RELL", "Only works in the main menu (now: " .. placeName() .. ")", "triangle-alert", "warning")
 		end
 		if openRell() then Window:SetModule("Auto Spin RELL", "On", nil, { Icon = "dices", Tab = "Spin" }) end
 	end })
 	RellCard:Slider({ Title = "Spin delay", Flag = "rell_delay", Min = 0.3, Max = 3, Step = 0.1, Default = 1, Suffix = " s",
-		Callback = function(v) ENV.RELL_DELAY = v end })
+		Callback = function(v) env.RELL_DELAY = v end })
 	RellCard:Toggle({ Title = "Re-run after rejoin", Desc = "Continues automatically with queue_on_teleport", Flag = "rell_queue", Default = true,
 		Callback = function(on)
-			ENV.RELL_NOQUEUE = not on
-			queuePermission(RELL_QUEUE_STOP, on and ENV.RELL_RUNNING == true)
-			if on and ENV.RELL_RUNNING and ENV.RELLQueue then ENV.RELLQueue() end
+			env.RELL_NOQUEUE = not on
+			queuePermission(rellStopFile, on and env.RELL_RUNNING == true)
+			if on and env.RELL_RUNNING and env.RELLQueue then env.RELLQueue() end
 		end })
 	RellCard:Button({ Title = "Stop", Icon = "circle-stop", Style = "Danger", Callback = function()
-		ENV.RELL_BOOT_CANCEL = true
-		if ENV.RELLStop then ENV.RELLStop() end
-		queuePermission(RELL_QUEUE_STOP, false)
+		env.RELL_BOOT_CANCEL = true
+		if env.RELLStop then env.RELLStop() end
+		queuePermission(rellStopFile, false)
 		local g = LocalPlayer.PlayerGui:FindFirstChild("QustahRELL")
 		if g then g:Destroy() end
 		Window:SetModule("Auto Spin RELL", "Off", nil, { Icon = "dices", Tab = "Spin" })
@@ -2888,20 +2888,20 @@ do
 		slotInfo:Set(join(s, "kg"))
 		elemInfo:Set(join(s, "element"))
 	end)
-	Window:SetModule("Auto Spin RELL", ENV.RELL_RUNNING and "On" or "Off", nil, { Icon = "dices", Tab = "Spin" })
+	Window:SetModule("Auto Spin RELL", env.RELL_RUNNING and "On" or "Off", nil, { Icon = "dices", Tab = "Spin" })
 end
 
 ----- Player: Shindo -----
 do
-	local P = Tabs.Player                                     -- single page: Game · NPC kill aura · Scroll snipe, with Misc / Spectate below
-	local G = { NoCombat = false, Unbreak = false, Aura = false, Scroll = false, ScrollSpawn = true }
+	local playerTab = Tabs.Player                                     -- single page: Game · NPC kill aura · Scroll snipe, with Misc / Spectate below
+	local shindo = { NoCombat = false, Unbreak = false, Aura = false, Scroll = false, ScrollSpawn = true }
 
-	local Game = P:Card({ Title = "Game", Icon = "wand-sparkles" })
-	Game:Toggle({ Title = "Disable in combat", Desc = "Teleport / leave even while in combat", Flag = "sh_nocombat", Default = false, Callback = function(v) G.NoCombat = v end })
+	local Game = playerTab:Card({ Title = "Game", Icon = "wand-sparkles" })
+	Game:Toggle({ Title = "Disable in combat", Desc = "Teleport / leave even while in combat", Flag = "sh_nocombat", Default = false, Callback = function(v) shindo.NoCombat = v end })
 	Game:Toggle({ Title = "Immortal", Desc = "Get up instantly when knocked down (no knockdown)", Flag = "sh_immortal", Default = false,
-		Callback = function(v) G.Immortal = v end })
+		Callback = function(v) shindo.Immortal = v end })
 	hubConnect(RunService.Heartbeat, function()
-		if not G.Immortal then return end
+		if not shindo.Immortal then return end
 		local c = character()
 		if not c then return end
 		local st = c:FindFirstChild("stayonground")
@@ -2929,22 +2929,22 @@ do
 			moved[object] = c
 		end
 	end
-	HUB.Cleanup[#HUB.Cleanup + 1] = restoreBlocks
+	hub.Cleanup[#hub.Cleanup + 1] = restoreBlocks
 	Game:Toggle({ Title = "Unbreakable blocks", Desc = "Block can't be broken", Flag = "sh_unbreak", Default = false, Callback = function(v)
-		G.Unbreak = v
+		shindo.Unbreak = v
 		if v then applyBlocks(character()) else restoreBlocks() end
 	end })
 	hubConnect(LocalPlayer.CharacterAdded, function(c)
-		if not G.Unbreak then return end
+		if not shindo.Unbreak then return end
 		task.wait(2.5)
-		if HUB.Running and G.Unbreak and character() == c then applyBlocks(c) end
+		if hub.Running and shindo.Unbreak and character() == c then applyBlocks(c) end
 	end)
 	hubConnect(RunService.Stepped, function()
-		if G.NoCombat and LocalPlayer:FindFirstChild("incombat") then LocalPlayer.incombat.Value = false end
+		if shindo.NoCombat and LocalPlayer:FindFirstChild("incombat") then LocalPlayer.incombat.Value = false end
 	end)
 
-	local Aura = P:Card({ Title = "NPC kill aura", Icon = "skull", Side = "Right" })
-	Aura:Toggle({ Title = "NPC Kill Aura", Flag = "sh_aura", Default = false, Callback = function(v) G.Aura = v end })
+	local Aura = playerTab:Card({ Title = "NPC kill aura", Icon = "skull", Side = "Right" })
+	Aura:Toggle({ Title = "NPC Kill Aura", Flag = "sh_aura", Default = false, Callback = function(v) shindo.Aura = v end })
 	-- Kill aura: hits only the current target. If the farm is attacking a mob it is that mob, otherwise the closest valid NPC.
 	-- The target's "antiexploit" is removed and its health is set to its negative, as NukePlat does (Health = -Health, 5 times; client side).
 	-- NPC check as in DogeHub: Head is read directly, so an NPC without a Head errors for that frame and the rest are skipped.
@@ -2960,9 +2960,9 @@ do
 			and npc.Humanoid.Health > 0
 	end
 	local function auraTarget(r, folder)
-		local t = HUB.AuraTarget                                     -- the farm's target: kept until it dies on the server, even if its health already reads 0 locally
+		local t = hub.AuraTarget                                     -- the farm's target: kept until it dies on the server, even if its health already reads 0 locally
 		if t and t.Parent == folder and t:FindFirstChild("Humanoid") and t:FindFirstChild("HumanoidRootPart") then return t end
-		HUB.AuraTarget = nil
+		hub.AuraTarget = nil
 		local best, bestD
 		for _, npc in ipairs(folder:GetChildren()) do
 			if isValidNPC(npc) then
@@ -2972,8 +2972,8 @@ do
 		end
 		return best
 	end
-	HUB.Conns[#HUB.Conns + 1] = RunService.Heartbeat:Connect(function()
-		if not (HUB.Running and (G.Aura or HUB.FarmAura)) then return end
+	hub.Conns[#hub.Conns + 1] = RunService.Heartbeat:Connect(function()
+		if not (hub.Running and (shindo.Aura or hub.FarmAura)) then return end
 		local r = rootPart()
 		local folder = workspace:FindFirstChild("npc")
 		if not (r and folder) then return end
@@ -2990,9 +2990,9 @@ do
 		end)
 	end)
 
-	local Scroll = P:Card({ Title = "Scroll snipe", Icon = "scroll", Desc = "Grabs scrolls that spawn on the map" })
-	Scroll:Toggle({ Title = "Scroll snipe", Flag = "sh_scroll", Default = false, Callback = function(v) G.Scroll = v end })
-	Scroll:Toggle({ Title = "Teleport to spawn after", Flag = "sh_scrollspawn", Default = true, Callback = function(v) G.ScrollSpawn = v end })
+	local Scroll = playerTab:Card({ Title = "Scroll snipe", Icon = "scroll", Desc = "Grabs scrolls that spawn on the map" })
+	Scroll:Toggle({ Title = "Scroll snipe", Flag = "sh_scroll", Default = false, Callback = function(v) shindo.Scroll = v end })
+	Scroll:Toggle({ Title = "Teleport to spawn after", Flag = "sh_scrollspawn", Default = true, Callback = function(v) shindo.ScrollSpawn = v end })
 	local function toSpawn()
 		local sp = workspace:FindFirstChild("SpawnLocation")
 		if sp then return tpTo(sp.CFrame + Vector3.new(0, 3, 0)) end
@@ -3011,7 +3011,7 @@ do
 		return u and (u:FindFirstChild(name) or u:FindFirstChild(name .. "scroll"))
 	end
 	loop("Scroll snipe", 0.3, function()
-		if not G.Scroll or HUB.FarmBusy or inMission() then return end
+		if not shindo.Scroll or hub.FarmBusy or inMission() then return end
 		for _, folder in ipairs({ workspace, workspace:FindFirstChild("GLOBALTIME") }) do
 			for _, v in ipairs(folder:GetChildren()) do
 				local sh = v:IsA("Model") and v:FindFirstChild("sh")
@@ -3024,22 +3024,22 @@ do
 						local cd = sh:FindFirstChildWhichIsA("ClickDetector")
 						if cd and fireclickdetector then pcall(fireclickdetector, cd) end
 						combat("mouse1", true)
-						HUB.ScrollBusy = true
+						hub.ScrollBusy = true
 						local ok, err = pcall(function()
 							for _ = 1, 12 do
-								if not HUB.Running or not G.Scroll or inMission() then return end
+								if not hub.Running or not shindo.Scroll or inMission() then return end
 								if hasScroll(v.Name) then
 									ignored[v] = true
 									notify("Scroll snipe", v.Name .. " collected", "scroll", "success")
-									if G.ScrollSpawn then toSpawn() end
+									if shindo.ScrollSpawn then toSpawn() end
 									return
 								end
 								task.wait(0.15)
 							end
 							retryAfter[v] = os.clock() + 3
-							if HUB.Running and G.Scroll and G.ScrollSpawn and not inMission() then toSpawn() end
+							if hub.Running and shindo.Scroll and shindo.ScrollSpawn and not inMission() then toSpawn() end
 						end)
-						HUB.ScrollBusy = false
+						hub.ScrollBusy = false
 						if not ok then error(err, 0) end
 						return
 					end
@@ -3048,13 +3048,13 @@ do
 		end
 	end)
 	-- Misc and Spectate were created first; move them to the end so the Shindo cards appear on top
-	for i, card in ipairs(HUB.PlayerLateCards or {}) do
+	for i, card in ipairs(hub.PlayerLateCards or {}) do
 		pcall(function() card.frame.LayoutOrder = 1000 + i end)
 	end
 end
 
 ----- Teleport -----
-local TP_DATA = {
+local teleportData = {
     [4601350809] = {
         { "Kage Office", 11984, 991, -17752 },
         { "The Top of Kage Office", 11980, 1130, -17770 },
@@ -3260,12 +3260,12 @@ local TP_DATA = {
     },
 }
 do
-	local T = Tabs.Teleport
-	local MapPage = T:Page("Map")
-	local ServerPage = T:Page("Servers")
+	local teleportTab = Tabs.Teleport
+	local MapPage = teleportTab:Page("Map")
+	local ServerPage = teleportTab:Page("Servers")
 
 	local Places = MapPage:Card({ Title = "Locations", Icon = "map-pin", Desc = "This map's locations" })
-	local here = TP_DATA[game.PlaceId] or {}
+	local here = teleportData[game.PlaceId] or {}
 	local names, byName = {}, {}
 	for _, p in ipairs(here) do names[#names + 1] = p[1] byName[p[1]] = p end
 	local chosen
@@ -3317,8 +3317,8 @@ do
 		local map = workspace:FindFirstChild("map")
 		return map and map:FindFirstChild(LocalPlayer.Name .. "apartment")
 	end
-	local AFK = { { "Bed", "afkreward" }, { "Ramen", "Ramen" } }
-	for _, a in ipairs(AFK) do
+	local afkSpots = { { "Bed", "afkreward" }, { "Ramen", "Ramen" } }
+	for _, a in ipairs(afkSpots) do
 		Afk:Button({ Title = a[1], Icon = a[1] == "Bed" and "bed" or "soup", Align = "Left", Callback = function()
 			local ap = apartment()
 			local part = ap and ap:FindFirstChild(a[2])
@@ -3336,7 +3336,7 @@ do
 		end })
 	end
 
-	local S = ServerPage:Card({ Title = "Map teleport", Icon = "map", Desc = "From the menu's map list" })
+	local mapCard = ServerPage:Card({ Title = "Map teleport", Icon = "map", Desc = "From the menu's map list" })
 	local maps = {}
 	pcall(function()
 		for _, v in ipairs(mainGui().ingame.Menu.ArenaTab.List:GetChildren()) do
@@ -3345,8 +3345,8 @@ do
 		table.sort(maps)
 	end)
 	local mapPick
-	S:Dropdown({ Title = "Map", Flag = "tp_map", Items = #maps > 0 and maps or { "-" }, Search = true, Callback = function(v) mapPick = v end })
-	S:Button({ Title = "Teleport to map", Icon = "plane", Style = "Primary", Callback = function()
+	mapCard:Dropdown({ Title = "Map", Flag = "tp_map", Items = #maps > 0 and maps or { "-" }, Search = true, Callback = function(v) mapPick = v end })
+	mapCard:Button({ Title = "Teleport to map", Icon = "plane", Style = "Primary", Callback = function()
 		local ok, place = pcall(function() return mainGui().ingame.Menu.ArenaTab.List[mapPick].place.Value end)
 		if ok and place then fire("rpgteleport", place) else notify("Map teleport", "Pick one from the list first", "list", "warning") end
 	end })
@@ -3439,7 +3439,7 @@ local function buildLists()
 	Lists.limited = limited
 end
 local function count(map) local n = 0 for _ in pairs(map) do n += 1 end return n end
-local EMPTY = { "-" }
+local emptyList = { "-" }
 local function sourceOf(key, code)              -- object to read REALNAME from
 	local aj = ReplicatedStorage:FindFirstChild("alljutsu")
 	if not aj then return nil end
@@ -3452,7 +3452,7 @@ local function itemsOf(key)                    -- alphabetically sorted name lis
 	local out = {}
 	for code in pairs(Lists[key] or {}) do out[#out + 1] = labelFor(code, sourceOf(key, code)) end
 	table.sort(out, function(a, b) return a:lower() < b:lower() end)
-	return #out > 0 and out or EMPTY
+	return #out > 0 and out or emptyList
 end
 
 local picks = { element = nil, bloodline = nil, kenjutsu = nil, style = nil, cloth = nil, limited = nil }
@@ -3556,7 +3556,7 @@ for i = 1, 3 do
 	end })
 end
 
-task.delay(4, function() if HUB.Running then refreshLists(true) end end)    -- if the menu loads late, read the lists once more
+task.delay(4, function() if hub.Running then refreshLists(true) end end)    -- if the menu loads late, read the lists once more
 end
 
 ----- Lock icon -----
@@ -3596,5 +3596,5 @@ end
 ----- Startup -----
 Window:SettingsTab()
 Window.Config:LoadAutoLoad()
-for _, fn in ipairs(HUB.AfterAutoLoad or {}) do pcall(fn) end
+for _, fn in ipairs(hub.AfterAutoLoad or {}) do pcall(fn) end
 Window:Notify({ Title = "Qustāh Shindo", Content = "Loaded · " .. placeName() .. " · RShift to toggle", Icon = "sparkles" })
