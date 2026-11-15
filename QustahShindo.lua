@@ -1,5 +1,5 @@
 --[[
-    Qustāh · Shindo Life  ·  V1.32
+    Qustāh · Shindo Life  ·  V1.33
     UI: qustah-ui-lib · sadece Shindo Life'ta açılır (GameId kontrolü)
 
     Sekmeler: Dashboard · Farm · Spin · Combat · Visuals · Player · Teleport · Loadout · Server · Settings
@@ -397,7 +397,7 @@ end
 ------------------------------------------------------------------ PENCERE
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.32",
+	Version = "V1.33",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -1814,7 +1814,7 @@ do
 
 	local F = {
 		Scroll = false, Boss = false, Beast = false,
-		BossSpecific = false, BossSel = nil, BeastSpecific = false, BeastSel = nil,   -- DogeHub gibi: Specific / Random
+		BossSpecific = false, BossSel = {}, BeastSpecific = false, BeastSel = {},   -- DogeHub gibi: Specific (toplu seçim) / Random
 		StuckAfter = 60,                                         -- takılan görevi iptal (ayar yok, scriptin kendi işi)
 		Done = { Boss = 0 },                                     -- bu oturumda alınan boss görevleri
 		Stats = {}, AutoRank = false, RankAfterMax = false, RankRC = false, RankStop = false, RankStopAt = 500,
@@ -1907,7 +1907,8 @@ do
 	local function acceptFrom(list, pick, alive)
 		for _, g in ipairs(list) do
 			if not alive() or inMission() then return inMission() end
-			if (pick == "Random" or g.Name == pick) and timerReady(g) and not giverTaken(g) then
+			local wanted = pick == "Random" or (type(pick) == "table" and table.find(pick, g.Name) ~= nil) or g.Name == pick
+			if wanted and timerReady(g) and not giverTaken(g) then
 				leaveSafe()
 				talkTo(g)
 				task.wait(1.5)
@@ -2006,10 +2007,10 @@ do
 			end
 			if inMission() then killMissionMobs(farmAlive) return end
 			bossGiver, bossKilled = nil, false                       -- görev bitti
-			if F.Beast and acceptFrom(beastGivers(), (F.BeastSpecific and F.BeastSel) or "Random", function() return HUB.Running and F.Beast end) then
+			if F.Beast and acceptFrom(beastGivers(), (F.BeastSpecific and #F.BeastSel > 0 and F.BeastSel) or "Random", function() return HUB.Running and F.Beast end) then
 				return
 			end
-			if F.Boss and acceptFrom(bossGivers(), (F.BossSpecific and F.BossSel) or "Random", function() return HUB.Running and F.Boss end) then
+			if F.Boss and acceptFrom(bossGivers(), (F.BossSpecific and #F.BossSel > 0 and F.BossSel) or "Random", function() return HUB.Running and F.Boss end) then
 				F.Done.Boss += 1
 				return
 			end
@@ -2052,9 +2053,9 @@ do
 			F[keySpecific] = v
 			if v then Window:SetFlag(flagPrefix .. "random", false) end
 		end })
-		local dd = C:Dropdown({ Title = "Specific " .. what:lower() .. " to kill", Flag = flagPrefix .. "pick", Items = list, Default = list[1], Search = true,
-			Callback = function(v) F[keySel] = v end })
-		F[keySel] = list[1]
+		-- toplu seçim: birden fazla boss işaretlenebilir, sırayla hangisi hazırsa o alınır (hiçbiri seçili değilse Random gibi)
+		local dd = C:Dropdown({ Title = "Specific " .. what:lower() .. " to kill", Flag = flagPrefix .. "pick", Items = list, Default = {}, Multi = true,
+			AllowNone = true, Search = true, Callback = function(v) F[keySel] = type(v) == "table" and v or { v } end })
 		C:Toggle({ Title = "Random " .. what .. (what == "Beast" and "s" or "es"), Flag = flagPrefix .. "random", Default = true, Callback = function(v)
 			if v then Window:SetFlag(flagPrefix .. "specific", false) end
 		end })
@@ -2071,7 +2072,9 @@ do
 
 	local function refreshList(dd, list, keySel, flag)
 		dd:SetItems(list, true)
-		if not table.find(list, F[keySel]) then Window:SetFlag(flag, list[1]) F[keySel] = list[1] end   -- seçili olan bu haritada yoksa
+		local keep = {}                                          -- seçililerden bu haritada olmayanları çıkar
+		for _, n in ipairs(F[keySel]) do if table.find(list, n) then keep[#keep + 1] = n end end
+		if #keep ~= #F[keySel] then Window:SetFlag(flag, keep) F[keySel] = keep end
 	end
 	local function refreshBosses()
 		refreshList(bossDD, names(bossGivers()), "BossSel", "farm_bosspick")
