@@ -1,5 +1,5 @@
 --[[
-    Qustāh · Shindo Life  ·  V1.38
+    Qustāh · Shindo Life  ·  V1.39
     UI: qustah-ui-lib · sadece Shindo Life'ta açılır (GameId kontrolü)
 
     Sekmeler: Dashboard · Farm · Spin · Combat · Visuals · Player · Teleport · Loadout · Server · Settings
@@ -397,7 +397,7 @@ end
 ------------------------------------------------------------------ PENCERE
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.38",
+	Version = "V1.39",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -2956,6 +2956,8 @@ do
 	Aura:Toggle({ Title = "NPC Kill Aura", Flag = "sh_aura", Default = false, Callback = function(v) G.Aura = v end })
 	-- DogeHub'ın NPCKEELAURA'sının birebir aynısı: her Heartbeat'te, menzil sınırı yok (KILL_RANGE = 0),
 	-- workspace.npc'deki geçerli her NPC'nin canı 5 kez 0'a çekilir (istemci tarafı).
+	-- Head kontrolü de DogeHub'daki gibi: Head'i olmayan bir NPC o karede hata verir ve sıradaki NPC'ler atlanır.
+	-- Bu yüzden hubConnect (hata raporu) değil, düz bir bağlantı kullanılır; hata sadece o kareyi keser.
 	-- Tek fark: DogeHub'da Misc ve Quests'teki iki toggle'ın İKİSİ de açık olmadan çalışmıyordu (keel and keel2);
 	-- burada ikisinden biri yeterli (Player > NPC kill aura ya da Farm > Configurations).
 	local function isValidNPC(npc)
@@ -2964,11 +2966,11 @@ do
 			and npc.Name:lower():find("npc")
 			and npc:FindFirstChild("HumanoidRootPart")
 			and npc:FindFirstChild("Humanoid")
-			and npc:FindFirstChild("Head") and npc.Head.CFrame.Y > -1000
+			and npc.Head.CFrame.Y > -1000
 			and npc.Humanoid.Health > 0
 	end
-	hubConnect(RunService.Heartbeat, function()
-		if not (G.Aura or HUB.FarmAura) then return end
+	HUB.Conns[#HUB.Conns + 1] = RunService.Heartbeat:Connect(function()
+		if not (HUB.Running and (G.Aura or HUB.FarmAura)) then return end
 		local r = rootPart()
 		local folder = workspace:FindFirstChild("npc")
 		if not (r and folder) then return end
