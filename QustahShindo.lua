@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.72
+-- Qustāh · Shindo Life · V1.73
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -432,7 +432,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.72",
+	Version = "V1.73",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -788,6 +788,11 @@ local function installNamecallHook()
     end
     old = result
     Silent.Hooked = true
+    -- put the game's own __namecall back on unload, so re-executing never stacks hook layers
+    hub.Cleanup[#hub.Cleanup + 1] = function()
+        pcall(hookmetamethod, game, "__namecall", old)
+        Silent.Hooked = false
+    end
     return true
 end
 
@@ -811,6 +816,10 @@ local function installIndexHook()                                -- Mouse.Hit / 
     end
     old = result
     Silent.IndexHooked = true
+    hub.Cleanup[#hub.Cleanup + 1] = function()
+        pcall(hookmetamethod, game, "__index", old)
+        Silent.IndexHooked = false
+    end
     return true
 end
 
@@ -1271,6 +1280,22 @@ connect(UserInputService.InputBegan, function(input, processed)
     end
 end)
 
+----- Anti-AFK -----
+do
+-- With getconnections the game's idle handlers are switched off, so the 20 minute kick never fires and no input is sent.
+-- Without it, a fake right click answers the Idled event instead.
+local function setIdleConnections(enabled)
+    if typeof(getconnections) ~= "function" then return false end
+    local ok = pcall(function()
+        for _, c in ipairs(getconnections(LocalPlayer.Idled)) do
+            if enabled then c:Enable() else c:Disable() end
+        end
+    end)
+    return ok
+end
+local function applyAntiAfk()
+    setIdleConnections(not (Running and settings.AntiAfk))
+end
 connect(LocalPlayer.Idled, function()
     if not (Running and settings.AntiAfk) then return end
     pcall(function()
@@ -1278,6 +1303,10 @@ connect(LocalPlayer.Idled, function()
         VirtualUser:ClickButton2(Vector2.zero)
     end)
 end)
+hub.SetAntiAfk = function(v) settings.AntiAfk = v applyAntiAfk() end
+applyAntiAfk()
+hub.Cleanup[#hub.Cleanup + 1] = function() setIdleConnections(true) end
+end
 
 -- spectate
 local Spectating = nil
@@ -2282,7 +2311,7 @@ specRow:Button({ Title = "Spectate", Icon = "eye", Style = "Primary", Callback =
     if chosen and chosen[1] then spectate(chosen[1]) end
 end })
 specRow:Button({ Title = "Stop", Icon = "square", Style = "Ghost", Callback = function() spectate(nil) end })
-hub.PlayerLateCards = { PlayerMisc, Spec }                          -- moved below the Shindo cards
+hub.PlayerLateCards = { Spec }                                      -- moved below the Shindo cards
 end
 
 ----- Server -----
@@ -3592,7 +3621,9 @@ do
 		loop("Display rank", 1, applyRank)                         -- the server rewrites it on rank-up, so it is reapplied
 		hub.Cleanup[#hub.Cleanup + 1] = function() shindo.DisplayRank = "Real" applyRank() end
 	end
-	Game:Toggle({ Title = "Anti-AFK", Desc = "Prevents the 20 minute idle kick", Flag = "p_antiafk", Default = true, Callback = function(v) settings.AntiAfk = v end })
+	Game:Toggle({ Title = "Anti-AFK", Desc = "Prevents the 20 minute idle kick", Flag = "p_antiafk", Default = true, Callback = function(v)
+		if hub.SetAntiAfk then hub.SetAntiAfk(v) end
+	end })
 	local function toSpawn()
 		local sp = workspace:FindFirstChild("SpawnLocation")
 		if sp then return tpTo(sp.CFrame + Vector3.new(0, 3, 0)) end
