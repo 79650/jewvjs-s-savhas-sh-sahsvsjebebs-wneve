@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.73
+-- Qustāh · Shindo Life · V1.74
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -432,7 +432,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.73",
+	Version = "V1.74",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -2322,11 +2322,20 @@ local SrvCard = Server:Card({ Title = "Servers", Icon = "server", Desc = "Pick b
 -- ServerList: not part of the lib, drawn by hand into the card body (bound to theme colours)
 local util = Lib.Util
 local theme = Lib.Theme
-local srvBox = util.create("Frame", { Name = "ServerList", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0),
-    AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = SrvCard:_order(), Parent = SrvCard.body })
-util.list(srvBox, 5)
+-- the list scrolls inside the card: its height is set so the card ends on the same line as Options + Job ID beside it
+local srvBox = util.create("ScrollingFrame", { Name = "ServerList", BackgroundTransparency = 1, BorderSizePixel = 0,
+    Size = UDim2.new(1, 0, 0, 160), CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    ScrollingDirection = Enum.ScrollingDirection.Y, ScrollBarThickness = 2, ScrollBarImageTransparency = 0.4,
+    VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar, ElasticBehavior = Enum.ElasticBehavior.Never,
+    LayoutOrder = SrvCard:_order(), Parent = SrvCard.body })
+theme.bind(srvBox, "ScrollBarImageColor3", "muted")
+-- rows go in an inner frame (a UIPadding on a ScrollingFrame sizes its children from the unpadded width);
+-- the 1 px inset keeps the row outlines from being clipped at the edges
+local srvList = util.create("Frame", { Name = "Rows", BackgroundTransparency = 1, Position = UDim2.fromOffset(1, 1),
+    Size = UDim2.new(1, -2, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, Parent = srvBox })
+util.list(srvList, 5)
 local srvRows, srvCache, srvSort = {}, {}, "Asc"
-local maxServers = 8
+local maxServers = 40
 
 local function pingLevel(ms)
     if ms < 80 then return 4 elseif ms < 150 then return 3 elseif ms < 250 then return 2 end
@@ -2338,7 +2347,7 @@ local function myPing()
 end
 
 local function srvRow(order, s, current)
-    local row = util.create("Frame", { Name = "Server", Size = UDim2.new(1, 0, 0, 32), BorderSizePixel = 0, LayoutOrder = order, Parent = srvBox })
+    local row = util.create("Frame", { Name = "Server", Size = UDim2.new(1, 0, 0, 32), BorderSizePixel = 0, LayoutOrder = order, Parent = srvList })
     theme.bind(row, "BackgroundColor3", "input")
     util.corner(row, 8)
     theme.bind(util.stroke(row), "Color", current and "edge" or "line")
@@ -2409,6 +2418,7 @@ srvBtns:Button({ Title = "Refresh", Icon = "refresh-cw", Cooldown = 3, Callback 
 srvBtns:Button({ Title = "Emptiest", Icon = "shuffle", Callback = function() srvSort = "Smallest" drawServers() end })
 srvBtns:Button({ Title = "Lowest ping", Icon = "wifi", Callback = function() srvSort = "Ping" drawServers() end })
 SrvCard:Button({ Title = "Random hop", Icon = "shuffle", Style = "Ghost", Cooldown = 5, Callback = function() serverHop("Random") end })
+if Server.FitHeight then Server:FitHeight(SrvCard, srvBox, { Min = 110, Fallback = 220 }) end
 task.delay(1, function() if Running then refreshServers() end end)
 
 -- the "Players" info the old code expected → now updates the "you are here" row in the list
