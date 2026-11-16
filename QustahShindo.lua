@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.69
+-- Qustāh · Shindo Life · V1.70
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -393,7 +393,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.69",
+	Version = "V1.70",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -2792,7 +2792,7 @@ do
 		end
 	end)
 
-	local Stats = QuestPage:Card({ Title = "Auto stats", Icon = "gauge" })
+	local Stats = QuestPage:Card({ Title = "Auto stats", Icon = "gauge", Side = "Right" })
 	Stats:Dropdown({ Title = "Stats", Flag = "farm_stats", Multi = true, Items = { "chakra", "ninjutsu", "taijutsu", "health" }, Default = {},
 		Callback = function(list) farm.Stats = type(list) == "table" and list or {} end })
 	loop("Auto stats", 0.25, function()
@@ -2809,8 +2809,7 @@ do
 
 	----- Mentor -----
 	local mentors = { "Narumaki", "Jiso Seishin", "Shindai Akuma", "Ryuji Kenichi", "Bruce Kenichi" }
-	local rank = statz() and statz():FindFirstChild("prestige") and statz().prestige:FindFirstChild("rank") and statz().prestige.rank.Value or "?"
-	local mentorCard = MentorPage:Card({ Title = "Mentor", Icon = "graduation-cap", Desc = "Requires S rank or higher (your rank: " .. tostring(rank) .. ")" })
+	local mentorCard = MentorPage:Card({ Title = "Mentor", Icon = "graduation-cap" })
 	mentorCard:Button({ Title = "Go to mentor", Icon = "map-pin", Style = "Primary", Callback = function()
 		local sensei = workspace:FindFirstChild("sensei")
 		if sensei and sensei:FindFirstChild("missions") then
@@ -2826,9 +2825,9 @@ do
 		end
 		notify("Mentor", "No mentor on this map", "triangle-alert", "warning")
 	end })
-	mentorCard:Toggle({ Title = "Auto punch", Desc = "Punch missions", Flag = "mt_punch", Default = false, Callback = function(v) farm.PunchM = v end })
-	mentorCard:Toggle({ Title = "Auto tree jump", Desc = "Tree jump missions", Flag = "mt_tree", Default = false, Callback = function(v) farm.TreeM = v end })
-	mentorCard:Toggle({ Title = "Auto kunai shoot", Desc = "Target board missions", Flag = "mt_shoot", Default = false, Callback = function(v) farm.Shoot = v end })
+	mentorCard:Toggle({ Title = "Auto punch", Flag = "mt_punch", Default = false, Callback = function(v) farm.PunchM = v end })
+	mentorCard:Toggle({ Title = "Auto tree jump", Flag = "mt_tree", Default = false, Callback = function(v) farm.TreeM = v end })
+	mentorCard:Toggle({ Title = "Auto kunai shoot", Flag = "mt_shoot", Default = false, Callback = function(v) farm.Shoot = v end })
 	mentorCard:Button({ Title = "Kenjutsu training", Icon = "sword", Callback = function() fire("trainkenmaster") end })
 
 	-- Progress: read from statz.senseifolder (trainings done per mentor, today's count, completed) and the
