@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.76
+-- Qustāh · Shindo Life · V1.77
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -432,7 +432,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.76",
+	Version = "V1.77",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -1218,34 +1218,6 @@ function esp.DestroyPanels()
     if esp.Folder then pcall(function() esp.Folder:Destroy() end) esp.Folder = nil end
 end
 
--- Outline of a body part for the chams preview: the convex hull of its 8 projected corners.
-local function hull(points)                                       -- monotone chain, counter-clockwise
-    table.sort(points, function(a, b) return a.X < b.X or (a.X == b.X and a.Y < b.Y) end)
-    local function cross(o, a, b) return (a.X - o.X) * (b.Y - o.Y) - (a.Y - o.Y) * (b.X - o.X) end
-    local lower, upper = {}, {}
-    for _, p in ipairs(points) do
-        while #lower >= 2 and cross(lower[#lower - 1], lower[#lower], p) <= 0 do lower[#lower] = nil end
-        lower[#lower + 1] = p
-    end
-    for i = #points, 1, -1 do
-        local p = points[i]
-        while #upper >= 2 and cross(upper[#upper - 1], upper[#upper], p) <= 0 do upper[#upper] = nil end
-        upper[#upper + 1] = p
-    end
-    lower[#lower] = nil
-    upper[#upper] = nil
-    for _, p in ipairs(upper) do lower[#lower + 1] = p end
-    return lower
-end
-local cornerSigns = {
-    vec3(1, 1, 1), vec3(1, 1, -1), vec3(1, -1, 1), vec3(1, -1, -1),
-    vec3(-1, 1, 1), vec3(-1, 1, -1), vec3(-1, -1, 1), vec3(-1, -1, -1),
-}
--- the humanoid's own body parts (R6 and R15 limbs), outlined in the chams preview
-esp.ChamsBody = {}
-for _, name in ipairs({ "Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg",
-    "UpperTorso", "LowerTorso", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm", "RightHand",
-    "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot" }) do esp.ChamsBody[name] = true end
 local function updatePlayer(plr)
     local e = entry(plr)
     local char, hum, root = getCharacter(plr)
@@ -1857,106 +1829,9 @@ end
 
 do -- Visuals › Extra and Style (a block: their locals end here)
 local Chams = ExtraPage:Card({ Title = "Chams", Icon = "paint-bucket" })
------ Chams preview -----
--- Your character (a still copy) painted the way chams would paint it: each part tinted by the fill colour and
--- transparency, and its outline drawn in the outline colour and transparency (the game uses a Highlight). Menu GUI.
-local chamsRow = Chams:Row({ Gap = 10 })
-local chamsLeft, chamsRight = chamsRow:Column(), chamsRow:Column()   -- preview on the left, its switches on the right
-do
-    local chamsView = chamsLeft:Viewport({ Height = 118, Spin = false })
-    local holder = chamsView.View and chamsView.View.Parent
-    local overlay, lines, originals = nil, {}, {}
-    if holder then
-        overlay = Instance.new("Frame")
-        overlay.Name, overlay.BackgroundTransparency, overlay.Size, overlay.ZIndex = "ChamsOverlay", 1, UDim2.fromScale(1, 1), 2
-        overlay.Parent = holder
-    end
-    local function line(i)
-        local f = lines[i]
-        if not f then
-            f = Instance.new("Frame")
-            f.Name, f.BorderSizePixel, f.AnchorPoint, f.ZIndex = "Edge" .. i, 0, Vector2.new(0.5, 0.5), 3
-            f.Parent = overlay
-            lines[i] = f
-        end
-        return f
-    end
-    local function shown(gui)
-        while gui do
-            if gui:IsA("GuiObject") and not gui.Visible then return false end
-            if gui:IsA("LayerCollector") then return gui.Enabled end
-            gui = gui.Parent
-        end
-        return false
-    end
-    local function project(point, size)
-        local cam = chamsView.Camera
-        local rel = cam.CFrame:PointToObjectSpace(point)
-        if rel.Z >= -0.01 then return nil end
-        local f = 1 / math.tan(math.rad(cam.FieldOfView / 2))
-        return vec2(((rel.X / -rel.Z) * f / (size.X / size.Y) + 1) / 2 * size.X, (1 - (rel.Y / -rel.Z) * f) / 2 * size.Y)
-    end
-    local function drawChamsPreview()
-        if not overlay then return end
-        local model = chamsView.Model
-        local used = 0
-        if model then
-            local fillAlpha = (settings.Chams and settings.ChamsStyle ~= "Outline") and (1 - settings.ChamsFill) or 0
-            local size = holder.AbsoluteSize
-            for _, part in ipairs(model:GetDescendants()) do
-                if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-                    if not originals[part] then originals[part] = part.Color end
-                    part.Color = originals[part]:Lerp(settings.ChamsColor, fillAlpha)          -- the fill
-                    if settings.Chams and part.Transparency < 1 and part.Parent == model and esp.ChamsBody[part.Name] and size.X > 10 then
-                        local cf, half, points = part.CFrame, part.Size / 2, {}
-                        for i, sign in ipairs(cornerSigns) do
-                            local p2 = project((cf * CFrame.new(half * sign)).Position, size)
-                            if not p2 then points = nil break end
-                            points[i] = p2
-                        end
-                        local h = points and hull(points)
-                        if h and #h >= 3 then
-                            for i = 1, #h do                                                    -- the outline
-                                local a, b = h[i], h[i % #h + 1]
-                                used += 1
-                                local f = line(used)
-                                local d = b - a
-                                f.Position = UDim2.fromOffset((a.X + b.X) / 2, (a.Y + b.Y) / 2)
-                                f.Size = UDim2.fromOffset(math.max(d.Magnitude, 1), 1)
-                                f.Rotation = math.deg(math.atan2(d.Y, d.X))
-                                f.BackgroundColor3, f.BackgroundTransparency, f.Visible = settings.ChamsOutline, settings.ChamsOutlineAlpha, true
-                            end
-                        end
-                    end
-                end
-            end
-        end
-        for i = used + 1, #lines do lines[i].Visible = false end
-    end
-    local function loadCharacter(char)
-        if not char then return end
-        task.spawn(function()
-            char:WaitForChild("HumanoidRootPart", 10)
-            task.wait(0.5)
-            if hub.Running and LocalPlayer.Character == char then
-                table.clear(originals)
-                pcall(function() chamsView:SetObject(char) end)
-            end
-        end)
-    end
-    loadCharacter(LocalPlayer.Character)
-    hubConnect(LocalPlayer.CharacterAdded, loadCharacter)
-    local last = 0
-    hubConnect(RunService.Heartbeat, function()
-        local now = os.clock()
-        if now - last < 1 / 15 or not (overlay and shown(holder)) then return end
-        last = now
-        drawChamsPreview()
-    end)
-end
-chamsRight:Toggle({ Title = "Chams", Flag = "esp_chams", Default = true, Style = "Switch", Callback = set("Chams") })
-chamsRight:Toggle({ Title = "Through walls", Flag = "esp_chamswalls", Default = true, Style = "Switch", DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsWalls") })
-chamsRight:Segment({ Title = "Chams style", Flag = "esp_chamsstyle", Items = { "Solid", "Outline" }, Default = "Solid", Wide = true,
+Chams:Toggle({ Title = "Chams", Flag = "esp_chams", Default = true, Style = "Switch", Callback = set("Chams") })
+Chams:Toggle({ Title = "Through walls", Flag = "esp_chamswalls", Default = true, Style = "Switch", DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsWalls") })
+Chams:Segment({ Title = "Chams style", Flag = "esp_chamsstyle", Items = { "Solid", "Outline" }, Default = "Solid", Wide = true,
     DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsStyle") })
 Chams:Slider({ Title = "Fill transparency", Flag = "esp_chamsfill", Min = 0, Max = 100, Default = 55, Suffix = "%", DependsOn = { Flag = "esp_chams", Reason = "" },
     Callback = function(v) settings.ChamsFill = v / 100 end })
