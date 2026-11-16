@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.62
+-- Qustāh · Shindo Life · V1.63
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -393,7 +393,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.62",
+	Version = "V1.63",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -1336,7 +1336,7 @@ local saToggle = Aim:Toggle({ Title = "Enabled", Flag = "sa_enabled", Default = 
     end })
 if not CanHook then saToggle:Lock("Executor doesn't support hooks") end
 Aim:Slider({ Title = "Hit chance", Flag = "sa_hitchance", Min = 0, Max = 100, Default = 100, Suffix = "%", Callback = set("SA_HitChance") })
-Aim:Segment({ Title = "Target part", Flag = "sa_part", Items = { "Head", "Torso", "Random", "Closest" }, Default = "Head", Callback = set("SA_Part") })
+Aim:Segment({ Title = "Target part", Flag = "sa_part", Items = { "Head", "Torso", "Random", "Closest" }, Default = "Head", Wide = true, Callback = set("SA_Part") })
 Aim:Dropdown({ Title = "Priority", Flag = "sa_priority", Default = "Mouse", Items = {
     { Title = "Mouse", Icon = "mouse-pointer", Desc = "Closest to cursor" },
     { Title = "Distance", Icon = "ruler", Desc = "Closest to you" },
@@ -1585,17 +1585,108 @@ TextCard:Segment({ Title = "Unit", Flag = "esp_unit", Items = { "Studs", "Meters
 TextCard:Toggle({ Title = "Weapon", Desc = "Held tool", Flag = "esp_weapon", Default = true, Callback = set("Weapon") })
 TextCard:Slider({ Title = "Text size", Flag = "esp_tsize", Min = 9, Max = 20, Default = 13, Suffix = " px", Callback = set("TextSize") })
 
+do -- Visuals › Extra and Style (a block: their locals end here)
 local Chams = ExtraPage:Card({ Title = "Chams", Icon = "paint-bucket" })
+----- Chams preview -----
+-- Your character (a still copy) painted the way chams would paint it: each part tinted by the fill colour and
+-- transparency, and its outline drawn in the outline colour (same part hulls as the in-game chams). Menu GUI.
+do
+    local chamsView = Chams:Viewport({ Height = 150, Spin = false })
+    local holder = chamsView.View and chamsView.View.Parent
+    local overlay, lines, originals = nil, {}, {}
+    if holder then
+        overlay = Instance.new("Frame")
+        overlay.Name, overlay.BackgroundTransparency, overlay.Size, overlay.ZIndex = "ChamsOverlay", 1, UDim2.fromScale(1, 1), 2
+        overlay.Parent = holder
+    end
+    local function line(i)
+        local f = lines[i]
+        if not f then
+            f = Instance.new("Frame")
+            f.Name, f.BorderSizePixel, f.AnchorPoint, f.ZIndex = "Edge" .. i, 0, Vector2.new(0.5, 0.5), 3
+            f.Parent = overlay
+            lines[i] = f
+        end
+        return f
+    end
+    local function shown(gui)
+        while gui do
+            if gui:IsA("GuiObject") and not gui.Visible then return false end
+            if gui:IsA("LayerCollector") then return gui.Enabled end
+            gui = gui.Parent
+        end
+        return false
+    end
+    local function project(point, size)
+        local cam = chamsView.Camera
+        local rel = cam.CFrame:PointToObjectSpace(point)
+        if rel.Z >= -0.01 then return nil end
+        local f = 1 / math.tan(math.rad(cam.FieldOfView / 2))
+        return vec2(((rel.X / -rel.Z) * f / (size.X / size.Y) + 1) / 2 * size.X, (1 - (rel.Y / -rel.Z) * f) / 2 * size.Y)
+    end
+    local function drawChamsPreview()
+        if not overlay then return end
+        local model = chamsView.Model
+        local used = 0
+        if model then
+            local fillAlpha = settings.Chams and (1 - settings.ChamsFill) or 0
+            local size = holder.AbsoluteSize
+            for _, part in ipairs(model:GetDescendants()) do
+                if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                    if not originals[part] then originals[part] = part.Color end
+                    part.Color = originals[part]:Lerp(settings.ColEnemy, fillAlpha)          -- the fill
+                    if settings.Chams and part.Transparency < 1 and part.Parent == model and size.X > 10 then
+                        local cf, half, points = part.CFrame, part.Size / 2, {}
+                        for i, sign in ipairs(cornerSigns) do
+                            local p2 = project((cf * CFrame.new(half * sign)).Position, size)
+                            if not p2 then points = nil break end
+                            points[i] = p2
+                        end
+                        local h = points and hull(points)
+                        if h and #h >= 3 then
+                            for i = 1, #h do                                                    -- the outline
+                                local a, b = h[i], h[i % #h + 1]
+                                used += 1
+                                local f = line(used)
+                                local d = b - a
+                                f.Position = UDim2.fromOffset((a.X + b.X) / 2, (a.Y + b.Y) / 2)
+                                f.Size = UDim2.fromOffset(math.max(d.Magnitude, 1), 1)
+                                f.Rotation = math.deg(math.atan2(d.Y, d.X))
+                                f.BackgroundColor3, f.Visible = settings.ChamsOutline, true
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        for i = used + 1, #lines do lines[i].Visible = false end
+    end
+    local function loadCharacter(char)
+        if not char then return end
+        task.spawn(function()
+            char:WaitForChild("HumanoidRootPart", 10)
+            task.wait(0.5)
+            if hub.Running and LocalPlayer.Character == char then
+                table.clear(originals)
+                pcall(function() chamsView:SetObject(char) end)
+            end
+        end)
+    end
+    loadCharacter(LocalPlayer.Character)
+    hubConnect(LocalPlayer.CharacterAdded, loadCharacter)
+    local last = 0
+    hubConnect(RunService.Heartbeat, function()
+        local now = os.clock()
+        if now - last < 1 / 15 or not (overlay and shown(holder)) then return end
+        last = now
+        drawChamsPreview()
+    end)
+end
 Chams:Toggle({ Title = "Chams", Desc = "Fills the character's body parts", Flag = "esp_chams", Default = false, Callback = set("Chams") })
 Chams:Toggle({ Title = "Through walls", Flag = "esp_chamswalls", Default = true, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsWalls") })
 Chams:Slider({ Title = "Fill transparency", Flag = "esp_chamsfill", Min = 0, Max = 100, Default = 60, Suffix = "%", DependsOn = { Flag = "esp_chams", Reason = "" },
     Callback = function(v) settings.ChamsFill = v / 100 end })
 Chams:ColorPicker({ Title = "Outline color", Flag = "esp_chamsout", Default = white, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsOutline") })
-
-local LineStyle = ExtraPage:Card({ Title = "Line style", Icon = "sliders-horizontal", Side = "Left" })
-LineStyle:Slider({ Title = "Thickness", Flag = "esp_linethick", Min = 1, Max = 4, Default = 1, Suffix = " px", Callback = set("LineThick") })
-LineStyle:Slider({ Title = "Transparency", Flag = "esp_linealpha", Min = 0, Max = 90, Default = 0, Suffix = "%", Callback = function(v) settings.LineAlpha = v / 100 end })
-LineStyle:Toggle({ Title = "Rainbow", Desc = "Tracer, skeleton, look direction and head dot cycle colors", Flag = "esp_linerainbow", Default = false, Callback = set("LineRainbow") })
 
 local Lines = ExtraPage:Card({ Title = "Lines", Icon = "spline", Side = "Right" })
 Lines:Toggle({ Title = "Tracer", Flag = "esp_tracer", Default = false, Callback = set("Tracer") })
@@ -1604,19 +1695,24 @@ Lines:Toggle({ Title = "Skeleton", Flag = "esp_skeleton", Default = false, Callb
 Lines:Toggle({ Title = "Look direction", Desc = "Shows where they are looking", Flag = "esp_look", Default = false, Callback = set("LookDir") })
 Lines:Toggle({ Title = "Head dot", Flag = "esp_headdot", Default = false, Callback = set("HeadDot") })
 
+local LineStyle = ExtraPage:Card({ Title = "Line style", Icon = "sliders-horizontal", Side = "Right" })
+LineStyle:Slider({ Title = "Thickness", Flag = "esp_linethick", Min = 1, Max = 4, Default = 1, Suffix = " px", Callback = set("LineThick") })
+LineStyle:Slider({ Title = "Transparency", Flag = "esp_linealpha", Min = 0, Max = 90, Default = 0, Suffix = "%", Callback = function(v) settings.LineAlpha = v / 100 end })
+LineStyle:Toggle({ Title = "Rainbow", Desc = "Tracer, skeleton, look direction and head dot cycle colors", Flag = "esp_linerainbow", Default = false, Callback = set("LineRainbow") })
+
 local Colors = StylePage:Card({ Title = "Colors", Icon = "palette" })
 Colors:ColorPicker({ Title = "Enemy", Flag = "col_enemy", Default = settings.ColEnemy, Callback = set("ColEnemy") })
 Colors:ColorPicker({ Title = "Behind wall", Flag = "col_hidden", Default = settings.ColHidden, Callback = set("ColHidden") })
 Colors:ColorPicker({ Title = "Silent aim target", Flag = "col_target", Default = settings.ColTarget, Callback = set("ColTarget") })
 Colors:Toggle({ Title = "Use team color", Flag = "col_team", Default = false, Callback = set("UseTeamColor") })
-
-local Filters = StylePage:Card({ Title = "Filters", Icon = "sliders-horizontal", Side = "Right" })
+Colors:Divider({ Title = "Filters" })                               -- the filters live in the same card
+local Filters = Colors
 Filters:Toggle({ Title = "Visibility color", Desc = "Different color behind walls", Flag = "esp_viscolor", Default = true, Callback = set("VisColor") })
 Filters:Toggle({ Title = "Fade with distance", Flag = "esp_fade", Default = true, Callback = set("Fade") })
 Filters:Toggle({ Title = "Performance mode", Desc = "Update distant chams every other frame", Flag = "esp_perf", Default = false, Callback = set("Perf") })
 
--- bar colours, side by side: health on the left, mode on the right
-local HealthColors = StylePage:Card({ Title = "Health bar colors", Icon = "heart", Side = "Left" })
+-- bar colours on the right, health over mode
+local HealthColors = StylePage:Card({ Title = "Health bar colors", Icon = "heart", Side = "Right" })
 HealthColors:Swatches({ Title = "From empty to full", Flag = "esp_hpcolors", Default = "Classic", Columns = 2, Items = {
     { "Classic", Color3.fromRGB(255, 59, 59), Color3.fromRGB(91, 210, 74) },
     { "Cool", healthPresets.Cool[1], healthPresets.Cool[2] },
@@ -1629,6 +1725,7 @@ ModeColors:Swatches({ Title = "From empty to full", Flag = "esp_modecolors", Def
     { "Sunset", modePresets.Sunset[1], modePresets.Sunset[2] }, { "Toxic", modePresets.Toxic[1], modePresets.Toxic[2] },
 }, Callback = function(_, name) settings.ModePreset = name end })
 ModeColors:Toggle({ Title = "Flash when full", Desc = "The bar pulses while mode is at 100%", Flag = "esp_modeflash", Default = true, Callback = set("ModeFlash") })
+end
 
 ----- World -----
 local World = Visuals:Page("World", { Compact = true })
@@ -1642,7 +1739,7 @@ Light:Button({ Title = "Restore lighting", Icon = "rotate-ccw", Style = "Ghost",
 end })
 
 -- Sky: a small picture of the sky at the chosen hour (the game's own hour while Custom time is off)
-local SkyCard = World:Card({ Title = "Sky", Icon = "sun", Side = "Right" })
+local SkyCard = World:Card({ Title = "Sky · Ambient", Icon = "sun", Side = "Right" })
 local skyCanvas = SkyCard:Canvas({ Height = 74 })
 local drawSky
 do
@@ -1706,12 +1803,13 @@ do
     end
 end
 local function skySet(key) return function(v) settings[key] = v drawSky() end end
-SkyCard:Toggle({ Title = "Custom time", Flag = "w_customtime", Default = false, Callback = skySet("CustomTime") })
-SkyCard:Slider({ Title = "Clock time", Flag = "w_clock", Min = 0, Max = 24, Step = 0.5, Default = 14, DependsOn = { Flag = "w_customtime", Reason = "" }, Callback = skySet("ClockTime") })
+SkyCard:Toggle({ Title = "Custom time", Flag = "w_customtime", Default = false, Callback = skySet("CustomTime"),
+    Slider = { Flag = "w_clock", Min = 0, Max = 24, Step = 0.5, Default = 14, Suffix = " h", Callback = skySet("ClockTime") } })
 loop("Sky preview", 2, function() if not settings.CustomTime then drawSky() end end)   -- follows the game's hour while it is not set
 drawSky()
 
-local AmbientCard = World:Card({ Title = "Ambient", Icon = "palette", Side = "Right" })
+SkyCard:Divider({ Title = "Ambient" })
+local AmbientCard = SkyCard
 AmbientCard:Toggle({ Title = "Custom ambient", Flag = "w_customamb", Default = false, Callback = skySet("CustomAmbient") })
 local ambientSwatches, ambientPicker
 local ambientSyncing = false
@@ -2112,11 +2210,12 @@ Basic:Toggle({ Title = "Always run", Flag = "mv_run", Default = false, Callback 
 Basic:Toggle({ Title = "NoClip", Icon = "ghost", Flag = "p_noclip", Default = false, Bind = Enum.KeyCode.N, Bindable = true, Callback = set("NoClip") })
 Basic:Toggle({ Title = "Click TP", Flag = "p_clicktp", Default = false, Callback = set("ClickTP") })
 
-local Puppet = moveTab:Card({ Title = "Puppet", Icon = "zap", Side = "Right" })
-Puppet:Toggle({ Title = "Puppet boost", Flag = "mv_puppet", Default = false, Callback = moveToggle("puppet") })
+-- Puppet Jump and Wider dash: their on / off switch sits in the card header
+local Puppet = moveTab:Card({ Title = "Puppet Jump", Icon = "zap", Side = "Right" })
+Puppet:HeaderSwitch({ Flag = "mv_puppet", Default = false, Callback = moveToggle("puppet") })
 Puppet:Slider({ Title = "Speed", Flag = "mv_puppetspeed", Min = 50, Max = 400, Default = 200, DependsOn = { Flag = "mv_puppet", Reason = "" },
     Callback = function(v) moveCfg.PuppetSpeed = v end })
-Puppet:Slider({ Title = "Count", Flag = "mv_puppetcount", Min = 2, Max = 10, Default = 5, DependsOn = { Flag = "mv_puppet", Reason = "" },
+Puppet:Stepper({ Title = "Count", Flag = "mv_puppetcount", Min = 2, Max = 10, Default = 5, DependsOn = { Flag = "mv_puppet", Reason = "" },
     Callback = function(v) moveCfg.PuppetLimit = v end })
 
 local Cam = moveTab:Card({ Title = "Camera", Icon = "camera" })
@@ -2126,14 +2225,11 @@ end })
 Cam:Toggle({ Title = "Unlock zoom", Flag = "p_zoom", Default = false, Callback = set("UnlockZoom") })
 
 local Dash = moveTab:Card({ Title = "Wider dash", Icon = "wind", Side = "Right" })
-Dash:Toggle({ Title = "Wider dash", Flag = "mv_dash", Default = false, Callback = moveToggle("widerDash") })
+Dash:HeaderSwitch({ Flag = "mv_dash", Default = false, Callback = moveToggle("widerDash") })
 Dash:Slider({ Title = "Speed", Flag = "mv_dashspeed", Min = 50, Max = 300, Default = 125, Suffix = " studs/s", DependsOn = { Flag = "mv_dash", Reason = "" },
     Callback = function(v) moveCfg.DashSpeed = v end })
 
 ----- Player: general -----
-local PlayerMisc = playerPage:Card({ Title = "Misc", Icon = "wand-sparkles", Side = "Right" })
-PlayerMisc:Toggle({ Title = "Anti-AFK", Desc = "Prevents the 20 minute idle kick", Flag = "p_antiafk", Default = true, Callback = set("AntiAfk") })
-
 local Spec = playerPage:Card({ Title = "Spectate", Icon = "video", Side = "Right" })
 local specList = Spec:PlayerList({ Title = "Player", Multi = false, Height = 120 })
 local specRow = Spec:Row({ Widths = { 2, 1 } })
@@ -2590,6 +2686,9 @@ do
 	end
 	farmToggle(autoFarmCard, "Green Scroll Farm", "Scroll")
 	farmToggle(autoFarmCard, "Boss Farm", "Boss")
+	-- (auto rank stops once your spins reach this; the amount sits on the same line)
+	autoFarmCard:Toggle({ Title = "Stop at spins", Flag = "rank_stop", Default = false, Callback = function(v) farm.RankStop = v end,
+		Slider = { Flag = "rank_stopat", Min = 50, Max = 1000, Step = 10, Default = 500, Callback = function(v) farm.RankStopAt = v end } })
 
 	local Conf = QuestPage:Card({ Title = "Configurations", Icon = "sliders-horizontal", Side = "Right" })
 	Conf:Toggle({ Title = "Legacy Farm Mode", Flag = "farm_legacy", Default = true, Callback = function(v)
@@ -2665,9 +2764,6 @@ do
 	Rank:Toggle({ Title = "Auto rank", Desc = "Ranks up at level 1000", Flag = "rank_on", Default = false, Callback = function(v) farm.AutoRank = v end })
 	Rank:Toggle({ Title = "Rank up after MAX", Flag = "rank_max", Default = false, Callback = function(v) farm.RankAfterMax = v end })
 	Rank:Toggle({ Title = "Use RELL coins", Flag = "rank_rc", Default = false, Callback = function(v) farm.RankRC = v end })
-	Rank:Toggle({ Title = "Stop at spins", Flag = "rank_stop", Default = false, Callback = function(v) farm.RankStop = v end })
-	Rank:Slider({ Title = "Stop when spins reach", Flag = "rank_stopat", Min = 50, Max = 1000, Default = 500, DependsOn = { Flag = "rank_stop", Reason = "" },
-		Callback = function(v) farm.RankStopAt = v end })
 	loop("Auto rank", 0.3, function()
 		local s = statz()
 		if not (farm.AutoRank and s) then return end
@@ -2786,16 +2882,7 @@ do
 
 	----- Daily -----
 	local autoDailyCard = DailyPage:Card({ Title = "Auto daily", Icon = "repeat", Side = "Left" })
-	autoDailyCard:Toggle({ Title = "M1", Flag = "dl_m1", Default = false, Callback = function(v) farm.PunchD = v end })
-	autoDailyCard:Toggle({ Title = "Rush", Flag = "dl_rush", Default = false, Callback = function(v) farm.Rush = v end })
-	autoDailyCard:Toggle({ Title = "Chi charge", Flag = "dl_chi", Default = false, Callback = function(v) farm.Chi = v end })
-	autoDailyCard:Toggle({ Title = "Tree jumps", Flag = "dl_tree", Default = false, Callback = function(v) farm.TreeD = v end })
-	autoDailyCard:Toggle({ Title = "Daily boss quests", Flag = "dl_boss", Default = false, Callback = function(v)
-		if v ~= farm.DailyBoss then if v then platformOn() else platformOff() end end   -- platform, as in boss farm
-		farm.DailyBoss = v
-	end })
-	local rewardsCard = DailyPage:Card({ Title = "Rewards", Icon = "gift", Side = "Left" })
-	rewardsCard:Button({ Title = "Claim all missions", Icon = "gift", Style = "Primary", Callback = function()
+	autoDailyCard:HeaderButton({ Title = "Claim all", Icon = "gift", Callback = function()      -- claims every daily and main mission
 		local st = statz()
 		local m = st and st:FindFirstChild("mission")
 		if m then
@@ -2812,6 +2899,14 @@ do
 			end
 		end
 		notify("Missions", "Requested daily and main mission rewards", "gift")
+	end })
+	autoDailyCard:Toggle({ Title = "M1", Flag = "dl_m1", Default = false, Callback = function(v) farm.PunchD = v end })
+	autoDailyCard:Toggle({ Title = "Rush", Flag = "dl_rush", Default = false, Callback = function(v) farm.Rush = v end })
+	autoDailyCard:Toggle({ Title = "Chi charge", Flag = "dl_chi", Default = false, Callback = function(v) farm.Chi = v end })
+	autoDailyCard:Toggle({ Title = "Tree jumps", Flag = "dl_tree", Default = false, Callback = function(v) farm.TreeD = v end })
+	autoDailyCard:Toggle({ Title = "Daily boss quests", Flag = "dl_boss", Default = false, Callback = function(v)
+		if v ~= farm.DailyBoss then if v then platformOn() else platformOff() end end   -- platform, as in boss farm
+		farm.DailyBoss = v
 	end })
 	-- Schedule: starts the dailies on a new day, claims each one when it is done (and stops its toggle), tells you when
 	-- all are done. A new day is noticed when a daily's progress goes back down (the game's daily reset).
@@ -3240,7 +3335,9 @@ do
 	local playerTab = playerPage                                      -- Game · NPC kill aura · Scroll snipe, with Misc / Spectate below
 	local shindo = { NoCombat = false, Unbreak = false, Aura = false, Scroll = false, ScrollSpawn = true }
 
-	local Game = playerTab:Card({ Title = "Game", Icon = "wand-sparkles" })
+	-- one card with two sections: Defense (immortal, unbreakable, combat) and Utility (kill aura, scroll snipe, anti-AFK)
+	local Game = playerTab:Card({ Title = "Player", Icon = "user", Side = "Left" })
+	Game:Divider({ Title = "Defense" })
 	Game:Toggle({ Title = "Disable in combat", Desc = "Teleport / leave even while in combat", Flag = "sh_nocombat", Default = false, Callback = function(v) shindo.NoCombat = v end })
 	Game:Toggle({ Title = "Immortal", Desc = "Get up instantly when knocked down (no knockdown)", Flag = "sh_immortal", Default = false,
 		Callback = function(v) shindo.Immortal = v end })
@@ -3287,7 +3384,8 @@ do
 		if shindo.NoCombat and LocalPlayer:FindFirstChild("incombat") then LocalPlayer.incombat.Value = false end
 	end)
 
-	local Aura = playerTab:Card({ Title = "NPC kill aura", Icon = "skull", Side = "Right" })
+	local Aura = Game
+	Aura:Divider({ Title = "Utility" })
 	Aura:Toggle({ Title = "NPC Kill Aura", Flag = "sh_aura", Default = false, Callback = function(v) shindo.Aura = v end })
 	-- Kill aura: hits only the current target. If the farm is attacking a mob it is that mob, otherwise the closest valid NPC.
 	-- The target's "antiexploit" is removed and its health is set to its negative, as NukePlat does (Health = -Health, 5 times; client side).
@@ -3334,9 +3432,10 @@ do
 		end)
 	end)
 
-	local Scroll = playerTab:Card({ Title = "Scroll snipe", Icon = "scroll", Desc = "Grabs scrolls that spawn on the map" })
-	Scroll:Toggle({ Title = "Scroll snipe", Flag = "sh_scroll", Default = false, Callback = function(v) shindo.Scroll = v end })
+	local Scroll = Game
+	Scroll:Toggle({ Title = "Scroll snipe", Desc = "Grabs scrolls that spawn on the map", Flag = "sh_scroll", Default = false, Callback = function(v) shindo.Scroll = v end })
 	Scroll:Toggle({ Title = "Teleport to spawn after", Flag = "sh_scrollspawn", Default = true, Callback = function(v) shindo.ScrollSpawn = v end })
+	Game:Toggle({ Title = "Anti-AFK", Desc = "Prevents the 20 minute idle kick", Flag = "p_antiafk", Default = true, Callback = function(v) settings.AntiAfk = v end })
 	local function toSpawn()
 		local sp = workspace:FindFirstChild("SpawnLocation")
 		if sp then return tpTo(sp.CFrame + Vector3.new(0, 3, 0)) end
@@ -3606,6 +3705,13 @@ local teleportData = {
 do
 	-- Only what exists on the current map is shown: the Locations card needs saved spots for this place,
 	-- and each quick spot appears once its target is found (rechecked every few seconds, parts can stream in late).
+	-- a teleport made from this page remembers where you stood, so Quick › Back can return there
+	local function teleportFromPage(target)
+		local r = rootPart()
+		if r then hub.TeleportBack = r.CFrame end
+		tpTo(target)
+		if hub.QuickTiles then hub.QuickTiles:SetTileVisible("Back", true) end
+	end
 	local here = teleportData[game.PlaceId] or {}
 	local names, byName = {}, {}
 	for _, p in ipairs(here) do names[#names + 1] = p[1] byName[p[1]] = p end
@@ -3623,7 +3729,7 @@ do
 		local placeList = places:ItemList({ Items = items, Button = "Go", Rows = 4, Placeholder = "Search " .. #names .. " places",
 			Empty = "No place with that name", Callback = function(item)
 				local p = byName[item.Title]
-				if p then tpTo(CFrame.new(p[2], p[3], p[4])) end
+				if p then teleportFromPage(CFrame.new(p[2], p[3], p[4])) end
 			end })
 		loop("Teleport distances", 2, function()                    -- distances follow you around
 			for _, p in ipairs(here) do placeList:SetDesc(p[1], distanceText(p)) end
@@ -3655,29 +3761,37 @@ do
 			local ken = workspace:FindFirstChild("Ken Mentor")
 			return ken and ken:FindFirstChild("HumanoidRootPart") and ken.HumanoidRootPart.CFrame + Vector3.new(-6, 4, 0)
 		end },
-		{ "Susanoo customizer", "sparkles", function()
+		{ "Susanoo", "sparkles", function()
 			local s = workspace:FindFirstChild("Susanoo Customizer")
 			local part = s and (s:FindFirstChild("HumanoidRootPart") or s:FindFirstChildWhichIsA("BasePart", true))
 			return part and part.CFrame + Vector3.new(0, 3, 4)
 		end },
 	}
+	-- Quick: icon tiles, three to a row; a spot that is not on this map is hidden (rechecked every 5 s).
+	-- Back returns to where you stood before the last teleport made from this page.
 	local quick = teleportsPage:Card({ Title = "Quick", Icon = "zap", Side = "Right" })
-	local buttons = {}
+	local items = {}
 	for _, spot in ipairs(spots) do
-		buttons[spot] = quick:Button({ Title = spot[1], Icon = spot[2], Align = "Left", Callback = function()
+		items[#items + 1] = { Title = spot[1], Icon = spot[2], Callback = function()
 			local ok, target = pcall(spot[3])
-			if ok and target then tpTo(target) else notify("Teleport", spot[1] .. " is not on this map", "triangle-alert", "warning") end
-		end })
+			if ok and target then teleportFromPage(target) else notify("Teleport", spot[1] .. " is not on this map", "triangle-alert", "warning") end
+		end }
 	end
-	local function refreshSpots()
-		local any = false
-		for spot, button in pairs(buttons) do
-			local ok, target = pcall(spot[3])
-			local found = ok and target ~= nil
-			button:SetVisible(found)
-			any = any or found
+	items[#items + 1] = { Title = "Back", Icon = "rotate-ccw", Visible = false, Callback = function()
+		if hub.TeleportBack then
+			local back = hub.TeleportBack
+			hub.TeleportBack = nil
+			tpTo(back)
 		end
-		quick:SetVisible(any)
+	end }
+	local quickTiles = quick:Tiles({ Columns = 3, Height = 52, Align = "Center", Items = items })
+	hub.QuickTiles = quickTiles
+	local function refreshSpots()
+		for _, spot in ipairs(spots) do
+			local ok, target = pcall(spot[3])
+			quickTiles:SetTileVisible(spot[1], ok and target ~= nil)
+		end
+		quickTiles:SetTileVisible("Back", hub.TeleportBack ~= nil)
 	end
 	refreshSpots()
 	loop("Teleport spots", 5, refreshSpots)
