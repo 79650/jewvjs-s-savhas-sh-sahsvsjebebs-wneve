@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.80
+-- Qustāh · Shindo Life · V1.81
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -432,7 +432,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.80",
+	Version = "V1.81",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -589,7 +589,7 @@ local function modeColorFor(mode)
     local preset = modePresets[settings.ModePreset] or modePresets.Ocean
     local color = preset[1]:Lerp(preset[2], clamp(mode or 1, 0, 1))
     if settings.ModeFlash and mode and mode >= 0.999 then
-        color = color:Lerp(Color3.new(1, 1, 1), (math.sin(os.clock() * 3) + 1) / 2 * 0.7)
+        color = color:Lerp(Color3.new(1, 1, 1), (math.sin(os.clock() * math.pi * 2 / 3) + 1) / 2 * 0.7)
     end
     return color
 end
@@ -1093,7 +1093,7 @@ function esp.UpdatePanel(panel, info)
         if flash or panel.modeKey ~= key then
             panel.modeKey = flash and nil or key
             local preset = modePresets[settings.ModePreset] or modePresets.Ocean
-            local pulse = flash and (math.sin(os.clock() * 3) + 1) / 2 * 0.7 or 0
+            local pulse = flash and (math.sin(os.clock() * math.pi * 2 / 3) + 1) / 2 * 0.7 or 0
             panel.modeGradient.Color = esp.Gradient(function(p)
                 return preset[1]:Lerp(preset[2], p):Lerp(Color3.new(1, 1, 1), pulse)
             end, 0, math.max(ratio, 0.001))
