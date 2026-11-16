@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.78
+-- Qustāh · Shindo Life · V1.79
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -432,7 +432,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.78",
+	Version = "V1.79",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -1000,8 +1000,9 @@ function esp.BuildPanel(parent)
     for index = 1, segments do
         local slot = esp.New("Frame", bar, { Size = UDim2.new(1 / segments, 0, 1, 0), Position = UDim2.fromScale((index - 1) / segments, 0),
             BackgroundTransparency = 1, BorderSizePixel = 0, ClipsDescendants = true })
-        local segment = esp.New("Frame", slot, { Size = UDim2.fromScale(1, 1), BackgroundColor3 = esp.Colors.green, BorderSizePixel = 0 })
+        local segment = esp.New("Frame", slot, { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0 })
         esp.New("UICorner", segment, { CornerRadius = UDim.new(0, 2) })
+        esp.New("UIGradient", segment, { Name = "Gradient" })
         panel.healthSegments[index] = segment
     end
     for index = 1, segments - 1 do
@@ -1021,8 +1022,9 @@ function esp.BuildPanel(parent)
         BackgroundColor3 = esp.Colors.back, BackgroundTransparency = 0.05, BorderSizePixel = 0, ClipsDescendants = true })
     esp.New("UICorner", modeBar, { CornerRadius = UDim.new(0, 3) })
     esp.New("UIStroke", modeBar, { Color = Color3.new(), Thickness = 1.25, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
-    panel.modeFill = esp.New("Frame", modeBar, { Name = "Fill", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(163, 112, 210), BorderSizePixel = 0 })
+    panel.modeFill = esp.New("Frame", modeBar, { Name = "Fill", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0 })
     esp.New("UICorner", panel.modeFill, { CornerRadius = UDim.new(0, 2) })
+    panel.modeGradient = esp.New("UIGradient", panel.modeFill, { Name = "Gradient" })
     for index = 1, modeSegments - 1 do
         esp.New("Frame", modeBar, { Size = UDim2.new(0, 1, 1, 0), Position = UDim2.fromScale(index / modeSegments, 0), BackgroundColor3 = esp.Colors.split, BorderSizePixel = 0, ZIndex = 3 })
     end
@@ -1037,6 +1039,13 @@ function esp.BuildPanel(parent)
     return panel
 end
 function esp.Escape(text) return (tostring(text):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")) end
+-- The bars show the preset as a real gradient over their whole width (like its swatch): a fill that ends at
+-- `to` shows the colours from `from` to `to` of the preset (sampled 5 times, so 3-colour presets come out right).
+function esp.Gradient(colorAt, from, to)
+    local points = {}
+    for i = 0, 4 do points[#points + 1] = ColorSequenceKeypoint.new(i / 4, colorAt(from + (to - from) * i / 4)) end
+    return ColorSequence.new(points)
+end
 function esp.SetIf(object, property, value) if object[property] ~= value then object[property] = value end end
 -- Fills the panel. info = { display, user, health (nil: no fakehealth), maxHealth, downed, mode, modeCap, distance, dodge }
 function esp.UpdatePanel(panel, info)
@@ -1056,10 +1065,15 @@ function esp.UpdatePanel(panel, info)
     else
         local health, maximum = math.max(info.health, 0), math.max(info.maxHealth or 1, 1)
         local ratio = clamp(health / maximum, 0, 1)
-        local color = healthColor(ratio)
         for index, segment in ipairs(panel.healthSegments) do
-            esp.SetIf(segment, "Size", UDim2.fromScale(clamp(ratio * panel.segments - (index - 1), 0, 1), 1))
-            esp.SetIf(segment, "BackgroundColor3", color)
+            local amount = clamp(ratio * panel.segments - (index - 1), 0, 1)
+            esp.SetIf(segment, "Size", UDim2.fromScale(amount, 1))
+            -- this segment's slice of the gradient (only redone when its fill or the preset changes)
+            local key = settings.HealthPreset .. "|" .. math.floor(amount * 100 + 0.5)
+            if amount > 0 and panel.amounts[index] ~= key then
+                panel.amounts[index] = key
+                segment.Gradient.Color = esp.Gradient(healthColor, (index - 1) / panel.segments, (index - 1 + amount) / panel.segments)
+            end
         end
         healthText = esp.Compact(health) .. " / " .. esp.Compact(maximum) .. (info.downed and " · Death" or "")
     end
@@ -1073,7 +1087,17 @@ function esp.UpdatePanel(panel, info)
         local ratio = clamp(mode / (info.modeCap or panel.peak), 0, 1)
         local color = modeColorFor(ratio)
         esp.SetIf(panel.modeFill, "Size", UDim2.fromScale(ratio, 1))
-        esp.SetIf(panel.modeFill, "BackgroundColor3", color)
+        -- the preset's gradient from empty up to the current amount; a full bar flashes with "Flash when full"
+        local flash = settings.ModeFlash and ratio >= 0.999
+        local key = settings.ModePreset .. "|" .. math.floor(ratio * 100 + 0.5)
+        if flash or panel.modeKey ~= key then
+            panel.modeKey = flash and nil or key
+            local preset = modePresets[settings.ModePreset] or modePresets.Ocean
+            local pulse = flash and (math.sin(os.clock() * 8) + 1) / 2 * 0.7 or 0
+            panel.modeGradient.Color = esp.Gradient(function(p)
+                return preset[1]:Lerp(preset[2], p):Lerp(Color3.new(1, 1, 1), pulse)
+            end, 0, math.max(ratio, 0.001))
+        end
         esp.SetIf(panel.modeLabel, "TextColor3", color)
         esp.SetIf(panel.modeLabel, "Text", "MD " .. esp.Compact(mode) .. (info.modeCap and (" / " .. esp.Compact(info.modeCap)) or " · relative"))
     end
