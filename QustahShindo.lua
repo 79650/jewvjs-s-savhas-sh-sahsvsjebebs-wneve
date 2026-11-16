@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.86
+-- Qustāh · Shindo Life · V1.87
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -432,7 +432,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.86",
+	Version = "V1.87",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -525,8 +525,6 @@ local settings = {
     Chams = true, ChamsStyle = "Solid", ChamsFill = 0.55, ChamsOutlineAlpha = 0.1,
     ChamsColor = rgb(1, 1, 1), ChamsOutline = rgb(0, 0, 0),
     DistanceThrottle = false, OffscreenSleep = false,
-    Tracer = false, TracerFrom = "Bottom", Skeleton = false,
-    LineThick = 1, LineAlpha = 0, LineRainbow = false,                -- shared style of tracer and skeleton
     ColEnemy = rgb(1, 0.23, 0.23), ColAlly = rgb(0.23, 1, 0.42), ColTarget = rgb(0.75, 0.45, 1),
     -- world
     Fullbright = false, NoFog = false, CustomTime = false, ClockTime = 14, NoShadows = false,
@@ -810,14 +808,6 @@ end
 
 ----- ESP -----
 local esp = { Entries = {}, Frame = 0 }
-local skeletonR15 = {
-    { "Head", "UpperTorso" }, { "UpperTorso", "LowerTorso" },
-    { "UpperTorso", "LeftUpperArm" }, { "LeftUpperArm", "LeftLowerArm" }, { "LeftLowerArm", "LeftHand" },
-    { "UpperTorso", "RightUpperArm" }, { "RightUpperArm", "RightLowerArm" }, { "RightLowerArm", "RightHand" },
-    { "LowerTorso", "LeftUpperLeg" }, { "LeftUpperLeg", "LeftLowerLeg" }, { "LeftLowerLeg", "LeftFoot" },
-    { "LowerTorso", "RightUpperLeg" }, { "RightUpperLeg", "RightLowerLeg" }, { "RightLowerLeg", "RightFoot" },
-}
-local skeletonR6 = { { "Head", "Torso" }, { "Torso", "Left Arm" }, { "Torso", "Right Arm" }, { "Torso", "Left Leg" }, { "Torso", "Right Leg" } }
 
 local function entry(plr)
     local e = esp.Entries[plr]
@@ -883,8 +873,7 @@ end
 -- top) per player with, from the top, the mode bar ("MD" text on its right), the segmented health bar, the name with
 -- the [username] in grey and the dodge cooldown icon, then "health / max" and "[distance studs]"; a Highlight for
 -- the chams. Nearest players, Target pins, distance throttle and offscreen sleep work as there.
--- Our own additions stay on top: the box, tracer and skeleton (Drawing), the health / mode colour presets and the
--- team check. Everything lives in the `esp` table (the main chunk is near Luau's 200 local limit).
+-- Our own additions stay on top: the box (Drawing) and the health / mode colour presets. Everything lives in the `esp` table (the main chunk is near Luau's 200 local limit).
 esp.Panels = {}
 esp.Colors = { back = Color3.fromRGB(18, 18, 18), split = Color3.fromRGB(8, 8, 8),
     red = Color3.fromRGB(195, 85, 85), green = Color3.fromRGB(115, 185, 130) }
@@ -1258,8 +1247,8 @@ local function updatePlayer(plr)
         return hideUnused(e)
     end
 
-    -- extras around the body: box (the top of the head and the bottom of the feet projected: stable, not affected by
-    -- accessories), tracer and skeleton
+    -- the box around the body (the top of the head and the bottom of the feet projected: stable, not affected by
+    -- accessories)
     local top = toScreen(root.Position + vec3(0, 2.6, 0))
     local bottom = toScreen(root.Position - vec3(0, 3, 0))
     local h = max(bottom.Y - top.Y, 6)
@@ -1284,27 +1273,6 @@ local function updatePlayer(plr)
         drawLine(e, "b8", vec2(boxRight, boxBottom), vec2(boxRight, boxBottom - cy), color, 1, alpha)
     end
 
-    -- line style (Visuals › Extra › Line style): one thickness / transparency for every line, optionally rainbow
-    local lineColor = settings.LineRainbow and Color3.fromHSV((os.clock() * 0.25) % 1, 0.75, 1) or color
-    local lineAlpha = alpha * (1 - settings.LineAlpha)
-    local lineThick = settings.LineThick
-    if settings.Tracer then
-        local vs = Camera.ViewportSize
-        local from = settings.TracerFrom == "Mouse" and UserInputService:GetMouseLocation()
-            or settings.TracerFrom == "Center" and vs / 2 or vec2(vs.X / 2, vs.Y)
-        drawLine(e, "tracer", from, vec2(rootScreen.X, boxBottom), lineColor, lineThick, lineAlpha * 0.8)
-    end
-    if settings.Skeleton then
-        local pairsList = char:FindFirstChild("UpperTorso") and skeletonR15 or skeletonR6
-        for i, pair in ipairs(pairsList) do
-            local p1, p2 = char:FindFirstChild(pair[1]), char:FindFirstChild(pair[2])
-            if p1 and p2 then
-                local a, onA = toScreen(p1.Position)
-                local b, onB = toScreen(p2.Position)
-                if onA and onB then drawLine(e, "sk" .. i, a, b, lineColor, lineThick, lineAlpha) end
-            end
-        end
-    end
     hideUnused(e)
 end
 
@@ -1827,7 +1795,7 @@ BoxCard:Slider({ Title = "Corner size", Flag = "esp_corner", Min = 10, Max = 100
 BoxCard:Toggle({ Title = "Fill", Flag = "esp_fill", Default = false, Callback = set("BoxFill") })
 BoxCard:Slider({ Title = "Fill transparency", Flag = "esp_fillalpha", Min = 0, Max = 100, Default = 85, Suffix = "%", DependsOn = { Flag = "esp_fill", Reason = "" },
     Callback = function(v) settings.BoxFillAlpha = v / 100 end })
-BoxCard:Toggle({ Title = "Outline", Desc = "Black edge behind box and line strokes", Flag = "esp_outline", Default = true, Callback = set("Outline") })
+BoxCard:Toggle({ Title = "Outline", Desc = "Black edge behind the box", Flag = "esp_outline", Default = true, Callback = set("Outline") })
 
 -- Target Pins: pinned players ignore the range and the nearest-players limit
 local PinsCard = EspPage:Card({ Title = "Target pins", Icon = "pin", Wide = "Bottom", Desc = "Pinned players ignore range and Nearest players" })
@@ -1849,16 +1817,6 @@ Chams:Slider({ Title = "Outline transparency", Flag = "esp_chamsoutalpha", Min =
     Callback = function(v) settings.ChamsOutlineAlpha = v / 100 end })
 Chams:ColorPicker({ Title = "Fill color", Flag = "esp_chamscolor", Default = white, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsColor") })
 Chams:ColorPicker({ Title = "Outline color", Flag = "esp_chamsout", Default = black, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsOutline") })
-
-local Lines = ExtraPage:Card({ Title = "Lines", Icon = "spline", Side = "Right" })
-Lines:Toggle({ Title = "Tracer", Flag = "esp_tracer", Default = false, Callback = set("Tracer") })
-Lines:Segment({ Title = "Tracer from", Flag = "esp_tracerfrom", Items = { "Bottom", "Center", "Mouse" }, Default = "Bottom", DependsOn = { Flag = "esp_tracer", Reason = "" }, Callback = set("TracerFrom") })
-Lines:Toggle({ Title = "Skeleton", Flag = "esp_skeleton", Default = false, Callback = set("Skeleton") })
-
-local LineStyle = ExtraPage:Card({ Title = "Line style", Icon = "sliders-horizontal", Side = "Right" })
-LineStyle:Slider({ Title = "Thickness", Flag = "esp_linethick", Min = 1, Max = 4, Default = 1, Suffix = " px", Callback = set("LineThick") })
-LineStyle:Slider({ Title = "Transparency", Flag = "esp_linealpha", Min = 0, Max = 90, Default = 0, Suffix = "%", Callback = function(v) settings.LineAlpha = v / 100 end })
-LineStyle:Toggle({ Title = "Rainbow", Desc = "Tracer and skeleton cycle colors", Flag = "esp_linerainbow", Default = false, Callback = set("LineRainbow") })
 
 local Colors = StylePage:Card({ Title = "Colors", Icon = "palette" })
 Colors:ColorPicker({ Title = "Enemy", Flag = "col_enemy", Default = settings.ColEnemy, Callback = set("ColEnemy") })
