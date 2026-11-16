@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.85
+-- Qustāh · Shindo Life · V1.86
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -432,7 +432,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.85",
+	Version = "V1.86",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -517,12 +517,12 @@ local settings = {
     FOV_Show = true, FOV_Radius = 120, FOV_Sides = 64, FOV_Thick = 1, FOV_Color = rgb(1, 1, 1), FOV_Alpha = 0,
     FOV_Filled = false, FOV_Origin = "Mouse", FOV_TargetLine = false,
     -- esp
-    ESP_Enabled = false, ESP_TeamCheck = true, ESP_MaxDist = 2500, PlayerLimit = 30, Pins = {},
-    Box = false, BoxStyle = "Corner", BoxCorner = 30, BoxFill = false, BoxFillAlpha = 0.85, HealthBar = true, ModeBar = true, Outline = true,
+    ESP_Enabled = false, ESP_MaxDist = 2500, PlayerLimit = 30, Pins = {},
+    Box = false, BoxCorner = 30, BoxFill = false, BoxFillAlpha = 0.85, HealthBar = true, ModeBar = true, Outline = true,
     HealthPreset = "Classic", ModePreset = "Ocean",
     Name = true, User = true, HealthText = true, Distance = true, TextSize = 14,
     HealthSegments = 5, ModeText = false, ModeSegments = 1,
-    Chams = true, ChamsWalls = true, ChamsStyle = "Solid", ChamsFill = 0.55, ChamsOutlineAlpha = 0.1,
+    Chams = true, ChamsStyle = "Solid", ChamsFill = 0.55, ChamsOutlineAlpha = 0.1,
     ChamsColor = rgb(1, 1, 1), ChamsOutline = rgb(0, 0, 0),
     DistanceThrottle = false, OffscreenSleep = false,
     Tracer = false, TracerFrom = "Bottom", Skeleton = false,
@@ -1163,7 +1163,7 @@ function esp.UpdatePanels()
             local head = char and char:FindFirstChild("Head")
             local root = char and char:FindFirstChild("HumanoidRootPart")
             local hum = char and char:FindFirstChildOfClass("Humanoid")
-            if not (settings.ESP_Enabled and head and root and hum) or (settings.ESP_TeamCheck and isTeammate(plr)) then
+            if not (settings.ESP_Enabled and head and root and hum) then
                 if esp.Panels[plr] then
                     if not (head and root and hum) then esp.DropPanel(plr) else esp.HidePanel(esp.Panels[plr]) end
                 end
@@ -1213,7 +1213,7 @@ function esp.RefreshPanel(c, index, limit, now, camera)
                     mode = mode, modeCap = modeCap, distance = c.dist, dodge = esp.DodgeCooldown(c.plr),
                 })
             end
-            -- chams: the Highlight (Solid fills, Outline keeps only the edge; Through walls = always on top)
+            -- chams: the Highlight (Solid fills, Outline keeps only the edge; always on top, seen through walls)
             local h = item.highlight
             local chams = settings.Chams and inRange
             esp.SetIf(h, "Enabled", chams)
@@ -1222,7 +1222,6 @@ function esp.RefreshPanel(c, index, limit, now, camera)
                 esp.SetIf(h, "OutlineColor", settings.ChamsOutline)
                 esp.SetIf(h, "FillTransparency", settings.ChamsStyle == "Outline" and 1 or settings.ChamsFill)
                 esp.SetIf(h, "OutlineTransparency", settings.ChamsOutlineAlpha)
-                esp.SetIf(h, "DepthMode", settings.ChamsWalls and Enum.HighlightDepthMode.AlwaysOnTop or Enum.HighlightDepthMode.Occluded)
             end
         end
     end
@@ -1236,7 +1235,7 @@ end
 local function updatePlayer(plr)
     local e = entry(plr)
     local char, hum, root = getCharacter(plr)
-    if not (settings.ESP_Enabled and char and isAlive(hum)) or (settings.ESP_TeamCheck and isTeammate(plr)) then
+    if not (settings.ESP_Enabled and char and isAlive(hum)) then
         e.chamsReady = false
         return hideUnused(e)
     end
@@ -1273,7 +1272,7 @@ local function updatePlayer(plr)
             local f = use(e, "fill", "Square")
             if f then f.Position, f.Size, f.Color, f.Filled, f.Transparency, f.ZIndex, f.Visible = vec2(boxLeft, boxTop), vec2(boxRight - boxLeft, boxBottom - boxTop), color, true, (1 - settings.BoxFillAlpha) * alpha, 0, true end
         end
-        local frac = settings.BoxStyle == "Full" and 1 or settings.BoxCorner / 100
+        local frac = settings.BoxCorner / 100                      -- (100% = a full box)
         local cx, cy = (boxRight - boxLeft) / 2 * frac, (boxBottom - boxTop) / 2 * frac
         drawLine(e, "b1", vec2(boxLeft, boxTop), vec2(boxLeft + cx, boxTop), color, 1, alpha)
         drawLine(e, "b2", vec2(boxLeft, boxTop), vec2(boxLeft, boxTop + cy), color, 1, alpha)
@@ -1656,7 +1655,6 @@ General:Toggle({ Title = "ESP enabled", Flag = "esp_enabled", Default = false, B
         Window:SetModule("ESP", on and "On" or "Off", nil, { Icon = "eye", Tab = "Visuals" })
         if on and not Render.Available then notify("ESP", "Your executor has no Drawing API, ESP can't draw", "triangle-alert", "warning") end
     end })
-General:Toggle({ Title = "Team check", Desc = "Don't show teammates", Flag = "esp_team", Default = true, Callback = set("ESP_TeamCheck") })
 General:Slider({ Title = "Range", Flag = "esp_maxdist", Min = 100, Max = 5000, Default = 2500, Step = 50, Suffix = " studs", Callback = set("ESP_MaxDist") })
 General:Slider({ Title = "Nearest players", Desc = "Only the closest ones are drawn", Flag = "esp_limit", Min = 5, Max = 30, Default = 30, Callback = set("PlayerLimit") })
 General:Toggle({ Title = "Distance throttle", Desc = "Far ESP updates less often", Flag = "esp_throttle", Default = false, Callback = set("DistanceThrottle") })
@@ -1668,7 +1666,7 @@ local InfoCard = EspPage:Card({ Title = "Player info", Icon = "user", Side = "Le
 InfoCard:Toggle({ Title = "Name", Desc = "The player's visible name", Flag = "esp_name", Default = true, Callback = set("Name") })
 InfoCard:Toggle({ Title = "Username", Desc = "The account name, in grey", Flag = "esp_user", Default = true, Callback = set("User") })
 InfoCard:Toggle({ Title = "Distance", Flag = "esp_dist", Default = true, Callback = set("Distance") })
-InfoCard:Slider({ Title = "Name text size", Flag = "esp_tsize", Min = 10, Max = 22, Default = 14, Suffix = " px", Callback = set("TextSize") })
+InfoCard:Slider({ Title = "Name text size", Flag = "esp_tsize", Min = 10, Max = 20, Default = 14, Suffix = " px", Callback = set("TextSize") })
 
 local HealthCard = EspPage:Card({ Title = "Health", Icon = "heart", Side = "Left" })
 HealthCard:Toggle({ Title = "Health bar", Desc = "Segmented health indicator", Flag = "esp_hbar", Default = true, Callback = set("HealthBar") })
@@ -1751,7 +1749,7 @@ do
                     pool.fill.BackgroundTransparency = settings.BoxFillAlpha
                 end
                 local edges
-                if settings.BoxStyle == "Corner" then
+                if settings.BoxCorner < 100 then
                     local cx, cy = w * settings.BoxCorner / 100 / 2, h * settings.BoxCorner / 100 / 2
                     edges = { { x1, y1, cx, 1 }, { x1, y1, 1, cy }, { x2 - cx, y1, cx, 1 }, { x2 - 1, y1, 1, cy },
                               { x1, y2 - 1, cx, 1 }, { x1, y2 - cy, 1, cy }, { x2 - cx, y2 - 1, cx, 1 }, { x2 - 1, y2 - cy, 1, cy } }
@@ -1824,9 +1822,8 @@ ModeCard:Slider({ Title = "Mode bar segments", Flag = "esp_mseg", Min = 1, Max =
 -- the box around the body is an extra on top of the Qustah layout (off by default)
 local BoxCard = EspPage:Card({ Title = "Box", Icon = "square-dashed", Side = "Right" })
 BoxCard:Toggle({ Title = "Box", Flag = "esp_box", Default = false, Callback = set("Box") })
-BoxCard:Segment({ Title = "Style", Flag = "esp_boxstyle", Items = { "Corner", "Full" }, Default = "Corner", Callback = set("BoxStyle") })
-BoxCard:Slider({ Title = "Corner size", Flag = "esp_corner", Min = 10, Max = 100, Default = 30, Suffix = "%",
-    DependsOn = { Flag = "esp_boxstyle", Value = "Corner", Mode = "Hide", Reason = "" }, Callback = set("BoxCorner") })
+BoxCard:Slider({ Title = "Corner size", Flag = "esp_corner", Min = 10, Max = 100, Default = 30, Suffix = "%", Desc = "100% draws a full box",
+    Callback = set("BoxCorner") })
 BoxCard:Toggle({ Title = "Fill", Flag = "esp_fill", Default = false, Callback = set("BoxFill") })
 BoxCard:Slider({ Title = "Fill transparency", Flag = "esp_fillalpha", Min = 0, Max = 100, Default = 85, Suffix = "%", DependsOn = { Flag = "esp_fill", Reason = "" },
     Callback = function(v) settings.BoxFillAlpha = v / 100 end })
@@ -1844,7 +1841,6 @@ end
 do -- Visuals › Extra and Style (a block: their locals end here)
 local Chams = ExtraPage:Card({ Title = "Chams", Icon = "paint-bucket" })
 Chams:Toggle({ Title = "Chams", Flag = "esp_chams", Default = true, Style = "Switch", Callback = set("Chams") })
-Chams:Toggle({ Title = "Through walls", Flag = "esp_chamswalls", Default = true, Style = "Switch", DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsWalls") })
 Chams:Segment({ Title = "Chams style", Flag = "esp_chamsstyle", Items = { "Solid", "Outline" }, Default = "Solid", Wide = true,
     DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsStyle") })
 Chams:Slider({ Title = "Fill transparency", Flag = "esp_chamsfill", Min = 0, Max = 100, Default = 55, Suffix = "%", DependsOn = { Flag = "esp_chams", Reason = "" },
