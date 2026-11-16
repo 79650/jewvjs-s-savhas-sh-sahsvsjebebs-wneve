@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.66
+-- Qustāh · Shindo Life · V1.67
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -393,7 +393,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.66",
+	Version = "V1.67",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -1682,8 +1682,8 @@ do
         drawChamsPreview()
     end)
 end
-Chams:Toggle({ Title = "Chams", Flag = "esp_chams", Default = true, Style = "Switch", Callback = set("Chams") })
-Chams:Toggle({ Title = "Through walls", Flag = "esp_chamswalls", Default = true, Style = "Switch", DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsWalls") })
+Chams:Toggle({ Title = "Chams", Flag = "esp_chams", Default = true, Style = "Switch", Bindable = true, Callback = set("Chams") })
+Chams:Toggle({ Title = "Through walls", Flag = "esp_chamswalls", Default = true, Style = "Switch", Bindable = true, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsWalls") })
 Chams:Slider({ Title = "Fill transparency", Flag = "esp_chamsfill", Min = 0, Max = 100, Default = 60, Suffix = "%", DependsOn = { Flag = "esp_chams", Reason = "" },
     Callback = function(v) settings.ChamsFill = v / 100 end })
 Chams:ColorPicker({ Title = "Outline color", Flag = "esp_chamsout", Default = white, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsOutline") })
