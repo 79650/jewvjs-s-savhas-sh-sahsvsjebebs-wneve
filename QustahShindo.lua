@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.77
+-- Qustāh · Shindo Life · V1.78
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -432,7 +432,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.77",
+	Version = "V1.78",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -884,7 +884,7 @@ end
 ----- ESP (Qustah layout) -----
 -- The ESP of Qustah (code revision 464), ported as it is: a BillboardGui (300 x 78, 3 studs above the head, always on
 -- top) per player with, from the top, the mode bar ("MD" text on its right), the segmented health bar, the name with
--- the [username] in grey and the dodge cooldown icon, then "♥ health / max" and "[distance studs]"; a Highlight for
+-- the [username] in grey and the dodge cooldown icon, then "health / max" and "[distance studs]"; a Highlight for
 -- the chams. Nearest players, Target pins, refresh rate, distance throttle and offscreen sleep work as there.
 -- Our own additions stay on top: the box, tracer and skeleton (Drawing), the health / mode colour presets and the
 -- team check. Everything lives in the `esp` table (the main chunk is near Luau's 200 local limit).
@@ -1037,7 +1037,6 @@ function esp.BuildPanel(parent)
     return panel
 end
 function esp.Escape(text) return (tostring(text):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")) end
-function esp.Hex(color) return string.format("#%02X%02X%02X", math.floor(color.R * 255 + 0.5), math.floor(color.G * 255 + 0.5), math.floor(color.B * 255 + 0.5)) end
 function esp.SetIf(object, property, value) if object[property] ~= value then object[property] = value end end
 -- Fills the panel. info = { display, user, health (nil: no fakehealth), maxHealth, downed, mode, modeCap, distance, dodge }
 function esp.UpdatePanel(panel, info)
@@ -1047,12 +1046,12 @@ function esp.UpdatePanel(panel, info)
     if settings.User then nameText = nameText .. (settings.Name and " " or "") .. '<font color="#AFAFAF">[' .. esp.Escape(info.user) .. "]</font>" end
     esp.SetIf(panel.name, "Text", nameText)
     esp.SetIf(panel.name, "TextSize", settings.TextSize)
-    -- health: segments fill one after another; "♥ 1.2K / 2K" in the bar's colour, "♡ … · Death" while downed
+    -- health: segments fill one after another; "1.2K / 2K", "… · Death" while downed
     esp.SetIf(panel.bar, "Visible", settings.HealthBar)
     esp.SetIf(panel.health, "Visible", settings.HealthText)
     local healthText
     if info.health == nil then
-        healthText = info.downed and '<font size="14" color="#FFFFFF">♡</font> -- · Death' or '<font size="14">♥</font> --'
+        healthText = info.downed and "-- · Death" or "--"
         for _, segment in ipairs(panel.healthSegments) do esp.SetIf(segment, "Size", UDim2.fromScale(0, 1)) end
     else
         local health, maximum = math.max(info.health, 0), math.max(info.maxHealth or 1, 1)
@@ -1062,8 +1061,7 @@ function esp.UpdatePanel(panel, info)
             esp.SetIf(segment, "Size", UDim2.fromScale(clamp(ratio * panel.segments - (index - 1), 0, 1), 1))
             esp.SetIf(segment, "BackgroundColor3", color)
         end
-        healthText = '<font size="14" color="' .. (info.downed and "#FFFFFF" or esp.Hex(color)) .. '">' .. (info.downed and "♡" or "♥") .. "</font> "
-            .. esp.Compact(health) .. " / " .. esp.Compact(maximum) .. (info.downed and " · Death" or "")
+        healthText = esp.Compact(health) .. " / " .. esp.Compact(maximum) .. (info.downed and " · Death" or "")
     end
     esp.SetIf(panel.health, "Text", healthText)
     -- mode: the bar (relative to the highest value seen when the game gives no maximum) and "MD 50 / 100"
