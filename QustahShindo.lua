@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.75
+-- Qustāh · Shindo Life · V1.76
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -432,7 +432,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.75",
+	Version = "V1.76",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -516,13 +516,16 @@ local settings = {
     FOV_Show = true, FOV_Radius = 120, FOV_Sides = 64, FOV_Thick = 1, FOV_Color = rgb(1, 1, 1), FOV_Alpha = 0,
     FOV_Filled = false, FOV_Origin = "Mouse", FOV_TargetLine = false,
     -- esp
-    ESP_Enabled = false, ESP_TeamCheck = true, ESP_MaxDist = 1500,
-    Box = true, BoxStyle = "Corner", BoxCorner = 30, BoxFill = false, BoxFillAlpha = 0.85, HealthBar = true, ModeBar = true, Outline = true,
+    ESP_Enabled = false, ESP_TeamCheck = true, ESP_MaxDist = 2500, PlayerLimit = 30, Pins = {},
+    Box = false, BoxStyle = "Corner", BoxCorner = 30, BoxFill = false, BoxFillAlpha = 0.85, HealthBar = true, ModeBar = true, Outline = true,
     HealthPreset = "Classic", ModePreset = "Ocean", ModeFlash = true,
-    Name = true, DisplayName = true, HealthText = true, Distance = true, DistUnit = "Studs", TextSize = 13,
-    Chams = true, ChamsWalls = true, ChamsStyle = "Solid", ChamsFill = 0.6, ChamsOutline = rgb(1, 1, 1),
-    Tracer = false, TracerFrom = "Bottom", Skeleton = false, LookDir = false, HeadDot = false,
-    LineThick = 1, LineAlpha = 0, LineRainbow = false,                -- shared style of tracer, look direction, skeleton and head dot
+    Name = true, User = true, HealthText = true, Distance = true, TextSize = 14,
+    HealthSegments = 5, ModeText = false, ModeSegments = 1,
+    Chams = true, ChamsWalls = true, ChamsStyle = "Solid", ChamsFill = 0.55, ChamsOutlineAlpha = 0.1,
+    ChamsColor = rgb(1, 1, 1), ChamsOutline = rgb(0, 0, 0),
+    RefreshRate = "Balanced", DistanceThrottle = false, OffscreenSleep = false,
+    Tracer = false, TracerFrom = "Bottom", Skeleton = false,
+    LineThick = 1, LineAlpha = 0, LineRainbow = false,                -- shared style of tracer and skeleton
     ColEnemy = rgb(1, 0.23, 0.23), ColAlly = rgb(0.23, 1, 0.42), ColTarget = rgb(0.75, 0.45, 1),
     -- world
     Fullbright = false, NoFog = false, CustomTime = false, ClockTime = 14, NoShadows = false,
@@ -573,22 +576,7 @@ local function healthValue(hum)
     local fake = char and FindFirstChild(char, "fakehealth")
     return (fake and fake:IsA("ValueBase") and tonumber(fake.Value)) or hum.Health
 end
-local function healthOf(hum)                                      -- current, max
-    local hp = healthValue(hum)
-    return hp, math.max(hum.MaxHealth, hp, 1)
-end
 local function isAlive(hum) return hum and healthValue(hum) > 0 end
--- Shindo's mode meter: character.combat.mode (IntConstrainedValue, normally 0-100). Returns 0-1, or nil without one.
-local function modeOf(char)
-    local combat = FindFirstChild(char, "combat")
-    local mode = combat and FindFirstChild(combat, "mode")
-    if not (mode and mode:IsA("ValueBase")) then return nil end
-    local value = tonumber(mode.Value)
-    if not value then return nil end
-    local okMax, maxValue = pcall(function() return mode.MaxValue end)
-    maxValue = (okMax and tonumber(maxValue) and maxValue > 0) and maxValue or 100
-    return clamp(value / maxValue, 0, 1)
-end
 -- mode bar colour (Visuals › Style › Mode bar colors): fades from the preset's first colour (empty) to its second
 -- (full); with "Flash when full" a full bar pulses to white
 local modePresets = {
@@ -624,8 +612,9 @@ local function healthColor(p)
     p = clamp(p, 0, 1)
     local preset = healthPresets[settings.HealthPreset]
     if preset then return preset[1]:Lerp(preset[2], p) end
-    if p < 0.5 then return Color3.fromRGB(255, floor(510 * p), 0) end
-    return Color3.fromRGB(floor(255 - (p - 0.5) * 510), 255, 0)
+    -- Classic: Qustah's red → orange → green
+    local red, orange, green = Color3.fromRGB(195, 85, 85), Color3.fromRGB(210, 145, 70), Color3.fromRGB(115, 185, 130)
+    return p < 0.5 and red:Lerp(orange, p * 2) or orange:Lerp(green, (p - 0.5) * 2)
 end
 
 local FriendCache = {}
@@ -871,6 +860,7 @@ local function removeEntry(plr)
     if not e then return end
     for _, o in pairs(e.Obj) do Render.remove(o) end
     esp.Entries[plr] = nil
+    if esp.DropPanel then esp.DropPanel(plr) end
     VisCache[plr] = nil
     RandomPick[plr] = nil
 end
@@ -891,8 +881,344 @@ local function drawText(e, key, text, pos, color, size, alpha, center)
     return t
 end
 
--- Chams drawn with Drawing (no Highlight): every visible body part is projected to the screen and its outline
--- (the convex hull of its 8 corners) is filled with two Quads; the hull edges get thin Lines in the outline colour.
+----- ESP (Qustah layout) -----
+-- The ESP of Qustah (code revision 464), ported as it is: a BillboardGui (300 x 78, 3 studs above the head, always on
+-- top) per player with, from the top, the mode bar ("MD" text on its right), the segmented health bar, the name with
+-- the [username] in grey and the dodge cooldown icon, then "♥ health / max" and "[distance studs]"; a Highlight for
+-- the chams. Nearest players, Target pins, refresh rate, distance throttle and offscreen sleep work as there.
+-- Our own additions stay on top: the box, tracer and skeleton (Drawing), the health / mode colour presets and the
+-- team check. Everything lives in the `esp` table (the main chunk is near Luau's 200 local limit).
+esp.Panels = {}
+esp.Colors = { back = Color3.fromRGB(18, 18, 18), split = Color3.fromRGB(8, 8, 8),
+    red = Color3.fromRGB(195, 85, 85), green = Color3.fromRGB(115, 185, 130) }
+esp.DodgeImage = "rbxassetid://11600642540"
+-- 1234 → "1.23K", 999.6K → "1M" (as in revision 464)
+function esp.Compact(number)
+    number = math.max(tonumber(number) or 0, 0)
+    local divisor, suffix = 1, ""
+    if number >= 1e9 then divisor, suffix = 1e9, "B"
+    elseif number >= 1e6 then divisor, suffix = 1e6, "M"
+    elseif number >= 1e3 then divisor, suffix = 1e3, "K"
+    else return tostring(math.floor(number + 0.5)) end
+    local value = number / divisor
+    if value >= 999.5 and divisor < 1e9 then
+        divisor, suffix = divisor * 1e3, divisor == 1e3 and "M" or "B"
+        value = number / divisor
+    end
+    local decimals = value < 10 and 2 or value < 100 and 1 or 0
+    local text = string.format("%." .. decimals .. "f", value)
+    if decimals > 0 then text = text:gsub("%.?0+$", "") end
+    return text .. suffix
+end
+-- mode amount and its capacity: MaxValue (IntConstrainedValue) or a MaxValue / Max attribute; nil capacity = unknown
+function esp.ModeInfo(char)
+    local combat = FindFirstChild(char, "combat")
+    local mode = combat and FindFirstChild(combat, "mode")
+    if not (mode and mode:IsA("ValueBase")) then return nil end
+    local value = tonumber(mode.Value)
+    if not value then return nil end
+    local capacity
+    local okMax, maxValue = pcall(function() return mode.MaxValue end)
+    if okMax and tonumber(maxValue) and maxValue > 0 then capacity = maxValue end
+    if not capacity then
+        local okAttr, attr = pcall(function() return mode:GetAttribute("MaxValue") or mode:GetAttribute("Max") end)
+        if not okAttr then attr = nil end
+        if type(attr) == "number" and attr > 0 and attr ~= math.huge then capacity = attr end
+    end
+    return value, capacity
+end
+-- Dodge: the player's key slot holding Taijutsu Body / Dodge, and its "cooldown" value (looked up every 2 s per player)
+esp.DodgeCache = setmetatable({}, { __mode = "k" })
+function esp.IsDodgeName(text)
+    local name = tostring(text):lower():gsub("[%s_%-]", "")
+    return name == "taijutsubody" or name == "taijutsudodge" or name == "taijutsubodydodge"
+end
+function esp.DodgeCooldown(plr)
+    local now = os.clock()
+    local cached = esp.DodgeCache[plr]
+    if not cached or now - cached.t > 2 then
+        local value
+        local statz = FindFirstChild(plr, "statz")
+        local keys = statz and FindFirstChild(statz, "keys")
+        if keys then
+            local best
+            for _, v in ipairs(keys:GetDescendants()) do
+                if v:IsA("StringValue") and v.Name ~= "cooldown" and esp.IsDodgeName(v.Value) then
+                    local slot = v
+                    while slot.Parent and slot.Parent ~= keys do slot = slot.Parent end
+                    if slot.Parent == keys and (not best or slot.Name < best.Name) then best = slot end
+                end
+            end
+            value = best and best:FindFirstChild("cooldown", true)
+        end
+        cached = { t = now, v = value }
+        esp.DodgeCache[plr] = cached
+    end
+    local v = cached.v
+    if not (v and v.Parent and v:IsA("ValueBase")) then return nil end
+    return tonumber(v.Value)
+end
+
+-- where the billboards and highlights live: gethui() (hidden from the game) > CoreGui > PlayerGui
+function esp.Root()
+    if esp.Folder and esp.Folder.Parent then return esp.Folder end
+    local parent
+    local ok, hidden = pcall(function() return gethui and gethui() end)
+    if ok and typeof(hidden) == "Instance" then parent = hidden end
+    if not parent then
+        local okCore = pcall(function()
+            local test = Instance.new("Folder")
+            test.Parent = game:GetService("CoreGui")
+            test:Destroy()
+        end)
+        if okCore then parent = game:GetService("CoreGui") end
+    end
+    parent = parent or LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    local folder = Instance.new("Folder")
+    folder.Name = "QustahESP"
+    folder.Parent = parent
+    esp.Folder = folder
+    return folder
+end
+
+function esp.New(class, parent, props)
+    local object = Instance.new(class)
+    for property, value in pairs(props) do object[property] = value end
+    object.Parent = parent
+    return object
+end
+-- The 300 x 78 block, built inside `parent` (the BillboardGui in game, a plain frame in the menu preview).
+-- Returns the panel: its parts and the segment counts it was built with.
+function esp.BuildPanel(parent)
+    local segments = clamp(math.floor(settings.HealthSegments + 0.5), 1, 10)
+    local modeSegments = clamp(math.floor(settings.ModeSegments + 0.5), 1, 10)
+    local panel = { segments = segments, modeSegments = modeSegments, healthSegments = {}, amounts = {}, peak = 1 }
+    local bar = esp.New("Frame", parent, { Name = "HealthBar", Size = UDim2.fromOffset(110, 8), Position = UDim2.new(0.5, -55, 0, 14),
+        BackgroundColor3 = esp.Colors.back, BackgroundTransparency = 0.05, BorderSizePixel = 0, ClipsDescendants = true })
+    esp.New("UICorner", bar, { CornerRadius = UDim.new(0, 3) })
+    esp.New("UIStroke", bar, { Color = Color3.new(), Thickness = 1.25, Transparency = 0, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, LineJoinMode = Enum.LineJoinMode.Round })
+    for index = 1, segments do
+        local slot = esp.New("Frame", bar, { Size = UDim2.new(1 / segments, 0, 1, 0), Position = UDim2.fromScale((index - 1) / segments, 0),
+            BackgroundTransparency = 1, BorderSizePixel = 0, ClipsDescendants = true })
+        local segment = esp.New("Frame", slot, { Size = UDim2.fromScale(1, 1), BackgroundColor3 = esp.Colors.green, BorderSizePixel = 0 })
+        esp.New("UICorner", segment, { CornerRadius = UDim.new(0, 2) })
+        panel.healthSegments[index] = segment
+    end
+    for index = 1, segments - 1 do
+        esp.New("Frame", bar, { Size = UDim2.fromOffset(1, 8), Position = UDim2.new(index / segments, 0, 0, 0), BackgroundColor3 = esp.Colors.split, BorderSizePixel = 0, ZIndex = 3 })
+    end
+    panel.bar = bar
+    panel.name = esp.New("TextLabel", parent, { Name = "PlayerName", Size = UDim2.new(1, 0, 0, 22), Position = UDim2.fromOffset(0, 25), BackgroundTransparency = 1,
+        RichText = true, TextColor3 = Color3.fromRGB(240, 240, 240), TextStrokeColor3 = Color3.new(), TextStrokeTransparency = 0.2,
+        Font = Enum.Font.GothamBold, TextSize = 14, Text = "" })
+    panel.health = esp.New("TextLabel", parent, { Name = "HealthText", Size = UDim2.fromOffset(127, 17), Position = UDim2.new(0.5, -127, 0, 47), BackgroundTransparency = 1,
+        RichText = true, TextXAlignment = Enum.TextXAlignment.Right, TextColor3 = Color3.fromRGB(235, 235, 235), TextStrokeColor3 = Color3.new(),
+        TextStrokeTransparency = 0.25, Font = Enum.Font.GothamBold, TextSize = 11, Text = "" })
+    panel.distance = esp.New("TextLabel", parent, { Name = "Distance", Size = UDim2.fromOffset(127, 17), Position = UDim2.new(0.5, 3, 0, 47), BackgroundTransparency = 1,
+        TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(190, 190, 190), TextStrokeColor3 = Color3.new(),
+        TextStrokeTransparency = 0.25, Font = Enum.Font.GothamBold, TextSize = 11, Text = "[0 studs]" })
+    local modeBar = esp.New("Frame", parent, { Name = "ModeBar", Size = UDim2.fromOffset(110, 8), Position = UDim2.new(0.5, -55, 0, 2),
+        BackgroundColor3 = esp.Colors.back, BackgroundTransparency = 0.05, BorderSizePixel = 0, ClipsDescendants = true })
+    esp.New("UICorner", modeBar, { CornerRadius = UDim.new(0, 3) })
+    esp.New("UIStroke", modeBar, { Color = Color3.new(), Thickness = 1.25, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
+    panel.modeFill = esp.New("Frame", modeBar, { Name = "Fill", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(163, 112, 210), BorderSizePixel = 0 })
+    esp.New("UICorner", panel.modeFill, { CornerRadius = UDim.new(0, 2) })
+    for index = 1, modeSegments - 1 do
+        esp.New("Frame", modeBar, { Size = UDim2.new(0, 1, 1, 0), Position = UDim2.fromScale(index / modeSegments, 0), BackgroundColor3 = esp.Colors.split, BorderSizePixel = 0, ZIndex = 3 })
+    end
+    panel.modeBar = modeBar
+    panel.modeLabel = esp.New("TextLabel", parent, { Name = "ModeAmount", Size = UDim2.fromOffset(100, 14), Position = UDim2.new(0.5, 61, 0, -1),
+        TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 4, BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(190, 150, 230),
+        TextStrokeColor3 = Color3.new(), TextStrokeTransparency = 0.25, Font = Enum.Font.GothamBold, TextSize = 10, Text = "", Visible = false })
+    panel.dodgeIcon = esp.New("ImageLabel", parent, { Name = "Dodge", Size = UDim2.fromOffset(14, 14), Position = UDim2.fromOffset(270, 29),
+        BackgroundTransparency = 1, Image = esp.DodgeImage, Visible = false })
+    panel.dodgeLabel = esp.New("TextLabel", panel.dodgeIcon, { Size = UDim2.fromScale(1, 1), ZIndex = panel.dodgeIcon.ZIndex + 1, BackgroundTransparency = 1,
+        TextColor3 = Color3.fromRGB(235, 235, 235), TextStrokeTransparency = 0, Font = Enum.Font.GothamBold, TextSize = 15, Text = "", Visible = false })
+    return panel
+end
+function esp.Escape(text) return (tostring(text):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")) end
+function esp.Hex(color) return string.format("#%02X%02X%02X", math.floor(color.R * 255 + 0.5), math.floor(color.G * 255 + 0.5), math.floor(color.B * 255 + 0.5)) end
+function esp.SetIf(object, property, value) if object[property] ~= value then object[property] = value end end
+-- Fills the panel. info = { display, user, health (nil: no fakehealth), maxHealth, downed, mode, modeCap, distance, dodge }
+function esp.UpdatePanel(panel, info)
+    -- name: display name, [username] in grey
+    esp.SetIf(panel.name, "Visible", settings.Name or settings.User)
+    local nameText = settings.Name and esp.Escape(info.display) or ""
+    if settings.User then nameText = nameText .. (settings.Name and " " or "") .. '<font color="#AFAFAF">[' .. esp.Escape(info.user) .. "]</font>" end
+    esp.SetIf(panel.name, "Text", nameText)
+    esp.SetIf(panel.name, "TextSize", settings.TextSize)
+    -- health: segments fill one after another; "♥ 1.2K / 2K" in the bar's colour, "♡ … · Death" while downed
+    esp.SetIf(panel.bar, "Visible", settings.HealthBar)
+    esp.SetIf(panel.health, "Visible", settings.HealthText)
+    local healthText
+    if info.health == nil then
+        healthText = info.downed and '<font size="14" color="#FFFFFF">♡</font> -- · Death' or '<font size="14">♥</font> --'
+        for _, segment in ipairs(panel.healthSegments) do esp.SetIf(segment, "Size", UDim2.fromScale(0, 1)) end
+    else
+        local health, maximum = math.max(info.health, 0), math.max(info.maxHealth or 1, 1)
+        local ratio = clamp(health / maximum, 0, 1)
+        local color = healthColor(ratio)
+        for index, segment in ipairs(panel.healthSegments) do
+            esp.SetIf(segment, "Size", UDim2.fromScale(clamp(ratio * panel.segments - (index - 1), 0, 1), 1))
+            esp.SetIf(segment, "BackgroundColor3", color)
+        end
+        healthText = '<font size="14" color="' .. (info.downed and "#FFFFFF" or esp.Hex(color)) .. '">' .. (info.downed and "♡" or "♥") .. "</font> "
+            .. esp.Compact(health) .. " / " .. esp.Compact(maximum) .. (info.downed and " · Death" or "")
+    end
+    esp.SetIf(panel.health, "Text", healthText)
+    -- mode: the bar (relative to the highest value seen when the game gives no maximum) and "MD 50 / 100"
+    esp.SetIf(panel.modeBar, "Visible", settings.ModeBar)
+    esp.SetIf(panel.modeLabel, "Visible", settings.ModeBar and settings.ModeText)
+    if settings.ModeBar then
+        local mode = info.mode or 0
+        panel.peak = math.max(panel.peak, mode)
+        local ratio = clamp(mode / (info.modeCap or panel.peak), 0, 1)
+        local color = modeColorFor(ratio)
+        esp.SetIf(panel.modeFill, "Size", UDim2.fromScale(ratio, 1))
+        esp.SetIf(panel.modeFill, "BackgroundColor3", color)
+        esp.SetIf(panel.modeLabel, "TextColor3", color)
+        esp.SetIf(panel.modeLabel, "Text", "MD " .. esp.Compact(mode) .. (info.modeCap and (" / " .. esp.Compact(info.modeCap)) or " · relative"))
+    end
+    -- dodge icon right after the name: the cooldown in red while it counts down
+    local textWidth = tonumber(panel.name.TextBounds and panel.name.TextBounds.X) or 0
+    local iconSize = settings.TextSize
+    esp.SetIf(panel.dodgeIcon, "Size", UDim2.fromOffset(iconSize, iconSize))
+    esp.SetIf(panel.dodgeIcon, "Position", UDim2.new(0.5, math.ceil(textWidth / 2) + 3, 0, 25 + (22 - iconSize) / 2))
+    esp.SetIf(panel.dodgeLabel, "TextSize", math.max(8, math.floor(iconSize * 0.7 + 0.5)))
+    local cooldown = info.dodge
+    esp.SetIf(panel.dodgeIcon, "Visible", cooldown ~= nil and (settings.Name or settings.User))
+    esp.SetIf(panel.dodgeLabel, "Visible", cooldown ~= nil and cooldown > 0)
+    if cooldown then
+        esp.SetIf(panel.dodgeLabel, "Text", cooldown > 0 and tostring(math.ceil(cooldown)) or "")
+        esp.SetIf(panel.dodgeIcon, "ImageTransparency", cooldown > 0 and 0.25 or 0)
+        esp.SetIf(panel.dodgeLabel, "TextColor3", cooldown > 0 and esp.Colors.red or esp.Colors.green)
+    end
+    -- health text and distance centred together under the name
+    esp.SetIf(panel.distance, "Visible", settings.Distance)
+    esp.SetIf(panel.distance, "Text", "[" .. esp.Compact(info.distance or 0) .. " studs]")
+    local hpWidth = settings.HealthText and (tonumber(panel.health.TextBounds and panel.health.TextBounds.X) or 0) or 0
+    local distanceWidth = settings.Distance and (tonumber(panel.distance.TextBounds and panel.distance.TextBounds.X) or 0) or 0
+    local gap = (hpWidth > 0 and distanceWidth > 0) and 8 or 0
+    local total = hpWidth + distanceWidth + gap
+    esp.SetIf(panel.health, "Size", UDim2.fromOffset(math.max(hpWidth, 1), 17))
+    esp.SetIf(panel.distance, "Size", UDim2.fromOffset(math.max(distanceWidth, 1), 17))
+    esp.SetIf(panel.health, "Position", UDim2.new(0.5, -total / 2, 0, 47))
+    esp.SetIf(panel.distance, "Position", UDim2.new(0.5, -total / 2 + hpWidth + gap, 0, 47))
+end
+
+-- one entry per player: the billboard on the head and the highlight on the character (rebuilt when the character,
+-- its head or the segment counts change)
+function esp.DropPanel(plr)
+    local item = esp.Panels[plr]
+    if not item then return end
+    pcall(function() item.gui:Destroy() end)
+    pcall(function() item.highlight:Destroy() end)
+    esp.Panels[plr] = nil
+end
+function esp.PanelFor(plr, char, head)
+    local item = esp.Panels[plr]
+    if item and (item.char ~= char or item.head ~= head or item.panel.segments ~= clamp(math.floor(settings.HealthSegments + 0.5), 1, 10)
+        or item.panel.modeSegments ~= clamp(math.floor(settings.ModeSegments + 0.5), 1, 10) or not item.gui.Parent) then
+        esp.DropPanel(plr)
+        item = nil
+    end
+    if item then return item end
+    local root = esp.Root()
+    local gui = esp.New("BillboardGui", root, { Name = plr.Name, Adornee = head, Size = UDim2.fromOffset(300, 78), StudsOffset = Vector3.new(0, 3, 0),
+        AlwaysOnTop = true, MaxDistance = settings.ESP_MaxDist, Enabled = false, ResetOnSpawn = false })
+    local highlight = esp.New("Highlight", root, { Name = plr.Name, Adornee = char, FillColor = settings.ChamsColor, FillTransparency = 0.55,
+        OutlineColor = settings.ChamsOutline, OutlineTransparency = 0.1, DepthMode = Enum.HighlightDepthMode.AlwaysOnTop, Enabled = false })
+    item = { char = char, head = head, gui = gui, highlight = highlight, panel = esp.BuildPanel(gui), lastRefresh = 0 }
+    esp.Panels[plr] = item
+    return item
+end
+function esp.HidePanel(item)
+    esp.SetIf(item.gui, "Enabled", false)
+    esp.SetIf(item.highlight, "Enabled", false)
+end
+-- one pass over the players (run at the ESP refresh rate)
+function esp.UpdatePanels()
+    local camera = Workspace.CurrentCamera
+    if not camera then return end
+    local camPos = camera.CFrame.Position
+    local candidates = {}
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            local char = plr.Character
+            local head = char and char:FindFirstChild("Head")
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if not (settings.ESP_Enabled and head and root and hum) or (settings.ESP_TeamCheck and isTeammate(plr)) then
+                if esp.Panels[plr] then
+                    if not (head and root and hum) then esp.DropPanel(plr) else esp.HidePanel(esp.Panels[plr]) end
+                end
+            else
+                candidates[#candidates + 1] = { plr = plr, char = char, head = head, root = root, hum = hum, dist = (camPos - root.Position).Magnitude }
+            end
+        end
+    end
+    -- (left players: Parent is nil; not compared with Players, a cloneref copy is never == the real service)
+    for plr in pairs(esp.Panels) do if plr.Parent == nil then esp.DropPanel(plr) end end
+    table.sort(candidates, function(a, b) return a.dist < b.dist end)
+    local limit = clamp(math.floor(settings.PlayerLimit or 30), 5, 30)
+    local now = os.clock()
+    for index, c in ipairs(candidates) do
+        -- each player in its own pcall: a broken character hides only its own panel and is reported once
+        local ok, err = pcall(esp.RefreshPanel, c, index, limit, now, camera)
+        if not ok then
+            local item = esp.Panels[c.plr]
+            if item then esp.HidePanel(item) end
+            hubError("ESP", err)
+        end
+    end
+end
+function esp.RefreshPanel(c, index, limit, now, camera)
+    local pinned = settings.Pins[c.plr.UserId] == true
+    local item = esp.PanelFor(c.plr, c.char, c.head)
+    if index > limit and not pinned then
+        esp.HidePanel(item)
+    else
+        local point, onScreen = camera:WorldToViewportPoint(c.head.Position + Vector3.new(0, 3, 0))
+        local inFront = onScreen and point.Z > 0
+        if settings.OffscreenSleep and not inFront then
+            esp.HidePanel(item)
+        elseif not (settings.DistanceThrottle and not pinned and c.dist > settings.ESP_MaxDist * 0.55 and now - item.lastRefresh < 0.45) then
+            item.lastRefresh = now
+            local inRange = pinned or c.dist <= settings.ESP_MaxDist
+            esp.SetIf(item.gui, "MaxDistance", pinned and 1e9 or settings.ESP_MaxDist)
+            local visible = inFront and inRange
+            esp.SetIf(item.gui, "Enabled", visible)
+            if visible then
+                local fake = c.char:FindFirstChild("fakehealth")
+                local mode, modeCap = esp.ModeInfo(c.char)
+                esp.UpdatePanel(item.panel, {
+                    display = c.plr.DisplayName, user = c.plr.Name,
+                    health = fake and fake:IsA("ValueBase") and tonumber(fake.Value) or nil, maxHealth = c.hum.MaxHealth,
+                    downed = c.char:FindFirstChild("stayonground") ~= nil,
+                    mode = mode, modeCap = modeCap, distance = c.dist, dodge = esp.DodgeCooldown(c.plr),
+                })
+            end
+            -- chams: the Highlight (Solid fills, Outline keeps only the edge; Through walls = always on top)
+            local h = item.highlight
+            local chams = settings.Chams and inRange
+            esp.SetIf(h, "Enabled", chams)
+            if chams then
+                esp.SetIf(h, "FillColor", settings.ChamsColor)
+                esp.SetIf(h, "OutlineColor", settings.ChamsOutline)
+                esp.SetIf(h, "FillTransparency", settings.ChamsStyle == "Outline" and 1 or settings.ChamsFill)
+                esp.SetIf(h, "OutlineTransparency", settings.ChamsOutlineAlpha)
+                esp.SetIf(h, "DepthMode", settings.ChamsWalls and Enum.HighlightDepthMode.AlwaysOnTop or Enum.HighlightDepthMode.Occluded)
+            end
+        end
+    end
+end
+
+function esp.DestroyPanels()
+    for plr in pairs(esp.Panels) do esp.DropPanel(plr) end
+    if esp.Folder then pcall(function() esp.Folder:Destroy() end) esp.Folder = nil end
+end
+
+-- Outline of a body part for the chams preview: the convex hull of its 8 projected corners.
 local function hull(points)                                       -- monotone chain, counter-clockwise
     table.sort(points, function(a, b) return a.X < b.X or (a.X == b.X and a.Y < b.Y) end)
     local function cross(o, a, b) return (a.X - o.X) * (b.Y - o.Y) - (a.Y - o.Y) * (b.X - o.X) end
@@ -915,55 +1241,11 @@ local cornerSigns = {
     vec3(1, 1, 1), vec3(1, 1, -1), vec3(1, -1, 1), vec3(1, -1, -1),
     vec3(-1, 1, 1), vec3(-1, 1, -1), vec3(-1, -1, 1), vec3(-1, -1, -1),
 }
--- only the humanoid's own body (R6 and R15 limbs): no weapons, effects or extra parts the game puts in the model
+-- the humanoid's own body parts (R6 and R15 limbs), outlined in the chams preview
 esp.ChamsBody = {}
 for _, name in ipairs({ "Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg",
     "UpperTorso", "LowerTorso", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm", "RightHand",
     "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot" }) do esp.ChamsBody[name] = true end
-local function updateChams(e, char, color, alpha)
-    local fillAlpha = (1 - settings.ChamsFill) * alpha
-    local solid = settings.ChamsStyle ~= "Outline"                  -- "Outline": only the part edges, no fill
-    local n = 0
-    for _, part in ipairs(char:GetChildren()) do
-        if n >= 16 then break end
-        if part:IsA("BasePart") and esp.ChamsBody[part.Name] and part.Transparency < 1 then
-            local cf, half = part.CFrame, part.Size / 2
-            local points, behind = {}, false
-            for i, sign in ipairs(cornerSigns) do
-                local p, _, depth = toScreen((cf * CFrame.new(half * sign)).Position)
-                if depth <= 0 then behind = true break end
-                points[i] = p
-            end
-            if not behind then
-                local h = hull(points)
-                if #h >= 3 then
-                    n += 1
-                    local key = "cham" .. n
-                    local q1 = solid and use(e, key .. "a", "Quad")
-                    if q1 then
-                        q1.PointA, q1.PointB, q1.PointC, q1.PointD = h[1], h[2], h[3], h[4] or h[3]
-                        q1.Color, q1.Filled, q1.Thickness, q1.Transparency, q1.ZIndex, q1.Visible = color, true, 1, fillAlpha, 0, true
-                    end
-                    if solid and #h > 4 then
-                        local q2 = use(e, key .. "b", "Quad")
-                        if q2 then
-                            q2.PointA, q2.PointB, q2.PointC, q2.PointD = h[1], h[4], h[5], h[6] or h[5]
-                            q2.Color, q2.Filled, q2.Thickness, q2.Transparency, q2.ZIndex, q2.Visible = color, true, 1, fillAlpha, 0, true
-                        end
-                    end
-                    for i = 1, #h do
-                        local l = use(e, key .. "e" .. i, "Line")
-                        if l then
-                            l.From, l.To, l.Color, l.Thickness, l.Transparency, l.ZIndex, l.Visible =
-                                h[i], h[i % #h + 1], settings.ChamsOutline, 1, alpha, 1, true
-                        end
-                    end
-                end
-            end
-        end
-    end
-end
-
 local function updatePlayer(plr)
     local e = entry(plr)
     local char, hum, root = getCharacter(plr)
@@ -971,34 +1253,27 @@ local function updatePlayer(plr)
         e.chamsReady = false
         return hideUnused(e)
     end
+    -- pinned players ignore the range and the nearest-players limit (esp.Allowed is filled each frame by the loop)
+    local pinned = settings.Pins[plr.UserId] == true
     local dist = (root.Position - Camera.CFrame.Position).Magnitude
-    if dist > settings.ESP_MaxDist then
+    if not pinned and (dist > settings.ESP_MaxDist or (esp.Allowed and not esp.Allowed[plr])) then
         e.chamsReady = false
         return hideUnused(e)
     end
-    if e.char ~= char then e.char, e.chamsReady = char, false end
+    if e.char ~= char then e.char = char end
     local head = char:FindFirstChild("Head") or root
     local enemy = not isTeammate(plr)
     local color = enemy and settings.ColEnemy or settings.ColAlly
     local alpha = 1
 
+    -- (chams and the name / health / mode block are the BillboardGui + Highlight above: esp.UpdatePanels)
     local rootScreen, onScreen = toScreen(root.Position)
-    if onScreen and settings.Chams and (settings.ChamsWalls or isVisible(plr, char, head)) then
-        local ok, err = pcall(updateChams, e, char, color, alpha)
-        e.chamsReady = ok
-        if not ok then
-            for key in pairs(e.Obj) do if key:sub(1, 4) == "cham" then e.Stamp[key] = nil end end
-            hubError("ESP Chams", err)
-        end
-    else
-        e.chamsReady = false
-    end
-
     if not onScreen then
         return hideUnused(e)
     end
 
-    -- box: the top of the head and the bottom of the feet are projected (stable, not affected by accessories)
+    -- extras around the body: box (the top of the head and the bottom of the feet projected: stable, not affected by
+    -- accessories), tracer and skeleton
     local top = toScreen(root.Position + vec3(0, 2.6, 0))
     local bottom = toScreen(root.Position - vec3(0, 3, 0))
     local h = max(bottom.Y - top.Y, 6)
@@ -1023,88 +1298,15 @@ local function updatePlayer(plr)
         drawLine(e, "b8", vec2(boxRight, boxBottom), vec2(boxRight, boxBottom - cy), color, 1, alpha)
     end
 
-    local health, maxHealth = healthOf(hum)
-    local hp = clamp(health / maxHealth, 0, 1)
-    local barX = boxLeft - 6
-    -- a vertical bar: a black back and the fill from the bottom, in whole pixels (sub-pixel squares flicker and split
-    -- into stray lines on some executors); an empty fill is not drawn at all (a 0 px square shows as a line)
-    local barHeight = boxBottom - boxTop
-    local function drawBar(key, x, fraction, color)
-        local bg = use(e, key .. "_bg", "Square")
-        if bg then bg.Position, bg.Size, bg.Color, bg.Filled, bg.Transparency, bg.ZIndex, bg.Visible = vec2(x - 1, boxTop - 1), vec2(4, barHeight + 2), black, true, alpha, 1, true end
-        local fill = floor(barHeight * fraction + 0.5)
-        if fill >= 1 then
-            local bar = use(e, key, "Square")
-            if bar then bar.Position, bar.Size, bar.Color, bar.Filled, bar.Transparency, bar.ZIndex, bar.Visible = vec2(x, boxBottom - fill), vec2(2, fill), color, true, alpha, 2, true end
-        end
-    end
-    if settings.HealthBar then drawBar("hb", barX, hp, healthColor(hp)) end
-    local leftEdge = settings.HealthBar and barX - 1 or boxLeft          -- where the next thing on the left may start
-    local mode = settings.ModeBar and modeOf(char)
-    if mode then                                                        -- mode meter, just left of the health bar
-        local modeX = leftEdge - 5
-        drawBar("mb", modeX, mode, modeColorFor(mode))
-        leftEdge = modeX - 1
-    end
-
-    local size = settings.TextSize
-    if settings.Name then
-        local name = settings.DisplayName and plr.DisplayName or plr.Name
-        drawText(e, "name", name, vec2(rootScreen.X, boxTop - size - 4), color, size, alpha, true)
-    end
-    if settings.HealthText then
-        local ok, err = pcall(function()
-            local txt = tostring(floor(health + 0.5))
-            local textSize = size - 1
-            local t = use(e, "hp", "Text")
-            if not t then return end
-            t.Text, t.Size, t.Color = txt, textSize, healthColor(hp)
-            t.Center, t.Outline, t.Transparency, t.ZIndex = false, true, alpha, 3
-            local okB, bounds = pcall(function() return t.TextBounds end)
-            local estimate = #txt * textSize * 0.6
-            local tw = okB and typeof(bounds) == "Vector2" and bounds.X > 0 and bounds.X or estimate
-            local yMin = boxTop - 2
-            local yMax = max(yMin, boxBottom - textSize)
-            local y = clamp(boxTop + h * (1 - hp) - textSize / 2, yMin, yMax)
-            t.Position, t.Visible = vec2(leftEdge - 2 - tw, y), true
-        end)
-        if not ok then
-            local broken = e.Obj.hp
-            if broken then Render.remove(broken) end
-            e.Obj.hp, e.Stamp.hp, e.Vis.hp = nil, nil, nil
-            hubError("ESP Health Text", err)
-        end
-    end
-    local bottomLine = {}
-    if settings.Distance then
-        bottomLine[#bottomLine + 1] = settings.DistUnit == "Meters" and (floor(dist * 0.28) .. "m") or (floor(dist) .. " studs")
-    end
-    if #bottomLine > 0 then
-        drawText(e, "info", table.concat(bottomLine, "  ·  "), vec2(rootScreen.X, boxBottom + 3), rgb(0.87, 0.87, 0.87), size - 1, alpha, true)
-    end
-
     -- line style (Visuals › Extra › Line style): one thickness / transparency for every line, optionally rainbow
     local lineColor = settings.LineRainbow and Color3.fromHSV((os.clock() * 0.25) % 1, 0.75, 1) or color
     local lineAlpha = alpha * (1 - settings.LineAlpha)
     local lineThick = settings.LineThick
-    if settings.HeadDot then
-        local hs = toScreen(head.Position)
-        local c = use(e, "head", "Circle")
-        if c then
-            c.Position, c.Radius, c.Color, c.Filled, c.NumSides, c.Thickness, c.Transparency, c.ZIndex, c.Visible =
-                hs, max(2, h / 22), lineColor, true, 12, 1, lineAlpha, 2, true
-        end
-    end
     if settings.Tracer then
         local vs = Camera.ViewportSize
         local from = settings.TracerFrom == "Mouse" and UserInputService:GetMouseLocation()
             or settings.TracerFrom == "Center" and vs / 2 or vec2(vs.X / 2, vs.Y)
         drawLine(e, "tracer", from, vec2(rootScreen.X, boxBottom), lineColor, lineThick, lineAlpha * 0.8)
-    end
-    if settings.LookDir then
-        local a = toScreen(head.Position)
-        local b = toScreen(head.Position + head.CFrame.LookVector * 4)
-        drawLine(e, "look", a, b, lineColor, lineThick, lineAlpha)
     end
     if settings.Skeleton then
         local pairsList = char:FindFirstChild("UpperTorso") and skeletonR15 or skeletonR6
@@ -1460,7 +1662,7 @@ local EspPage = Visuals:Page("ESP")
 local ExtraPage = Visuals:Page("Extra", { Compact = true })
 local StylePage = Visuals:Page("Style")
 
-local General = EspPage:Card({ Title = "General", Icon = "scan-eye" })
+local General = EspPage:Card({ Title = "General", Icon = "scan-eye", Side = "Left" })
 General:Toggle({ Title = "ESP enabled", Flag = "esp_enabled", Default = false, Bindable = true,
     Callback = function(on)
         settings.ESP_Enabled = on
@@ -1468,58 +1670,62 @@ General:Toggle({ Title = "ESP enabled", Flag = "esp_enabled", Default = false, B
         if on and not Render.Available then notify("ESP", "Your executor has no Drawing API, ESP can't draw", "triangle-alert", "warning") end
     end })
 General:Toggle({ Title = "Team check", Desc = "Don't show teammates", Flag = "esp_team", Default = true, Callback = set("ESP_TeamCheck") })
-General:Slider({ Title = "Max distance", Flag = "esp_maxdist", Min = 100, Max = 5000, Default = 1500, Step = 50, Suffix = " studs", Callback = set("ESP_MaxDist") })
+General:Slider({ Title = "Range", Flag = "esp_maxdist", Min = 100, Max = 5000, Default = 2500, Step = 50, Suffix = " studs", Callback = set("ESP_MaxDist") })
+General:Slider({ Title = "Nearest players", Desc = "Only the closest ones are drawn", Flag = "esp_limit", Min = 5, Max = 30, Default = 30, Callback = set("PlayerLimit") })
+General:Segment({ Title = "Refresh rate", Flag = "esp_rate", Items = { "Smooth", "Balanced", "Low" }, Default = "Balanced", Callback = set("RefreshRate") })
+General:Toggle({ Title = "Distance throttle", Desc = "Far ESP updates less often", Flag = "esp_throttle", Default = false, Callback = set("DistanceThrottle") })
+General:Toggle({ Title = "Offscreen sleep", Desc = "Pauses ESP outside the screen", Flag = "esp_sleep", Default = false, Callback = set("OffscreenSleep") })
 
-local BoxCard = EspPage:Card({ Title = "Box", Icon = "square-dashed", Side = "Left" })
-BoxCard:Toggle({ Title = "Box", Flag = "esp_box", Default = true, Callback = set("Box") })
-BoxCard:Segment({ Title = "Style", Flag = "esp_boxstyle", Items = { "Corner", "Full" }, Default = "Corner", Callback = set("BoxStyle") })
-BoxCard:Slider({ Title = "Corner size", Flag = "esp_corner", Min = 10, Max = 100, Default = 30, Suffix = "%",
-    DependsOn = { Flag = "esp_boxstyle", Value = "Corner", Mode = "Hide", Reason = "" }, Callback = set("BoxCorner") })
-BoxCard:Toggle({ Title = "Fill", Flag = "esp_fill", Default = false, Callback = set("BoxFill") })
-BoxCard:Slider({ Title = "Fill transparency", Flag = "esp_fillalpha", Min = 0, Max = 100, Default = 85, Suffix = "%", DependsOn = { Flag = "esp_fill", Reason = "" },
-    Callback = function(v) settings.BoxFillAlpha = v / 100 end })
-BoxCard:Toggle({ Title = "Health bar", Flag = "esp_hbar", Default = true, Callback = set("HealthBar") })
-BoxCard:Toggle({ Title = "Mode bar", Desc = "Shindo mode meter, next to the health bar", Flag = "esp_mbar", Default = true, Callback = set("ModeBar") })
-BoxCard:Toggle({ Title = "Outline", Flag = "esp_outline", Default = true, Callback = set("Outline") })
+-- player info, health and mode: the overhead block (see "ESP overhead")
+do
+local InfoCard = EspPage:Card({ Title = "Player info", Icon = "user", Side = "Left" })
+InfoCard:Toggle({ Title = "Name", Desc = "The player's visible name", Flag = "esp_name", Default = true, Callback = set("Name") })
+InfoCard:Toggle({ Title = "Username", Desc = "The account name, in grey", Flag = "esp_user", Default = true, Callback = set("User") })
+InfoCard:Toggle({ Title = "Distance", Flag = "esp_dist", Default = true, Callback = set("Distance") })
+InfoCard:Slider({ Title = "Name text size", Flag = "esp_tsize", Min = 10, Max = 22, Default = 14, Suffix = " px", Callback = set("TextSize") })
+
+local HealthCard = EspPage:Card({ Title = "Health", Icon = "heart", Side = "Left" })
+HealthCard:Toggle({ Title = "Health bar", Desc = "Segmented health indicator", Flag = "esp_hbar", Default = true, Callback = set("HealthBar") })
+HealthCard:Toggle({ Title = "Health text", Desc = "Current / maximum health", Flag = "esp_hptext", Default = true, Callback = set("HealthText") })
+HealthCard:Slider({ Title = "Health bar segments", Flag = "esp_hpseg", Min = 1, Max = 10, Default = 5, DependsOn = { Flag = "esp_hbar", Reason = "" }, Callback = set("HealthSegments") })
+end
 
 ----- ESP live preview -----
--- Your own character (a still copy in a Viewport) with the ESP drawn over it as it would look in game: box, fill,
--- health and mode bars, name, health number and the distance / weapon line. Values are your real ones
--- (fakehealth, combat.mode, held tool) and follow the settings at once. Drawn in the menu, so this part is GUI.
+-- Your own character (a still copy in a Viewport) with the ESP drawn over it as it would look in game: the overhead
+-- block (the same panel the in-game BillboardGui shows) and the box. Values are your real ones (fakehealth,
+-- combat.mode, your dodge cooldown) and follow the settings at once. Drawn in the menu, so this part is GUI.
 local PreviewCard = EspPage:Card({ Title = "Preview", Icon = "scan-eye", Side = "Right" })
-local espView = PreviewCard:Viewport({ Height = 190, Spin = false })
+local espView = PreviewCard:Viewport({ Height = 230, Spin = false })
 do
     local holder = espView.View and espView.View.Parent
-    local overlay, parts = nil, {}
-    local function frame(name, z)
-        local f = Instance.new("Frame")
-        f.Name, f.BorderSizePixel, f.ZIndex, f.Visible = name, 0, z or 2, false
-        f.Parent = overlay
-        parts[name] = f
-        return f
-    end
-    local function text(name)
-        local t = Instance.new("TextLabel")
-        t.Name, t.BackgroundTransparency, t.ZIndex, t.Visible = name, 1, 3, false
-        t.Font, t.TextStrokeTransparency, t.TextStrokeColor3 = Enum.Font.GothamMedium, 0.2, Color3.new(0, 0, 0)
-        t.Size = UDim2.fromOffset(200, 16)
-        t.Parent = overlay
-        parts[name] = t
-        return t
-    end
+    local overlay, pool, used = nil, {}, {}
     if holder then
         overlay = Instance.new("Frame")
         overlay.Name, overlay.BackgroundTransparency, overlay.Size, overlay.ZIndex = "EspOverlay", 1, UDim2.fromScale(1, 1), 2
+        overlay.ClipsDescendants = true
         overlay.Parent = holder
-        frame("fill", 2)
-        for i = 1, 8 do frame("o" .. i, 2) frame("b" .. i, 3) end            -- box edges: outline under, colour over
-        frame("hbBg", 2) frame("hb", 3) frame("mbBg", 2) frame("mb", 3)
-        text("name") text("hp") text("info")
     end
-    -- a line as a frame (only straight ones are needed here)
-    local function bar(f, x, y, w, h, color, z)
-        f.Position, f.Size, f.BackgroundColor3, f.Visible = UDim2.fromOffset(x, y), UDim2.fromOffset(math.max(w, 1), math.max(h, 1)), color, true
-        if z then f.ZIndex = z end
+    -- GUI objects reused by key ("rect3", "text1", ...), like the Drawing objects in game
+    local function get(key, class)
+        local object = pool[key]
+        if not object then
+            object = Instance.new(class)
+            object.Name, object.BorderSizePixel = key, 0
+            if class == "TextLabel" then
+                object.BackgroundTransparency, object.Font = 1, Enum.Font.GothamBold
+                object.TextStrokeColor3, object.TextStrokeTransparency = Color3.new(0, 0, 0), 0.25
+                object.TextXAlignment, object.TextYAlignment = Enum.TextXAlignment.Left, Enum.TextYAlignment.Top
+            end
+            object.Parent = overlay
+            pool[key] = object
+        end
+        used[key] = true
+        object.Visible = true
+        return object
+    end
+    local function rect(key, x, y, w, h, color, z)
+        local f = get(key, "Frame")
+        f.Position, f.Size, f.BackgroundColor3, f.ZIndex = UDim2.fromOffset(x, y), UDim2.fromOffset(math.max(w, 1), math.max(h, 1)), color, 2 + (z or 0)
     end
     local function shown(gui)
         while gui do
@@ -1538,75 +1744,70 @@ do
         local sy = (rel.Y / -rel.Z) * f
         return vec2((sx + 1) / 2 * size.X, (1 - sy) / 2 * size.Y)
     end
-    local function hideAll() for _, f in pairs(parts) do f.Visible = false end end
+    local previewBox, previewPanel
     local function drawPreview()
         if not overlay then return end
-        hideAll()
+        table.clear(used)
         local model = espView.Model
         local root = model and model:FindFirstChild("HumanoidRootPart")
+        local head = model and model:FindFirstChild("Head")
         local size = holder.AbsoluteSize
-        if not root or size.X < 10 or size.Y < 10 then return end
-        local top, bottom = project(root.Position + vec3(0, 2.6, 0), size), project(root.Position - vec3(0, 3, 0), size)
-        if not (top and bottom) then return end
-        local h = math.max(bottom.Y - top.Y, 6)
-        local w = h * 0.62
-        local x1, y1, x2, y2 = top.X - w / 2, top.Y, top.X + w / 2, top.Y + h
-        local color = settings.ColEnemy
-        local outline = settings.Outline
-        if settings.BoxFill then
-            bar(parts.fill, x1, y1, w, h, color)
-            parts.fill.BackgroundTransparency = settings.BoxFillAlpha
-        end
-        if settings.Box then
-            local edges
-            if settings.BoxStyle == "Corner" then
-                local cx, cy = w * settings.BoxCorner / 100 / 2, h * settings.BoxCorner / 100 / 2
-                edges = { { x1, y1, cx, 1 }, { x1, y1, 1, cy }, { x2 - cx, y1, cx, 1 }, { x2 - 1, y1, 1, cy },
-                          { x1, y2 - 1, cx, 1 }, { x1, y2 - cy, 1, cy }, { x2 - cx, y2 - 1, cx, 1 }, { x2 - 1, y2 - cy, 1, cy } }
-            else
-                edges = { { x1, y1, w, 1 }, { x1, y2 - 1, w, 1 }, { x1, y1, 1, h }, { x2 - 1, y1, 1, h } }
+        if root and size.X >= 10 and size.Y >= 10 then
+            local color = settings.ColEnemy
+            -- box (extra)
+            local top, bottom = project(root.Position + vec3(0, 2.6, 0), size), project(root.Position - vec3(0, 3, 0), size)
+            if top and bottom and settings.Box then
+                local h = math.max(bottom.Y - top.Y, 6)
+                local w = h * 0.62
+                local x1, y1, x2, y2 = top.X - w / 2, top.Y, top.X + w / 2, top.Y + h
+                if settings.BoxFill then
+                    rect("fill", x1, y1, w, h, color, 0)
+                    pool.fill.BackgroundTransparency = settings.BoxFillAlpha
+                end
+                local edges
+                if settings.BoxStyle == "Corner" then
+                    local cx, cy = w * settings.BoxCorner / 100 / 2, h * settings.BoxCorner / 100 / 2
+                    edges = { { x1, y1, cx, 1 }, { x1, y1, 1, cy }, { x2 - cx, y1, cx, 1 }, { x2 - 1, y1, 1, cy },
+                              { x1, y2 - 1, cx, 1 }, { x1, y2 - cy, 1, cy }, { x2 - cx, y2 - 1, cx, 1 }, { x2 - 1, y2 - cy, 1, cy } }
+                else
+                    edges = { { x1, y1, w, 1 }, { x1, y2 - 1, w, 1 }, { x1, y1, 1, h }, { x2 - 1, y1, 1, h } }
+                end
+                for i, e in ipairs(edges) do
+                    if settings.Outline then rect("bo" .. i, e[1] - 1, e[2] - 1, e[3] + 2, e[4] + 2, Color3.new(0, 0, 0), 1) end
+                    rect("b" .. i, e[1], e[2], e[3], e[4], color, 2)
+                end
             end
-            for i, e in ipairs(edges) do
-                if outline then bar(parts["o" .. i], e[1] - 1, e[2] - 1, e[3] + 2, e[4] + 2, Color3.new(0, 0, 0)) end
-                bar(parts["b" .. i], e[1], e[2], e[3], e[4], color)
+            -- the overhead block: the same panel as in game (esp.BuildPanel / UpdatePanel) in a plain 300 x 78 frame,
+            -- centred 3 studs above the head and kept inside the preview (at least 40 px from the top)
+            local anchor = project((head or root).Position + vec3(0, head and 3 or 5, 0), size)
+            if previewPanel and (previewPanel.segments ~= clamp(math.floor(settings.HealthSegments + 0.5), 1, 10)
+                or previewPanel.modeSegments ~= clamp(math.floor(settings.ModeSegments + 0.5), 1, 10)) then
+                previewBox:Destroy()
+                previewBox, previewPanel = nil, nil
+            end
+            if not previewBox then
+                previewBox = Instance.new("Frame")
+                previewBox.Name, previewBox.BackgroundTransparency, previewBox.Size, previewBox.ZIndex = "Panel", 1, UDim2.fromOffset(300, 78), 5
+                previewBox.Parent = overlay
+                previewPanel = esp.BuildPanel(previewBox)
+            end
+            previewBox.Visible = anchor ~= nil
+            if anchor then
+                previewBox.Position = UDim2.fromOffset(math.floor(anchor.X - 150), math.floor(math.max(anchor.Y, 40) - 39))
+                local char = character()
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                local fake = char and char:FindFirstChild("fakehealth")
+                local mode, modeCap
+                if char then mode, modeCap = esp.ModeInfo(char) end
+                esp.UpdatePanel(previewPanel, {
+                    display = LocalPlayer.DisplayName, user = LocalPlayer.Name,
+                    health = fake and fake:IsA("ValueBase") and tonumber(fake.Value) or nil, maxHealth = hum and hum.MaxHealth or 100,
+                    downed = char ~= nil and char:FindFirstChild("stayonground") ~= nil,
+                    mode = mode, modeCap = modeCap, distance = 42, dodge = esp.DodgeCooldown(LocalPlayer),
+                })
             end
         end
-        local char = character()
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        local health, maxHealth = 100, 100
-        if hum then health, maxHealth = healthOf(hum) end
-        local hp = clamp(health / maxHealth, 0, 1)
-        local leftEdge = x1
-        if settings.HealthBar then
-            bar(parts.hbBg, x1 - 7, y1 - 1, 4, h + 2, Color3.new(0, 0, 0))
-            bar(parts.hb, x1 - 6, y1 + h * (1 - hp), 2, h * hp, healthColor(hp))
-            leftEdge = x1 - 7
-        end
-        local mode = settings.ModeBar and char and modeOf(char)
-        if mode then
-            bar(parts.mbBg, leftEdge - 5, y1 - 1, 4, h + 2, Color3.new(0, 0, 0))
-            bar(parts.mb, leftEdge - 4, y1 + h * (1 - mode), 2, h * mode, modeColorFor(mode))
-            leftEdge = leftEdge - 5
-        end
-        local textSize = settings.TextSize
-        if settings.Name then
-            local t = parts.name
-            t.Text, t.TextColor3, t.TextSize = settings.DisplayName and LocalPlayer.DisplayName or LocalPlayer.Name, color, textSize
-            t.TextXAlignment, t.Position, t.Visible = Enum.TextXAlignment.Center, UDim2.fromOffset(top.X - 100, y1 - textSize - 6), true
-        end
-        if settings.HealthText then
-            local t = parts.hp
-            t.Text, t.TextColor3, t.TextSize = tostring(math.floor(health + 0.5)), healthColor(hp), textSize - 1
-            t.TextXAlignment, t.Visible = Enum.TextXAlignment.Right, true
-            t.Position = UDim2.fromOffset(leftEdge - 3 - 200, clamp(y1 + h * (1 - hp) - textSize / 2, y1 - 2, y2 - textSize))
-        end
-        local line = {}
-        if settings.Distance then line[#line + 1] = settings.DistUnit == "Meters" and "12m" or "42 studs" end
-        if #line > 0 then
-            local t = parts.info
-            t.Text, t.TextColor3, t.TextSize = table.concat(line, "  ·  "), rgb(0.87, 0.87, 0.87), textSize - 1
-            t.TextXAlignment, t.Position, t.Visible = Enum.TextXAlignment.Center, UDim2.fromOffset(top.X - 100, y2 + 3), true
-        end
+        for key, object in pairs(pool) do if not used[key] then object.Visible = false end end
     end
     -- the copy follows your character (respawns, outfit changes need a respawn); drawn ~15 times a second, only while on screen
     local function loadCharacter(char)
@@ -1628,19 +1829,37 @@ do
     end)
 end
 
-local TextCard = EspPage:Card({ Title = "Text", Icon = "type", Side = "Right" })
-TextCard:Toggle({ Title = "Name", Flag = "esp_name", Default = true, Callback = set("Name") })
-TextCard:Toggle({ Title = "Use display name", Flag = "esp_dname", Default = true, DependsOn = { Flag = "esp_name", Reason = "" }, Callback = set("DisplayName") })
-TextCard:Toggle({ Title = "Health number", Flag = "esp_hptext", Default = true, Callback = set("HealthText") })
-TextCard:Toggle({ Title = "Distance", Flag = "esp_dist", Default = true, Callback = set("Distance") })
-TextCard:Segment({ Title = "Unit", Flag = "esp_unit", Items = { "Studs", "Meters" }, Default = "Studs", DependsOn = { Flag = "esp_dist", Reason = "" }, Callback = set("DistUnit") })
-TextCard:Slider({ Title = "Text size", Flag = "esp_tsize", Min = 9, Max = 20, Default = 13, Suffix = " px", Callback = set("TextSize") })
+do
+local ModeCard = EspPage:Card({ Title = "Mode", Icon = "zap", Side = "Right" })
+ModeCard:Toggle({ Title = "Mode bar", Desc = "Shows player mode HP", Flag = "esp_mbar", Default = true, Callback = set("ModeBar") })
+ModeCard:Toggle({ Title = "Mode text", Desc = "Current mode amount", Flag = "esp_mtext", Default = false, DependsOn = { Flag = "esp_mbar", Reason = "" }, Callback = set("ModeText") })
+ModeCard:Slider({ Title = "Mode bar segments", Flag = "esp_mseg", Min = 1, Max = 10, Default = 1, DependsOn = { Flag = "esp_mbar", Reason = "" }, Callback = set("ModeSegments") })
+
+-- the box around the body is an extra on top of the Qustah layout (off by default)
+local BoxCard = EspPage:Card({ Title = "Box", Icon = "square-dashed", Side = "Right" })
+BoxCard:Toggle({ Title = "Box", Flag = "esp_box", Default = false, Callback = set("Box") })
+BoxCard:Segment({ Title = "Style", Flag = "esp_boxstyle", Items = { "Corner", "Full" }, Default = "Corner", Callback = set("BoxStyle") })
+BoxCard:Slider({ Title = "Corner size", Flag = "esp_corner", Min = 10, Max = 100, Default = 30, Suffix = "%",
+    DependsOn = { Flag = "esp_boxstyle", Value = "Corner", Mode = "Hide", Reason = "" }, Callback = set("BoxCorner") })
+BoxCard:Toggle({ Title = "Fill", Flag = "esp_fill", Default = false, Callback = set("BoxFill") })
+BoxCard:Slider({ Title = "Fill transparency", Flag = "esp_fillalpha", Min = 0, Max = 100, Default = 85, Suffix = "%", DependsOn = { Flag = "esp_fill", Reason = "" },
+    Callback = function(v) settings.BoxFillAlpha = v / 100 end })
+BoxCard:Toggle({ Title = "Outline", Desc = "Black edge behind box and line strokes", Flag = "esp_outline", Default = true, Callback = set("Outline") })
+
+-- Target Pins: pinned players ignore the range and the nearest-players limit
+local PinsCard = EspPage:Card({ Title = "Target pins", Icon = "pin", Wide = "Bottom", Desc = "Pinned players ignore range and Nearest players" })
+PinsCard:PlayerList({ Flag = "esp_pins", Multi = true, Height = 120, Callback = function(ids)
+    local pins = {}
+    for _, id in ipairs(type(ids) == "table" and ids or { ids }) do if tonumber(id) then pins[tonumber(id)] = true end end
+    settings.Pins = pins
+end })
+end
 
 do -- Visuals › Extra and Style (a block: their locals end here)
 local Chams = ExtraPage:Card({ Title = "Chams", Icon = "paint-bucket" })
 ----- Chams preview -----
 -- Your character (a still copy) painted the way chams would paint it: each part tinted by the fill colour and
--- transparency, and its outline drawn in the outline colour (same part hulls as the in-game chams). Menu GUI.
+-- transparency, and its outline drawn in the outline colour and transparency (the game uses a Highlight). Menu GUI.
 local chamsRow = Chams:Row({ Gap = 10 })
 local chamsLeft, chamsRight = chamsRow:Column(), chamsRow:Column()   -- preview on the left, its switches on the right
 do
@@ -1687,7 +1906,7 @@ do
             for _, part in ipairs(model:GetDescendants()) do
                 if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
                     if not originals[part] then originals[part] = part.Color end
-                    part.Color = originals[part]:Lerp(settings.ColEnemy, fillAlpha)          -- the fill
+                    part.Color = originals[part]:Lerp(settings.ChamsColor, fillAlpha)          -- the fill
                     if settings.Chams and part.Transparency < 1 and part.Parent == model and esp.ChamsBody[part.Name] and size.X > 10 then
                         local cf, half, points = part.CFrame, part.Size / 2, {}
                         for i, sign in ipairs(cornerSigns) do
@@ -1705,7 +1924,7 @@ do
                                 f.Position = UDim2.fromOffset((a.X + b.X) / 2, (a.Y + b.Y) / 2)
                                 f.Size = UDim2.fromOffset(math.max(d.Magnitude, 1), 1)
                                 f.Rotation = math.deg(math.atan2(d.Y, d.X))
-                                f.BackgroundColor3, f.Visible = settings.ChamsOutline, true
+                                f.BackgroundColor3, f.BackgroundTransparency, f.Visible = settings.ChamsOutline, settings.ChamsOutlineAlpha, true
                             end
                         end
                     end
@@ -1739,21 +1958,22 @@ chamsRight:Toggle({ Title = "Chams", Flag = "esp_chams", Default = true, Style =
 chamsRight:Toggle({ Title = "Through walls", Flag = "esp_chamswalls", Default = true, Style = "Switch", DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsWalls") })
 chamsRight:Segment({ Title = "Chams style", Flag = "esp_chamsstyle", Items = { "Solid", "Outline" }, Default = "Solid", Wide = true,
     DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsStyle") })
-Chams:Slider({ Title = "Fill transparency", Flag = "esp_chamsfill", Min = 0, Max = 100, Default = 60, Suffix = "%", DependsOn = { Flag = "esp_chams", Reason = "" },
+Chams:Slider({ Title = "Fill transparency", Flag = "esp_chamsfill", Min = 0, Max = 100, Default = 55, Suffix = "%", DependsOn = { Flag = "esp_chams", Reason = "" },
     Callback = function(v) settings.ChamsFill = v / 100 end })
-Chams:ColorPicker({ Title = "Outline color", Flag = "esp_chamsout", Default = white, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsOutline") })
+Chams:Slider({ Title = "Outline transparency", Flag = "esp_chamsoutalpha", Min = 0, Max = 100, Default = 10, Suffix = "%", DependsOn = { Flag = "esp_chams", Reason = "" },
+    Callback = function(v) settings.ChamsOutlineAlpha = v / 100 end })
+Chams:ColorPicker({ Title = "Fill color", Flag = "esp_chamscolor", Default = white, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsColor") })
+Chams:ColorPicker({ Title = "Outline color", Flag = "esp_chamsout", Default = black, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsOutline") })
 
 local Lines = ExtraPage:Card({ Title = "Lines", Icon = "spline", Side = "Right" })
 Lines:Toggle({ Title = "Tracer", Flag = "esp_tracer", Default = false, Callback = set("Tracer") })
 Lines:Segment({ Title = "Tracer from", Flag = "esp_tracerfrom", Items = { "Bottom", "Center", "Mouse" }, Default = "Bottom", DependsOn = { Flag = "esp_tracer", Reason = "" }, Callback = set("TracerFrom") })
 Lines:Toggle({ Title = "Skeleton", Flag = "esp_skeleton", Default = false, Callback = set("Skeleton") })
-Lines:Toggle({ Title = "Look direction", Desc = "Shows where they are looking", Flag = "esp_look", Default = false, Callback = set("LookDir") })
-Lines:Toggle({ Title = "Head dot", Flag = "esp_headdot", Default = false, Callback = set("HeadDot") })
 
 local LineStyle = ExtraPage:Card({ Title = "Line style", Icon = "sliders-horizontal", Side = "Right" })
 LineStyle:Slider({ Title = "Thickness", Flag = "esp_linethick", Min = 1, Max = 4, Default = 1, Suffix = " px", Callback = set("LineThick") })
 LineStyle:Slider({ Title = "Transparency", Flag = "esp_linealpha", Min = 0, Max = 90, Default = 0, Suffix = "%", Callback = function(v) settings.LineAlpha = v / 100 end })
-LineStyle:Toggle({ Title = "Rainbow", Desc = "Tracer, skeleton, look direction and head dot cycle colors", Flag = "esp_linerainbow", Default = false, Callback = set("LineRainbow") })
+LineStyle:Toggle({ Title = "Rainbow", Desc = "Tracer and skeleton cycle colors", Flag = "esp_linerainbow", Default = false, Callback = set("LineRainbow") })
 
 local Colors = StylePage:Card({ Title = "Colors", Icon = "palette" })
 Colors:ColorPicker({ Title = "Enemy", Flag = "col_enemy", Default = settings.ColEnemy, Callback = set("ColEnemy") })
@@ -1761,7 +1981,7 @@ Colors:ColorPicker({ Title = "Enemy", Flag = "col_enemy", Default = settings.Col
 -- bar colours on the right, health over mode
 local HealthColors = StylePage:Card({ Title = "Health bar colors", Icon = "heart", Side = "Right" })
 HealthColors:Swatches({ Title = "From empty to full", Flag = "esp_hpcolors", Default = "Classic", Columns = 2, Items = {
-    { "Classic", Color3.fromRGB(255, 59, 59), Color3.fromRGB(91, 210, 74) },
+    { "Classic", Color3.fromRGB(195, 85, 85), Color3.fromRGB(115, 185, 130) },
     { "Cool", healthPresets.Cool[1], healthPresets.Cool[2] },
     { "Mono", healthPresets.Mono[1], healthPresets.Mono[2] },
     { "Heat", healthPresets.Heat[1], healthPresets.Heat[2] },
@@ -2464,6 +2684,15 @@ local function safe(tag, fn, ...)
 end
 Render.safe = safe
 
+-- the BillboardGui / Highlight ESP refreshes at its own rate (Visuals › ESP › Refresh rate: Smooth 0.03 s, Balanced 0.1 s, Low 0.25 s)
+task.spawn(function()
+    local intervals = { Smooth = 0.03, Balanced = 0.1, Low = 0.25 }
+    while Running do
+        safe("ESP", esp.UpdatePanels)
+        task.wait(intervals[settings.RefreshRate] or 0.1)
+    end
+end)
+
 connect(RunService.RenderStepped, function()
     if not Running then return end
     esp.Frame += 1
@@ -2476,6 +2705,21 @@ connect(RunService.RenderStepped, function()
     if not safe("Silent Aim", function() Silent.Target = findTarget() end) then Silent.Target = nil end
     if Render.Available then                                     -- no Drawing API: nothing can be drawn
         safe("FOV", updateGlobal)                                -- FOV first: it is drawn whatever happens to the ESP
+        -- nearest players: only the closest N (Visuals › ESP › Nearest players) are drawn; pins are added in updatePlayer
+        safe("ESP limit", function()
+            local list = {}
+            local camPos = Camera.CFrame.Position
+            for _, plr in ipairs(Players:GetPlayers()) do
+                local _, _, root = getCharacter(plr)
+                if plr ~= LocalPlayer and root then list[#list + 1] = { plr, (root.Position - camPos).Magnitude } end
+            end
+            local limit = clamp(math.floor(settings.PlayerLimit or 30), 5, 30)
+            if #list <= limit then esp.Allowed = nil return end
+            table.sort(list, function(a, b) return a[2] < b[2] end)
+            local allowed = {}
+            for i = 1, limit do allowed[list[i][1]] = true end
+            esp.Allowed = allowed
+        end)
         for _, plr in ipairs(Players:GetPlayers()) do
             if plr ~= LocalPlayer and not safe("ESP", updatePlayer, plr) then
                 local e = esp.Entries[plr]                       -- do not leave a half-drawn frame on screen
@@ -2518,6 +2762,7 @@ env.QustahShindoCore = {
         pcall(hubStop)                                           -- farm / spin / player loops and the platform
         for _, c in ipairs(Connections) do pcall(function() c:Disconnect() end) end
         for plr in pairs(esp.Entries) do removeEntry(plr) end
+        pcall(esp.DestroyPanels)
         for _, o in pairs(Global.Obj) do Render.remove(o) end
         stopNoClip()
         restoreWorld()
