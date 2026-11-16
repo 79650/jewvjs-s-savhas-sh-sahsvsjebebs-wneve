@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.74
+-- Qustāh · Shindo Life · V1.75
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -432,7 +432,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.74",
+	Version = "V1.75",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -519,12 +519,11 @@ local settings = {
     ESP_Enabled = false, ESP_TeamCheck = true, ESP_MaxDist = 1500,
     Box = true, BoxStyle = "Corner", BoxCorner = 30, BoxFill = false, BoxFillAlpha = 0.85, HealthBar = true, ModeBar = true, Outline = true,
     HealthPreset = "Classic", ModePreset = "Ocean", ModeFlash = true,
-    Name = true, DisplayName = true, HealthText = true, Distance = true, DistUnit = "Studs", Weapon = true, TextSize = 13,
+    Name = true, DisplayName = true, HealthText = true, Distance = true, DistUnit = "Studs", TextSize = 13,
     Chams = true, ChamsWalls = true, ChamsStyle = "Solid", ChamsFill = 0.6, ChamsOutline = rgb(1, 1, 1),
     Tracer = false, TracerFrom = "Bottom", Skeleton = false, LookDir = false, HeadDot = false,
     LineThick = 1, LineAlpha = 0, LineRainbow = false,                -- shared style of tracer, look direction, skeleton and head dot
-    ColEnemy = rgb(1, 0.23, 0.23), ColAlly = rgb(0.23, 1, 0.42), ColHidden = rgb(1, 0.69, 0.23), ColTarget = rgb(0.75, 0.45, 1),
-    UseTeamColor = false, VisColor = true, Fade = true, Perf = false,
+    ColEnemy = rgb(1, 0.23, 0.23), ColAlly = rgb(0.23, 1, 0.42), ColTarget = rgb(0.75, 0.45, 1),
     -- world
     Fullbright = false, NoFog = false, CustomTime = false, ClockTime = 14, NoShadows = false,
     CustomAmbient = false, Ambient = rgb(0.7, 0.7, 0.7),
@@ -916,13 +915,18 @@ local cornerSigns = {
     vec3(1, 1, 1), vec3(1, 1, -1), vec3(1, -1, 1), vec3(1, -1, -1),
     vec3(-1, 1, 1), vec3(-1, 1, -1), vec3(-1, -1, 1), vec3(-1, -1, -1),
 }
+-- only the humanoid's own body (R6 and R15 limbs): no weapons, effects or extra parts the game puts in the model
+esp.ChamsBody = {}
+for _, name in ipairs({ "Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg",
+    "UpperTorso", "LowerTorso", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm", "RightHand",
+    "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot" }) do esp.ChamsBody[name] = true end
 local function updateChams(e, char, color, alpha)
     local fillAlpha = (1 - settings.ChamsFill) * alpha
     local solid = settings.ChamsStyle ~= "Outline"                  -- "Outline": only the part edges, no fill
     local n = 0
     for _, part in ipairs(char:GetChildren()) do
         if n >= 16 then break end
-        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" and part.Transparency < 1 then
+        if part:IsA("BasePart") and esp.ChamsBody[part.Name] and part.Transparency < 1 then
             local cf, half = part.CFrame, part.Size / 2
             local points, behind = {}, false
             for i, sign in ipairs(cornerSigns) do
@@ -976,29 +980,15 @@ local function updatePlayer(plr)
     local head = char:FindFirstChild("Head") or root
     local enemy = not isTeammate(plr)
     local color = enemy and settings.ColEnemy or settings.ColAlly
-    if settings.UseTeamColor and plr.Team then color = plr.TeamColor.Color end
-    local visible = true
-    if settings.VisColor and enemy then
-        visible = isVisible(plr, char, head)
-        if not visible then color = settings.ColHidden end
-    end
-    if Silent.Target and Silent.Target.Player == plr then color = settings.ColTarget end
-    local alpha = settings.Fade and clamp(1 - dist / (settings.ESP_MaxDist * 1.15), 0.35, 1) or 1
+    local alpha = 1
 
     local rootScreen, onScreen = toScreen(root.Position)
     if onScreen and settings.Chams and (settings.ChamsWalls or isVisible(plr, char, head)) then
-        -- Performance mode only defers the costly hulls; text, bars and visibility always update.
-        if not settings.Perf or dist <= 400 or not e.chamsReady or (esp.Frame + plr.UserId) % 2 == 0 then
-            local ok, err = pcall(updateChams, e, char, color, alpha)
-            e.chamsReady = ok
-            if not ok then
-                for key in pairs(e.Obj) do if key:sub(1, 4) == "cham" then e.Stamp[key] = nil end end
-                hubError("ESP Chams", err)
-            end
-        else
-            for key in pairs(e.Obj) do
-                if key:sub(1, 4) == "cham" and e.Vis[key] then e.Stamp[key] = esp.Frame end
-            end
+        local ok, err = pcall(updateChams, e, char, color, alpha)
+        e.chamsReady = ok
+        if not ok then
+            for key in pairs(e.Obj) do if key:sub(1, 4) == "cham" then e.Stamp[key] = nil end end
+            hubError("ESP Chams", err)
         end
     else
         e.chamsReady = false
@@ -1036,20 +1026,24 @@ local function updatePlayer(plr)
     local health, maxHealth = healthOf(hum)
     local hp = clamp(health / maxHealth, 0, 1)
     local barX = boxLeft - 6
-    if settings.HealthBar and h >= 18 then
-        local bg = use(e, "hb_bg", "Square")
-        if bg then bg.Position, bg.Size, bg.Color, bg.Filled, bg.Transparency, bg.ZIndex, bg.Visible = vec2(barX - 1, boxTop - 1), vec2(4, h + 2), black, true, alpha, 1, true end
-        local bar = use(e, "hb", "Square")
-        if bar then bar.Position, bar.Size, bar.Color, bar.Filled, bar.Transparency, bar.ZIndex, bar.Visible = vec2(barX, boxTop + h * (1 - hp)), vec2(2, h * hp), healthColor(hp), true, alpha, 2, true end
+    -- a vertical bar: a black back and the fill from the bottom, in whole pixels (sub-pixel squares flicker and split
+    -- into stray lines on some executors); an empty fill is not drawn at all (a 0 px square shows as a line)
+    local barHeight = boxBottom - boxTop
+    local function drawBar(key, x, fraction, color)
+        local bg = use(e, key .. "_bg", "Square")
+        if bg then bg.Position, bg.Size, bg.Color, bg.Filled, bg.Transparency, bg.ZIndex, bg.Visible = vec2(x - 1, boxTop - 1), vec2(4, barHeight + 2), black, true, alpha, 1, true end
+        local fill = floor(barHeight * fraction + 0.5)
+        if fill >= 1 then
+            local bar = use(e, key, "Square")
+            if bar then bar.Position, bar.Size, bar.Color, bar.Filled, bar.Transparency, bar.ZIndex, bar.Visible = vec2(x, boxBottom - fill), vec2(2, fill), color, true, alpha, 2, true end
+        end
     end
-    local leftEdge = settings.HealthBar and h >= 18 and barX - 1 or boxLeft    -- where the next thing on the left may start
-    local mode = settings.ModeBar and h >= 18 and modeOf(char)
+    if settings.HealthBar then drawBar("hb", barX, hp, healthColor(hp)) end
+    local leftEdge = settings.HealthBar and barX - 1 or boxLeft          -- where the next thing on the left may start
+    local mode = settings.ModeBar and modeOf(char)
     if mode then                                                        -- mode meter, just left of the health bar
         local modeX = leftEdge - 5
-        local bg = use(e, "mb_bg", "Square")
-        if bg then bg.Position, bg.Size, bg.Color, bg.Filled, bg.Transparency, bg.ZIndex, bg.Visible = vec2(modeX - 1, boxTop - 1), vec2(4, h + 2), black, true, alpha, 1, true end
-        local bar = use(e, "mb", "Square")
-        if bar then bar.Position, bar.Size, bar.Color, bar.Filled, bar.Transparency, bar.ZIndex, bar.Visible = vec2(modeX, boxTop + h * (1 - mode)), vec2(2, h * mode), modeColorFor(mode), true, alpha, 2, true end
+        drawBar("mb", modeX, mode, modeColorFor(mode))
         leftEdge = modeX - 1
     end
 
@@ -1085,15 +1079,8 @@ local function updatePlayer(plr)
     if settings.Distance then
         bottomLine[#bottomLine + 1] = settings.DistUnit == "Meters" and (floor(dist * 0.28) .. "m") or (floor(dist) .. " studs")
     end
-    if settings.Weapon then
-        local tool = char:FindFirstChildOfClass("Tool")
-        if tool then bottomLine[#bottomLine + 1] = tool.Name end
-    end
     if #bottomLine > 0 then
         drawText(e, "info", table.concat(bottomLine, "  ·  "), vec2(rootScreen.X, boxBottom + 3), rgb(0.87, 0.87, 0.87), size - 1, alpha, true)
-    end
-    if not visible and settings.VisColor then
-        drawText(e, "wall", "behind wall", vec2(rootScreen.X, boxBottom + 4 + size), settings.ColHidden, size - 2, alpha * 0.9, true)
     end
 
     -- line style (Visuals › Extra › Line style): one thickness / transparency for every line, optionally rainbow
@@ -1615,10 +1602,6 @@ do
         end
         local line = {}
         if settings.Distance then line[#line + 1] = settings.DistUnit == "Meters" and "12m" or "42 studs" end
-        if settings.Weapon then
-            local tool = char and char:FindFirstChildOfClass("Tool")
-            line[#line + 1] = tool and tool.Name or "No tool"
-        end
         if #line > 0 then
             local t = parts.info
             t.Text, t.TextColor3, t.TextSize = table.concat(line, "  ·  "), rgb(0.87, 0.87, 0.87), textSize - 1
@@ -1651,7 +1634,6 @@ TextCard:Toggle({ Title = "Use display name", Flag = "esp_dname", Default = true
 TextCard:Toggle({ Title = "Health number", Flag = "esp_hptext", Default = true, Callback = set("HealthText") })
 TextCard:Toggle({ Title = "Distance", Flag = "esp_dist", Default = true, Callback = set("Distance") })
 TextCard:Segment({ Title = "Unit", Flag = "esp_unit", Items = { "Studs", "Meters" }, Default = "Studs", DependsOn = { Flag = "esp_dist", Reason = "" }, Callback = set("DistUnit") })
-TextCard:Toggle({ Title = "Weapon", Desc = "Held tool", Flag = "esp_weapon", Default = true, Callback = set("Weapon") })
 TextCard:Slider({ Title = "Text size", Flag = "esp_tsize", Min = 9, Max = 20, Default = 13, Suffix = " px", Callback = set("TextSize") })
 
 do -- Visuals › Extra and Style (a block: their locals end here)
@@ -1706,7 +1688,7 @@ do
                 if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
                     if not originals[part] then originals[part] = part.Color end
                     part.Color = originals[part]:Lerp(settings.ColEnemy, fillAlpha)          -- the fill
-                    if settings.Chams and part.Transparency < 1 and part.Parent == model and size.X > 10 then
+                    if settings.Chams and part.Transparency < 1 and part.Parent == model and esp.ChamsBody[part.Name] and size.X > 10 then
                         local cf, half, points = part.CFrame, part.Size / 2, {}
                         for i, sign in ipairs(cornerSigns) do
                             local p2 = project((cf * CFrame.new(half * sign)).Position, size)
@@ -1775,14 +1757,6 @@ LineStyle:Toggle({ Title = "Rainbow", Desc = "Tracer, skeleton, look direction a
 
 local Colors = StylePage:Card({ Title = "Colors", Icon = "palette" })
 Colors:ColorPicker({ Title = "Enemy", Flag = "col_enemy", Default = settings.ColEnemy, Callback = set("ColEnemy") })
-Colors:ColorPicker({ Title = "Behind wall", Flag = "col_hidden", Default = settings.ColHidden, Callback = set("ColHidden") })
-Colors:ColorPicker({ Title = "Silent aim target", Flag = "col_target", Default = settings.ColTarget, Callback = set("ColTarget") })
-Colors:Toggle({ Title = "Use team color", Flag = "col_team", Default = false, Callback = set("UseTeamColor") })
-Colors:Divider({ Title = "Filters" })                               -- the filters live in the same card
-local Filters = Colors
-Filters:Toggle({ Title = "Visibility color", Desc = "Different color behind walls", Flag = "esp_viscolor", Default = true, Callback = set("VisColor") })
-Filters:Toggle({ Title = "Fade with distance", Flag = "esp_fade", Default = true, Callback = set("Fade") })
-Filters:Toggle({ Title = "Performance mode", Desc = "Update distant chams every other frame", Flag = "esp_perf", Default = false, Callback = set("Perf") })
 
 -- bar colours on the right, health over mode
 local HealthColors = StylePage:Card({ Title = "Health bar colors", Icon = "heart", Side = "Right" })
