@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.59
+-- Qustāh · Shindo Life · V1.60
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -393,7 +393,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.59",
+	Version = "V1.60",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -482,6 +482,7 @@ local settings = {
     Name = true, DisplayName = true, HealthText = true, Distance = true, DistUnit = "Studs", Weapon = true, TextSize = 13,
     Chams = false, ChamsWalls = true, ChamsFill = 0.6, ChamsOutline = rgb(1, 1, 1),
     Tracer = false, TracerFrom = "Bottom", Skeleton = false, LookDir = false, HeadDot = false,
+    LineThick = 1, LineAlpha = 0, LineRainbow = false,                -- shared style of tracer, look direction, skeleton and head dot
     ColEnemy = rgb(1, 0.23, 0.23), ColAlly = rgb(0.23, 1, 0.42), ColHidden = rgb(1, 0.69, 0.23), ColTarget = rgb(0.75, 0.45, 1),
     UseTeamColor = false, VisColor = true, Fade = true, Perf = false,
     -- world
@@ -1022,24 +1023,28 @@ local function updatePlayer(plr)
         drawText(e, "wall", "behind wall", vec2(rootScreen.X, boxBottom + 4 + size), settings.ColHidden, size - 2, alpha * 0.9, true)
     end
 
+    -- line style (Visuals › Extra › Line style): one thickness / transparency for every line, optionally rainbow
+    local lineColor = settings.LineRainbow and Color3.fromHSV((os.clock() * 0.25) % 1, 0.75, 1) or color
+    local lineAlpha = alpha * (1 - settings.LineAlpha)
+    local lineThick = settings.LineThick
     if settings.HeadDot then
         local hs = toScreen(head.Position)
         local c = use(e, "head", "Circle")
         if c then
             c.Position, c.Radius, c.Color, c.Filled, c.NumSides, c.Thickness, c.Transparency, c.ZIndex, c.Visible =
-                hs, max(2, h / 22), color, true, 12, 1, alpha, 2, true
+                hs, max(2, h / 22), lineColor, true, 12, 1, lineAlpha, 2, true
         end
     end
     if settings.Tracer then
         local vs = Camera.ViewportSize
         local from = settings.TracerFrom == "Mouse" and UserInputService:GetMouseLocation()
             or settings.TracerFrom == "Center" and vs / 2 or vec2(vs.X / 2, vs.Y)
-        drawLine(e, "tracer", from, vec2(rootScreen.X, boxBottom), color, 1, alpha * 0.8)
+        drawLine(e, "tracer", from, vec2(rootScreen.X, boxBottom), lineColor, lineThick, lineAlpha * 0.8)
     end
     if settings.LookDir then
         local a = toScreen(head.Position)
         local b = toScreen(head.Position + head.CFrame.LookVector * 4)
-        drawLine(e, "look", a, b, color, 1, alpha)
+        drawLine(e, "look", a, b, lineColor, lineThick, lineAlpha)
     end
     if settings.Skeleton then
         local pairsList = char:FindFirstChild("UpperTorso") and skeletonR15 or skeletonR6
@@ -1048,7 +1053,7 @@ local function updatePlayer(plr)
             if p1 and p2 then
                 local a, onA = toScreen(p1.Position)
                 local b, onB = toScreen(p2.Position)
-                if onA and onB then drawLine(e, "sk" .. i, a, b, color, 1, alpha) end
+                if onA and onB then drawLine(e, "sk" .. i, a, b, lineColor, lineThick, lineAlpha) end
             end
         end
     end
@@ -1322,33 +1327,49 @@ Aim:Dropdown({ Title = "Methods", Flag = "sa_methods", Multi = true,
         refreshAimStatus()
     end })
 
-local Checks = Combat:Card({ Title = "Checks", Icon = "shield-check", Side = "Right" })
+local Checks = Combat:Card({ Title = "Checks", Icon = "shield-check", Side = "Left" })
 Checks:Toggle({ Title = "Visibility check", Desc = "Don't target players behind walls", Flag = "sa_vischeck", Default = false, Callback = set("SA_VisCheck") })
 Checks:Toggle({ Title = "Safe origin", Desc = "Only change shots that come from you", Flag = "sa_safe", Default = true, Callback = set("SA_SafeOrigin") })
 Checks:Slider({ Title = "Max distance", Flag = "sa_maxdist", Min = 50, Max = 3000, Default = 1000, Step = 10, Suffix = " studs", Callback = set("SA_MaxDist") })
 Checks:Toggle({ Title = "Prediction", Desc = "Aim ahead of moving targets", Flag = "sa_predict", Default = false, Callback = set("SA_Predict") })
 Checks:Slider({ Title = "Prediction strength", Flag = "sa_predstr", Min = 0, Max = 300, Default = 100, Step = 5, Suffix = "%", DependsOn = { Flag = "sa_predict", Reason = "" }, Callback = set("SA_PredStrength") })
 
-local FovCard = Combat:Card({ Title = "FOV", Icon = "circle-dashed" })
-local fovPreview
+-- Right column: the preview first, then the FOV basics (colour as swatches) and its style
+local PreviewCard = Combat:Card({ Title = "Preview", Icon = "scan", Side = "Right" })
+local fovPreview = PreviewCard:FovPreview({ Height = 140 })
 local function refreshFov()
-    if fovPreview then
-        fovPreview:Update({ Radius = settings.FOV_Radius, Sides = settings.FOV_Sides, Thickness = settings.FOV_Thick, Color = settings.FOV_Color,
-            Transparency = settings.FOV_Alpha, Filled = settings.FOV_Filled, FillColor = settings.FOV_Color, FillTransparency = 0.85, Visible = settings.FOV_Show })
-    end
+    fovPreview:Update({ Radius = settings.FOV_Radius, Sides = settings.FOV_Sides, Thickness = settings.FOV_Thick, Color = settings.FOV_Color,
+        Transparency = settings.FOV_Alpha, Filled = settings.FOV_Filled, FillColor = settings.FOV_Color, FillTransparency = 0.85, Visible = settings.FOV_Show })
 end
 local function fovSet(key) return function(v) settings[key] = v refreshFov() end end
+local FovCard = Combat:Card({ Title = "FOV", Icon = "circle-dashed", Side = "Right" })
 FovCard:Toggle({ Title = "Show FOV", Flag = "fov_show", Default = true, Callback = fovSet("FOV_Show") })
 FovCard:Slider({ Title = "Radius", Flag = "fov_radius", Min = 10, Max = 600, Default = 120, Suffix = " px", Callback = fovSet("FOV_Radius") })
-FovCard:Slider({ Title = "Sides", Flag = "fov_sides", Min = 3, Max = 64, Default = 64, Callback = fovSet("FOV_Sides") })
-FovCard:Slider({ Title = "Thickness", Flag = "fov_thick", Min = 1, Max = 5, Default = 1, Callback = fovSet("FOV_Thick") })
-FovCard:ColorPicker({ Title = "Color", Flag = "fov_color", Default = white, Alpha = true, Transparency = 0,
-    Callback = function(c, t) settings.FOV_Color = c settings.FOV_Alpha = t or 0 refreshFov() end })
-FovCard:Toggle({ Title = "Filled", Flag = "fov_filled", Default = false, Callback = fovSet("FOV_Filled") })
+-- quick colours; the picker in "FOV style" holds the saved colour (any colour, with transparency), the swatches only set it
+local fovSwatches, fovPicker
+local fovSyncing = false                                           -- picker -> dots update must not come back to the picker
+fovSwatches = FovCard:Swatches({ Title = "Color", Style = "Dots", Default = "White", Items = {
+    { "White", Color3.fromRGB(255, 255, 255) }, { "Red", Color3.fromRGB(224, 70, 70) }, { "Blue", Color3.fromRGB(127, 180, 255) },
+    { "Green", Color3.fromRGB(91, 210, 122) }, { "Gold", Color3.fromRGB(242, 184, 75) }, { "Violet", Color3.fromRGB(180, 139, 232) },
+}, Custom = function(open) if fovPicker and fovPicker.SetOpen then fovPicker:SetOpen(open) end end,
+    Callback = function(color) if fovPicker and not fovSyncing then fovPicker:Set(color) end end })
 FovCard:Segment({ Title = "Origin", Flag = "fov_origin", Items = { "Mouse", "Center" }, Default = "Mouse", Callback = set("FOV_Origin") })
-FovCard:Toggle({ Title = "Target line", Desc = "Line from FOV center to target", Flag = "fov_tline", Default = false, Callback = set("FOV_TargetLine") })
-local PreviewCard = Combat:Card({ Title = "Preview", Icon = "scan", Side = "Right" })
-fovPreview = PreviewCard:FovPreview({ Height = 140 })
+local FovStyle = Combat:Card({ Title = "FOV style", Icon = "sliders-horizontal", Side = "Right" })
+FovStyle:Slider({ Title = "Sides", Flag = "fov_sides", Min = 3, Max = 64, Default = 64, Callback = fovSet("FOV_Sides") })
+FovStyle:Slider({ Title = "Thickness", Flag = "fov_thick", Min = 1, Max = 5, Default = 1, Callback = fovSet("FOV_Thick") })
+fovPicker = FovStyle:ColorPicker({ Title = "Custom color", Flag = "fov_color", Default = white, Alpha = true, Transparency = 0,
+    Callback = function(c, t)
+        settings.FOV_Color = c
+        if t ~= nil then settings.FOV_Alpha = t end
+        if fovSwatches then                                          -- a preset colour lights its dot, any other none
+            fovSyncing = true
+            pcall(fovSwatches.Set, fovSwatches, c, true)
+            fovSyncing = false
+        end
+        refreshFov()
+    end })
+FovStyle:Toggle({ Title = "Filled", Flag = "fov_filled", Default = false, Callback = fovSet("FOV_Filled") })
+FovStyle:Toggle({ Title = "Target line", Desc = "Line from FOV center to target", Flag = "fov_tline", Default = false, Callback = set("FOV_TargetLine") })
 refreshFov()
 end
 
@@ -1369,7 +1390,7 @@ General:Toggle({ Title = "ESP enabled", Flag = "esp_enabled", Default = false, B
 General:Toggle({ Title = "Team check", Desc = "Don't show teammates", Flag = "esp_team", Default = true, Callback = set("ESP_TeamCheck") })
 General:Slider({ Title = "Max distance", Flag = "esp_maxdist", Min = 100, Max = 5000, Default = 1500, Step = 50, Suffix = " studs", Callback = set("ESP_MaxDist") })
 
-local BoxCard = EspPage:Card({ Title = "Box", Icon = "square-dashed", Side = "Right" })
+local BoxCard = EspPage:Card({ Title = "Box", Icon = "square-dashed", Side = "Left" })
 BoxCard:Toggle({ Title = "Box", Flag = "esp_box", Default = true, Callback = set("Box") })
 BoxCard:Segment({ Title = "Style", Flag = "esp_boxstyle", Items = { "Corner", "Full" }, Default = "Corner", Callback = set("BoxStyle") })
 BoxCard:Slider({ Title = "Corner size", Flag = "esp_corner", Min = 10, Max = 100, Default = 30, Suffix = "%",
@@ -1381,7 +1402,157 @@ BoxCard:Toggle({ Title = "Health bar", Flag = "esp_hbar", Default = true, Callba
 BoxCard:Toggle({ Title = "Mode bar", Desc = "Shindo mode meter, next to the health bar", Flag = "esp_mbar", Default = true, Callback = set("ModeBar") })
 BoxCard:Toggle({ Title = "Outline", Flag = "esp_outline", Default = true, Callback = set("Outline") })
 
-local TextCard = EspPage:Card({ Title = "Text", Icon = "type" })
+----- ESP live preview -----
+-- Your own character (a still copy in a Viewport) with the ESP drawn over it as it would look in game: box, fill,
+-- health and mode bars, name, health number and the distance / weapon line. Values are your real ones
+-- (fakehealth, combat.mode, held tool) and follow the settings at once. Drawn in the menu, so this part is GUI.
+local PreviewCard = EspPage:Card({ Title = "Preview", Icon = "scan-eye", Side = "Right" })
+local espView = PreviewCard:Viewport({ Height = 190, Spin = false })
+do
+    local holder = espView.View and espView.View.Parent
+    local overlay, parts = nil, {}
+    local function frame(name, z)
+        local f = Instance.new("Frame")
+        f.Name, f.BorderSizePixel, f.ZIndex, f.Visible = name, 0, z or 2, false
+        f.Parent = overlay
+        parts[name] = f
+        return f
+    end
+    local function text(name)
+        local t = Instance.new("TextLabel")
+        t.Name, t.BackgroundTransparency, t.ZIndex, t.Visible = name, 1, 3, false
+        t.Font, t.TextStrokeTransparency, t.TextStrokeColor3 = Enum.Font.GothamMedium, 0.2, Color3.new(0, 0, 0)
+        t.Size = UDim2.fromOffset(200, 16)
+        t.Parent = overlay
+        parts[name] = t
+        return t
+    end
+    if holder then
+        overlay = Instance.new("Frame")
+        overlay.Name, overlay.BackgroundTransparency, overlay.Size, overlay.ZIndex = "EspOverlay", 1, UDim2.fromScale(1, 1), 2
+        overlay.Parent = holder
+        frame("fill", 2)
+        for i = 1, 8 do frame("o" .. i, 2) frame("b" .. i, 3) end            -- box edges: outline under, colour over
+        frame("hbBg", 2) frame("hb", 3) frame("mbBg", 2) frame("mb", 3)
+        text("name") text("hp") text("info")
+    end
+    -- a line as a frame (only straight ones are needed here)
+    local function bar(f, x, y, w, h, color, z)
+        f.Position, f.Size, f.BackgroundColor3, f.Visible = UDim2.fromOffset(x, y), UDim2.fromOffset(math.max(w, 1), math.max(h, 1)), color, true
+        if z then f.ZIndex = z end
+    end
+    local function shown(gui)
+        while gui do
+            if gui:IsA("GuiObject") and not gui.Visible then return false end
+            if gui:IsA("LayerCollector") then return gui.Enabled end
+            gui = gui.Parent
+        end
+        return false
+    end
+    local function project(point, size)
+        local cam = espView.Camera
+        local rel = cam.CFrame:PointToObjectSpace(point)
+        if rel.Z >= -0.01 then return nil end
+        local f = 1 / math.tan(math.rad(cam.FieldOfView / 2))
+        local sx = (rel.X / -rel.Z) * f / (size.X / size.Y)
+        local sy = (rel.Y / -rel.Z) * f
+        return vec2((sx + 1) / 2 * size.X, (1 - sy) / 2 * size.Y)
+    end
+    local function hideAll() for _, f in pairs(parts) do f.Visible = false end end
+    local function drawPreview()
+        if not overlay then return end
+        hideAll()
+        local model = espView.Model
+        local root = model and model:FindFirstChild("HumanoidRootPart")
+        local size = holder.AbsoluteSize
+        if not root or size.X < 10 or size.Y < 10 then return end
+        local top, bottom = project(root.Position + vec3(0, 2.6, 0), size), project(root.Position - vec3(0, 3, 0), size)
+        if not (top and bottom) then return end
+        local h = math.max(bottom.Y - top.Y, 6)
+        local w = h * 0.62
+        local x1, y1, x2, y2 = top.X - w / 2, top.Y, top.X + w / 2, top.Y + h
+        local color = settings.ColEnemy
+        local outline = settings.Outline
+        if settings.BoxFill then
+            bar(parts.fill, x1, y1, w, h, color)
+            parts.fill.BackgroundTransparency = settings.BoxFillAlpha
+        end
+        if settings.Box then
+            local edges
+            if settings.BoxStyle == "Corner" then
+                local cx, cy = w * settings.BoxCorner / 100 / 2, h * settings.BoxCorner / 100 / 2
+                edges = { { x1, y1, cx, 1 }, { x1, y1, 1, cy }, { x2 - cx, y1, cx, 1 }, { x2 - 1, y1, 1, cy },
+                          { x1, y2 - 1, cx, 1 }, { x1, y2 - cy, 1, cy }, { x2 - cx, y2 - 1, cx, 1 }, { x2 - 1, y2 - cy, 1, cy } }
+            else
+                edges = { { x1, y1, w, 1 }, { x1, y2 - 1, w, 1 }, { x1, y1, 1, h }, { x2 - 1, y1, 1, h } }
+            end
+            for i, e in ipairs(edges) do
+                if outline then bar(parts["o" .. i], e[1] - 1, e[2] - 1, e[3] + 2, e[4] + 2, Color3.new(0, 0, 0)) end
+                bar(parts["b" .. i], e[1], e[2], e[3], e[4], color)
+            end
+        end
+        local char = character()
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local health, maxHealth = 100, 100
+        if hum then health, maxHealth = healthOf(hum) end
+        local hp = clamp(health / maxHealth, 0, 1)
+        local leftEdge = x1
+        if settings.HealthBar then
+            bar(parts.hbBg, x1 - 7, y1 - 1, 4, h + 2, Color3.new(0, 0, 0))
+            bar(parts.hb, x1 - 6, y1 + h * (1 - hp), 2, h * hp, healthColor(hp))
+            leftEdge = x1 - 7
+        end
+        local mode = settings.ModeBar and char and modeOf(char)
+        if mode then
+            bar(parts.mbBg, leftEdge - 5, y1 - 1, 4, h + 2, Color3.new(0, 0, 0))
+            bar(parts.mb, leftEdge - 4, y1 + h * (1 - mode), 2, h * mode, modeColor)
+            leftEdge = leftEdge - 5
+        end
+        local textSize = settings.TextSize
+        if settings.Name then
+            local t = parts.name
+            t.Text, t.TextColor3, t.TextSize = settings.DisplayName and LocalPlayer.DisplayName or LocalPlayer.Name, color, textSize
+            t.TextXAlignment, t.Position, t.Visible = Enum.TextXAlignment.Center, UDim2.fromOffset(top.X - 100, y1 - textSize - 6), true
+        end
+        if settings.HealthText then
+            local t = parts.hp
+            t.Text, t.TextColor3, t.TextSize = tostring(math.floor(health + 0.5)), healthColor(hp), textSize - 1
+            t.TextXAlignment, t.Visible = Enum.TextXAlignment.Right, true
+            t.Position = UDim2.fromOffset(leftEdge - 3 - 200, clamp(y1 + h * (1 - hp) - textSize / 2, y1 - 2, y2 - textSize))
+        end
+        local line = {}
+        if settings.Distance then line[#line + 1] = settings.DistUnit == "Meters" and "12m" or "42 studs" end
+        if settings.Weapon then
+            local tool = char and char:FindFirstChildOfClass("Tool")
+            line[#line + 1] = tool and tool.Name or "No tool"
+        end
+        if #line > 0 then
+            local t = parts.info
+            t.Text, t.TextColor3, t.TextSize = table.concat(line, "  ·  "), rgb(0.87, 0.87, 0.87), textSize - 1
+            t.TextXAlignment, t.Position, t.Visible = Enum.TextXAlignment.Center, UDim2.fromOffset(top.X - 100, y2 + 3), true
+        end
+    end
+    -- the copy follows your character (respawns, outfit changes need a respawn); drawn ~15 times a second, only while on screen
+    local function loadCharacter(char)
+        if not char then return end
+        task.spawn(function()
+            char:WaitForChild("HumanoidRootPart", 10)
+            task.wait(0.5)                                              -- clothes and accessories load a moment later
+            if hub.Running and LocalPlayer.Character == char then pcall(function() espView:SetObject(char) end) end
+        end)
+    end
+    loadCharacter(LocalPlayer.Character)
+    hubConnect(LocalPlayer.CharacterAdded, loadCharacter)
+    local last = 0
+    hubConnect(RunService.Heartbeat, function()
+        local now = os.clock()
+        if now - last < 1 / 15 or not (overlay and shown(holder)) then return end
+        last = now
+        drawPreview()
+    end)
+end
+
+local TextCard = EspPage:Card({ Title = "Text", Icon = "type", Side = "Right" })
 TextCard:Toggle({ Title = "Name", Flag = "esp_name", Default = true, Callback = set("Name") })
 TextCard:Toggle({ Title = "Use display name", Flag = "esp_dname", Default = true, DependsOn = { Flag = "esp_name", Reason = "" }, Callback = set("DisplayName") })
 TextCard:Toggle({ Title = "Health number", Flag = "esp_hptext", Default = true, Callback = set("HealthText") })
@@ -1396,6 +1567,11 @@ Chams:Toggle({ Title = "Through walls", Flag = "esp_chamswalls", Default = true,
 Chams:Slider({ Title = "Fill transparency", Flag = "esp_chamsfill", Min = 0, Max = 100, Default = 60, Suffix = "%", DependsOn = { Flag = "esp_chams", Reason = "" },
     Callback = function(v) settings.ChamsFill = v / 100 end })
 Chams:ColorPicker({ Title = "Outline color", Flag = "esp_chamsout", Default = white, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsOutline") })
+
+local LineStyle = ExtraPage:Card({ Title = "Line style", Icon = "sliders-horizontal", Side = "Left" })
+LineStyle:Slider({ Title = "Thickness", Flag = "esp_linethick", Min = 1, Max = 4, Default = 1, Suffix = " px", Callback = set("LineThick") })
+LineStyle:Slider({ Title = "Transparency", Flag = "esp_linealpha", Min = 0, Max = 90, Default = 0, Suffix = "%", Callback = function(v) settings.LineAlpha = v / 100 end })
+LineStyle:Toggle({ Title = "Rainbow", Desc = "Tracer, skeleton, look direction and head dot cycle colors", Flag = "esp_linerainbow", Default = false, Callback = set("LineRainbow") })
 
 local Lines = ExtraPage:Card({ Title = "Lines", Icon = "spline", Side = "Right" })
 Lines:Toggle({ Title = "Tracer", Flag = "esp_tracer", Default = false, Callback = set("Tracer") })
@@ -1421,15 +1597,100 @@ local Light = World:Card({ Title = "Lighting", Icon = "lightbulb" })
 Light:Toggle({ Title = "Fullbright", Flag = "w_fullbright", Default = false, Callback = set("Fullbright") })
 Light:Toggle({ Title = "No fog", Flag = "w_nofog", Default = false, Callback = set("NoFog") })
 Light:Toggle({ Title = "No shadows", Flag = "w_noshadows", Default = false, Callback = set("NoShadows") })
-local TimeCard = World:Card({ Title = "Time and color", Icon = "clock", Side = "Right" })
-TimeCard:Toggle({ Title = "Custom time", Flag = "w_customtime", Default = false, Callback = set("CustomTime") })
-TimeCard:Slider({ Title = "Clock time", Flag = "w_clock", Min = 0, Max = 24, Step = 0.5, Default = 14, DependsOn = { Flag = "w_customtime", Reason = "" }, Callback = set("ClockTime") })
-TimeCard:Toggle({ Title = "Custom ambient", Flag = "w_customamb", Default = false, Callback = set("CustomAmbient") })
-TimeCard:ColorPicker({ Title = "Ambient", Flag = "w_ambient", Default = settings.Ambient, DependsOn = { Flag = "w_customamb", Reason = "" }, Callback = set("Ambient") })
-TimeCard:Button({ Title = "Restore lighting", Icon = "rotate-ccw", Style = "Ghost", Callback = function()
+Light:Button({ Title = "Restore lighting", Icon = "rotate-ccw", Style = "Ghost", Callback = function()
     for _, flag in ipairs({ "w_fullbright", "w_nofog", "w_noshadows", "w_customtime", "w_customamb" }) do Window:SetFlag(flag, false) end
     restoreWorld()
 end })
+
+-- Sky: a small picture of the sky at the chosen hour (the game's own hour while Custom time is off)
+local SkyCard = World:Card({ Title = "Sky", Icon = "sun", Side = "Right" })
+local skyCanvas = SkyCard:Canvas({ Height = 74 })
+local drawSky
+do
+    -- sky colours over the day: { hour, top, bottom }
+    local keys = {
+        { 0, rgb(0.04, 0.06, 0.16), rgb(0.1, 0.13, 0.28) }, { 5, rgb(0.15, 0.2, 0.4), rgb(0.95, 0.6, 0.4) },
+        { 7, rgb(0.45, 0.66, 0.9), rgb(0.85, 0.9, 0.95) }, { 12, rgb(0.29, 0.56, 0.89), rgb(0.75, 0.88, 1) },
+        { 17, rgb(0.36, 0.56, 0.85), rgb(1, 0.85, 0.63) }, { 19, rgb(0.23, 0.25, 0.48), rgb(0.95, 0.48, 0.29) },
+        { 21, rgb(0.08, 0.1, 0.23), rgb(0.29, 0.23, 0.42) }, { 24, rgb(0.04, 0.06, 0.16), rgb(0.1, 0.13, 0.28) },
+    }
+    local function at(hour)
+        hour = hour % 24
+        for i = 1, #keys - 1 do
+            local a, b = keys[i], keys[i + 1]
+            if hour >= a[1] and hour <= b[1] then
+                local t = (hour - a[1]) / (b[1] - a[1])
+                return a[2]:Lerp(b[2], t), a[3]:Lerp(b[3], t)
+            end
+        end
+        return keys[1][2], keys[1][3]
+    end
+    local frame = skyCanvas.Frame
+    local parts = {}
+    if frame then
+        parts.sky = Instance.new("Frame")
+        parts.sky.BorderSizePixel, parts.sky.Size, parts.sky.BackgroundColor3 = 0, UDim2.fromScale(1, 1), Color3.new(1, 1, 1)
+        parts.gradient = Instance.new("UIGradient")
+        parts.gradient.Rotation = 90
+        parts.gradient.Parent = parts.sky
+        parts.sky.Parent = frame
+        parts.body = Instance.new("Frame")                         -- the sun by day, the moon by night
+        parts.body.AnchorPoint, parts.body.Size, parts.body.BorderSizePixel = Vector2.new(0.5, 0.5), UDim2.fromOffset(12, 12), 0
+        local round = Instance.new("UICorner")
+        round.CornerRadius = UDim.new(1, 0)
+        round.Parent = parts.body
+        parts.body.Parent = frame
+        parts.ground = Instance.new("Frame")                        -- the ground, tinted by the ambient colour
+        parts.ground.BorderSizePixel, parts.ground.AnchorPoint = 0, Vector2.new(0, 1)
+        parts.ground.Position, parts.ground.Size = UDim2.fromScale(0, 1), UDim2.new(1, 0, 0, 14)
+        parts.ground.Parent = frame
+        parts.label = Instance.new("TextLabel")
+        parts.label.BackgroundTransparency, parts.label.Position, parts.label.Size = 1, UDim2.fromOffset(8, 5), UDim2.new(1, -16, 0, 14)
+        parts.label.TextXAlignment, parts.label.TextSize, parts.label.Font = Enum.TextXAlignment.Left, 11, Enum.Font.GothamMedium
+        parts.label.TextColor3, parts.label.TextStrokeTransparency = Color3.new(1, 1, 1), 0.6
+        parts.label.Parent = frame
+    end
+    function drawSky()
+        if not parts.sky then return end
+        local hour = settings.CustomTime and settings.ClockTime or (tonumber(Lighting.ClockTime) or 12)
+        local top, bottom = at(hour)
+        parts.gradient.Color = ColorSequence.new(top, bottom)
+        local day = hour >= 6 and hour < 18
+        local t = day and (hour - 6) / 12 or ((hour + 6) % 24) / 12      -- 0..1 across the sky
+        parts.body.Position = UDim2.new(0.08 + t * 0.84, 0, 0.75 - math.sin(t * math.pi) * 0.55, 0)
+        parts.body.BackgroundColor3 = day and rgb(1, 0.86, 0.45) or rgb(0.9, 0.92, 1)
+        local ambient = settings.CustomAmbient and settings.Ambient or Lighting.Ambient
+        parts.ground.BackgroundColor3 = rgb(0.16, 0.24, 0.12):Lerp(ambient, 0.35)
+        local h, m = math.floor(hour), math.floor((hour % 1) * 60 + 0.5)
+        if m == 60 then h, m = h + 1, 0 end
+        parts.label.Text = string.format("%02d:%02d · %s%s", h % 24, m, day and "Day" or "Night", settings.CustomTime and "" or " (game)")
+    end
+end
+local function skySet(key) return function(v) settings[key] = v drawSky() end end
+SkyCard:Toggle({ Title = "Custom time", Flag = "w_customtime", Default = false, Callback = skySet("CustomTime") })
+SkyCard:Slider({ Title = "Clock time", Flag = "w_clock", Min = 0, Max = 24, Step = 0.5, Default = 14, DependsOn = { Flag = "w_customtime", Reason = "" }, Callback = skySet("ClockTime") })
+loop("Sky preview", 2, function() if not settings.CustomTime then drawSky() end end)   -- follows the game's hour while it is not set
+drawSky()
+
+local AmbientCard = World:Card({ Title = "Ambient", Icon = "palette", Side = "Right" })
+AmbientCard:Toggle({ Title = "Custom ambient", Flag = "w_customamb", Default = false, Callback = skySet("CustomAmbient") })
+local ambientSwatches, ambientPicker
+local ambientSyncing = false
+ambientSwatches = AmbientCard:Swatches({ Title = "Color", Style = "Dots", Default = "Grey", DependsOn = { Flag = "w_customamb", Reason = "" }, Items = {
+    { "Grey", Color3.fromRGB(180, 180, 180) }, { "Warm", Color3.fromRGB(255, 217, 160) }, { "Cold", Color3.fromRGB(160, 196, 255) },
+    { "Violet", Color3.fromRGB(192, 160, 255) }, { "Green", Color3.fromRGB(160, 255, 192) },
+}, Custom = function(open) if ambientPicker and ambientPicker.SetOpen then ambientPicker:SetOpen(open) end end,
+    Callback = function(color) if ambientPicker and not ambientSyncing then ambientPicker:Set(color) end end })
+ambientPicker = AmbientCard:ColorPicker({ Title = "Custom color", Flag = "w_ambient", Default = settings.Ambient, DependsOn = { Flag = "w_customamb", Reason = "" },
+    Callback = function(c)
+        settings.Ambient = c
+        if ambientSwatches then
+            ambientSyncing = true
+            pcall(ambientSwatches.Set, ambientSwatches, c, true)
+            ambientSyncing = false
+        end
+        drawSky()
+    end })
 end
 
 ----- Movement -----
@@ -2429,6 +2690,48 @@ do
 	mentorCard:Toggle({ Title = "Auto tree jump", Desc = "Tree jump missions", Flag = "mt_tree", Default = false, Callback = function(v) farm.TreeM = v end })
 	mentorCard:Toggle({ Title = "Auto kunai shoot", Desc = "Target board missions", Flag = "mt_shoot", Default = false, Callback = function(v) farm.Shoot = v end })
 	mentorCard:Button({ Title = "Kenjutsu training", Icon = "sword", Callback = function() fire("trainkenmaster") end })
+
+	-- Progress: read from statz.senseifolder (trainings done per mentor, today's count, completed) and the
+	-- running mission's amount / maxamount when the game gives one
+	local progressCard = MentorPage:Card({ Title = "Progress", Icon = "activity", Side = "Right" })
+	local mentorNow = progressCard:Info({ Title = "Current mentor", Value = "-" })
+	local missionActive = false
+	local missionBar = progressCard:Progress({ Title = "Current mission", Value = 0, Max = 1,
+		Format = function(value, maxValue) return missionActive and (tostring(value) .. " / " .. tostring(maxValue)) or "No mission" end })
+	local mentorRows = {}
+	for _, name in ipairs(mentors) do mentorRows[name] = progressCard:Info({ Title = name, Value = "-" }) end
+	local function missionAmounts()
+		local cm = LocalPlayer:FindFirstChild("currentmission")
+		local mission = cm and cm.Value
+		local amount = mission and mission:FindFirstChild("amount")
+		local maxAmount = mission and mission:FindFirstChild("maxamount")
+		if amount and maxAmount and tonumber(maxAmount.Value) and maxAmount.Value > 0 then return tonumber(amount.Value) or 0, maxAmount.Value end
+	end
+	loop("Mentor progress", 1, function()
+		local st = statz()
+		local folder = st and st:FindFirstChild("senseifolder")
+		local current = st and st:FindFirstChild("currentsensei")
+		mentorNow:Set(current and current.Value ~= "" and tostring(current.Value) or "None")
+		for name, row in pairs(mentorRows) do
+			local v = folder and folder:FindFirstChild(name)
+			if v then
+				local done = v:FindFirstChild("completed")
+				local today = v:FindFirstChild("dailytrainings")
+				row:Set((done and done.Value) and "Completed" or string.format("%s done · %s today", tostring(v.Value), tostring(today and today.Value or 0)))
+			else
+				row:Set("-")
+			end
+		end
+		local amount, maxAmount = missionAmounts()
+		missionActive = amount ~= nil
+		if amount then
+			missionBar:SetMax(maxAmount)
+			missionBar:Set(amount)
+		else
+			missionBar:SetMax(1)
+			missionBar:Set(0)
+		end
+	end)
 	loop("Mentor", 0.05, function()
 		if hub.FarmBusy or hub.ScrollBusy then return end
 		if farm.PunchM or farm.PunchD or farm.Shoot then
@@ -3210,13 +3513,24 @@ do
 	local names, byName = {}, {}
 	for _, p in ipairs(here) do names[#names + 1] = p[1] byName[p[1]] = p end
 	if #names > 0 then
-		local places = teleportsPage:Card({ Title = "Locations", Icon = "map-pin", Desc = "This map's locations" })
-		local chosen
-		places:Dropdown({ Title = "Location", Flag = "tp_loc", Items = names, Search = true, Callback = function(v) chosen = v end })
-		places:Button({ Title = "Teleport", Icon = "map-pin", Style = "Primary", Callback = function()
-			local p = byName[chosen or ""]
-			if p then tpTo(CFrame.new(p[2], p[3], p[4])) else notify("Teleport", "Pick one from the list first", "list", "warning") end
-		end })
+		-- a searchable list: four places show at once, the rest scroll; each row shows how far it is and has a Go button
+		local places = teleportsPage:Card({ Title = "Locations", Icon = "map-pin", Desc = #names .. " places on this map" })
+		local function distanceText(p)
+			local r = rootPart()
+			if not r then return nil end
+			local d = (r.Position - Vector3.new(p[2], p[3], p[4])).Magnitude
+			return d >= 1000 and string.format("%.1fk studs", d / 1000) or string.format("%d studs", math.floor(d + 0.5))
+		end
+		local items = {}
+		for _, p in ipairs(here) do items[#items + 1] = { Title = p[1], Desc = distanceText(p), Icon = "map-pin" } end
+		local placeList = places:ItemList({ Items = items, Button = "Go", Rows = 4, Placeholder = "Search " .. #names .. " places",
+			Empty = "No place with that name", Callback = function(item)
+				local p = byName[item.Title]
+				if p then tpTo(CFrame.new(p[2], p[3], p[4])) end
+			end })
+		loop("Teleport distances", 2, function()                    -- distances follow you around
+			for _, p in ipairs(here) do placeList:SetDesc(p[1], distanceText(p)) end
+		end)
 	end
 
 	-- each spot returns the CFrame to teleport to, or nil when it is not on this map
