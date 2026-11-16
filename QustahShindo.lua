@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.63
+-- Qustāh · Shindo Life · V1.64
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -393,7 +393,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.63",
+	Version = "V1.64",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -2207,7 +2207,7 @@ moveStops.flyFov = Move.flyFov()                                    -- FOV prote
 
 local Basic = moveTab:Card({ Title = "Movement", Icon = "footprints" })
 Basic:Toggle({ Title = "Always run", Flag = "mv_run", Default = false, Callback = moveToggle("alwaysRun") })
-Basic:Toggle({ Title = "NoClip", Icon = "ghost", Flag = "p_noclip", Default = false, Bind = Enum.KeyCode.N, Bindable = true, Callback = set("NoClip") })
+Basic:Toggle({ Title = "NoClip", Flag = "p_noclip", Default = false, Callback = set("NoClip") })
 Basic:Toggle({ Title = "Click TP", Flag = "p_clicktp", Default = false, Callback = set("ClickTP") })
 
 -- Puppet Jump and Wider dash: their on / off switch sits in the card header
