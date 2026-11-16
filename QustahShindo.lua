@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.87
+-- Qustāh · Shindo Life · V1.88
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -432,7 +432,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.87",
+	Version = "V1.88",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -576,17 +576,38 @@ local function healthValue(hum)
     return (fake and fake:IsA("ValueBase") and tonumber(fake.Value)) or hum.Health
 end
 local function isAlive(hum) return hum and healthValue(hum) > 0 end
--- mode bar colour (Visuals › Style › Mode bar colors): fades from the preset's first colour (empty) to its second
--- (full)
+-- Bar colour presets (Visuals › Style): three stops each, from empty through the middle to full. A preset's colour
+-- at p (0..1) is read along its stops; the bars show the stops as a gradient (see esp.Gradient).
+local function hex(h) return Color3.fromRGB(tonumber(h:sub(1, 2), 16), tonumber(h:sub(3, 4), 16), tonumber(h:sub(5, 6), 16)) end
 local modePresets = {
-    Ocean = { Color3.fromRGB(30, 58, 138), Color3.fromRGB(90, 216, 255) },
-    Aurora = { Color3.fromRGB(45, 212, 191), Color3.fromRGB(167, 139, 250) },
-    Sunset = { Color3.fromRGB(249, 115, 22), Color3.fromRGB(236, 72, 153) },
-    Toxic = { Color3.fromRGB(22, 163, 74), Color3.fromRGB(217, 249, 157) },
+    { "Ocean", hex("1d3fa8"), hex("3b82f6"), hex("67e8f9") },
+    { "Aurora", hex("7c3aed"), hex("22d3ee"), hex("34d399") },
+    { "Sunset", hex("9d2c8f"), hex("f43f5e"), hex("fdba74") },
+    { "Toxic", hex("166534"), hex("22c55e"), hex("d9f99d") },
+    { "Violet", hex("4c1d95"), hex("a855f7"), hex("f5b8ff") },
+    { "Gold", hex("92400e"), hex("f59e0b"), hex("fde68a") },
 }
+local healthPresets = {
+    { "Classic", hex("e5484d"), hex("f5a524"), hex("3dd68c") },
+    { "Ice", hex("4f5bd5"), hex("3fa9f5"), hex("9ff3ff") },
+    { "Mint", hex("0f766e"), hex("2dd4bf"), hex("d1fae5") },
+    { "Ember", hex("7f1d1d"), hex("f05a28"), hex("ffd166") },
+    { "Candy", hex("ff4d8d"), hex("c06cff"), hex("7cc8ff") },
+    { "Mono", hex("3a3d45"), hex("8a8f9a"), hex("f4f5f7") },
+}
+for _, list in ipairs({ modePresets, healthPresets }) do
+    for _, preset in ipairs(list) do list[preset[1]] = preset end
+end
+-- colour of a preset at p: along its stops (entries 2..n)
+local function presetAt(preset, p)
+    p = clamp(p or 1, 0, 1)
+    local count = #preset - 1
+    local scaled = p * (count - 1)
+    local index = math.min(math.floor(scaled), count - 2)
+    return preset[2 + index]:Lerp(preset[3 + index], scaled - index)
+end
 local function modeColorFor(mode)
-    local preset = modePresets[settings.ModePreset] or modePresets.Ocean
-    return preset[1]:Lerp(preset[2], clamp(mode or 1, 0, 1))
+    return presetAt(modePresets[settings.ModePreset] or modePresets.Ocean, mode)
 end
 local function isTeammate(plr)
     if not plr.Team or not LocalPlayer.Team then return false end
@@ -598,18 +619,8 @@ local function toScreen(pos)
     return vec2(v.X, v.Y), on, v.Z
 end
 -- health bar colour by the chosen preset (Visuals › Style › Health bar colors); "Classic" goes red → yellow → green
-local healthPresets = {
-    Cool = { rgb(0.71, 0.55, 0.91), rgb(0.5, 0.71, 1) },
-    Mono = { rgb(0.36, 0.38, 0.42), rgb(0.93, 0.94, 0.96) },
-    Heat = { rgb(1, 0.23, 0.23), rgb(1, 0.82, 0.23) },
-}
 local function healthColor(p)
-    p = clamp(p, 0, 1)
-    local preset = healthPresets[settings.HealthPreset]
-    if preset then return preset[1]:Lerp(preset[2], p) end
-    -- Classic: Qustah's red → orange → green
-    local red, orange, green = Color3.fromRGB(195, 85, 85), Color3.fromRGB(210, 145, 70), Color3.fromRGB(115, 185, 130)
-    return p < 0.5 and red:Lerp(orange, p * 2) or orange:Lerp(green, (p - 0.5) * 2)
+    return presetAt(healthPresets[settings.HealthPreset] or healthPresets.Classic, p)
 end
 
 local FriendCache = {}
@@ -1077,8 +1088,7 @@ function esp.UpdatePanel(panel, info)
         local key = settings.ModePreset .. "|" .. math.floor(ratio * 100 + 0.5)
         if panel.modeKey ~= key then
             panel.modeKey = key
-            local preset = modePresets[settings.ModePreset] or modePresets.Ocean
-            panel.modeGradient.Color = esp.Gradient(function(p) return preset[1]:Lerp(preset[2], p) end, 0, math.max(ratio, 0.001))
+            panel.modeGradient.Color = esp.Gradient(modeColorFor, 0, math.max(ratio, 0.001))
         end
         esp.SetIf(panel.modeLabel, "TextColor3", color)
         esp.SetIf(panel.modeLabel, "Text", "MD " .. esp.Compact(mode) .. (info.modeCap and (" / " .. esp.Compact(info.modeCap)) or " · relative"))
@@ -1823,17 +1833,11 @@ Colors:ColorPicker({ Title = "Enemy", Flag = "col_enemy", Default = settings.Col
 
 -- bar colours on the right, health over mode
 local HealthColors = StylePage:Card({ Title = "Health bar colors", Icon = "heart", Side = "Right" })
-HealthColors:Swatches({ Title = "From empty to full", Flag = "esp_hpcolors", Default = "Classic", Columns = 2, Items = {
-    { "Classic", Color3.fromRGB(195, 85, 85), Color3.fromRGB(115, 185, 130) },
-    { "Cool", healthPresets.Cool[1], healthPresets.Cool[2] },
-    { "Mono", healthPresets.Mono[1], healthPresets.Mono[2] },
-    { "Heat", healthPresets.Heat[1], healthPresets.Heat[2] },
-}, Callback = function(_, name) settings.HealthPreset = name end })
+HealthColors:Swatches({ Title = "From empty to full", Flag = "esp_hpcolors", Default = "Classic", Columns = 2, Items = healthPresets,
+    Callback = function(_, name) settings.HealthPreset = name end })
 local ModeColors = StylePage:Card({ Title = "Mode bar colors", Icon = "zap", Side = "Right" })
-ModeColors:Swatches({ Title = "From empty to full", Flag = "esp_modecolors", Default = "Ocean", Columns = 2, Items = {
-    { "Ocean", modePresets.Ocean[1], modePresets.Ocean[2] }, { "Aurora", modePresets.Aurora[1], modePresets.Aurora[2] },
-    { "Sunset", modePresets.Sunset[1], modePresets.Sunset[2] }, { "Toxic", modePresets.Toxic[1], modePresets.Toxic[2] },
-}, Callback = function(_, name) settings.ModePreset = name end })
+ModeColors:Swatches({ Title = "From empty to full", Flag = "esp_modecolors", Default = "Ocean", Columns = 2, Items = modePresets,
+    Callback = function(_, name) settings.ModePreset = name end })
 end
 
 ----- World -----
