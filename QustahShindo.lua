@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.61
+-- Qustāh · Shindo Life · V1.62
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -393,7 +393,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.61",
+	Version = "V1.62",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -479,7 +479,7 @@ local settings = {
     -- esp
     ESP_Enabled = false, ESP_TeamCheck = true, ESP_MaxDist = 1500,
     Box = true, BoxStyle = "Corner", BoxCorner = 30, BoxFill = false, BoxFillAlpha = 0.85, HealthBar = true, ModeBar = true, Outline = true,
-    HealthPreset = "Classic", ModeColor = Color3.fromRGB(90, 158, 255), ModeFlash = true,
+    HealthPreset = "Classic", ModePreset = "Ocean", ModeFlash = true,
     Name = true, DisplayName = true, HealthText = true, Distance = true, DistUnit = "Studs", Weapon = true, TextSize = 13,
     Chams = false, ChamsWalls = true, ChamsFill = 0.6, ChamsOutline = rgb(1, 1, 1),
     Tracer = false, TracerFrom = "Bottom", Skeleton = false, LookDir = false, HeadDot = false,
@@ -551,9 +551,17 @@ local function modeOf(char)
     maxValue = (okMax and tonumber(maxValue) and maxValue > 0) and maxValue or 100
     return clamp(value / maxValue, 0, 1)
 end
--- mode bar colour (Visuals › Style › Mode bar colors); with "Flash when full" a full bar pulses to white
+-- mode bar colour (Visuals › Style › Mode bar colors): fades from the preset's first colour (empty) to its second
+-- (full); with "Flash when full" a full bar pulses to white
+local modePresets = {
+    Ocean = { Color3.fromRGB(30, 58, 138), Color3.fromRGB(90, 216, 255) },
+    Aurora = { Color3.fromRGB(45, 212, 191), Color3.fromRGB(167, 139, 250) },
+    Sunset = { Color3.fromRGB(249, 115, 22), Color3.fromRGB(236, 72, 153) },
+    Toxic = { Color3.fromRGB(22, 163, 74), Color3.fromRGB(217, 249, 157) },
+}
 local function modeColorFor(mode)
-    local color = settings.ModeColor
+    local preset = modePresets[settings.ModePreset] or modePresets.Ocean
+    local color = preset[1]:Lerp(preset[2], clamp(mode or 1, 0, 1))
     if settings.ModeFlash and mode and mode >= 0.999 then
         color = color:Lerp(Color3.new(1, 1, 1), (math.sin(os.clock() * 8) + 1) / 2 * 0.7)
     end
@@ -1616,10 +1624,10 @@ HealthColors:Swatches({ Title = "From empty to full", Flag = "esp_hpcolors", Def
     { "Heat", healthPresets.Heat[1], healthPresets.Heat[2] },
 }, Callback = function(_, name) settings.HealthPreset = name end })
 local ModeColors = StylePage:Card({ Title = "Mode bar colors", Icon = "zap", Side = "Right" })
-ModeColors:Swatches({ Title = "Color", Flag = "esp_modecolor", Default = "Blue", Columns = 2, Items = {
-    { "Blue", Color3.fromRGB(90, 158, 255) }, { "Cyan", Color3.fromRGB(80, 220, 230) },
-    { "Violet", Color3.fromRGB(180, 139, 232) }, { "Gold", Color3.fromRGB(242, 184, 75) },
-}, Callback = function(color) settings.ModeColor = color end })
+ModeColors:Swatches({ Title = "From empty to full", Flag = "esp_modecolors", Default = "Ocean", Columns = 2, Items = {
+    { "Ocean", modePresets.Ocean[1], modePresets.Ocean[2] }, { "Aurora", modePresets.Aurora[1], modePresets.Aurora[2] },
+    { "Sunset", modePresets.Sunset[1], modePresets.Sunset[2] }, { "Toxic", modePresets.Toxic[1], modePresets.Toxic[2] },
+}, Callback = function(_, name) settings.ModePreset = name end })
 ModeColors:Toggle({ Title = "Flash when full", Desc = "The bar pulses while mode is at 100%", Flag = "esp_modeflash", Default = true, Callback = set("ModeFlash") })
 
 ----- World -----
@@ -2777,7 +2785,16 @@ do
 	end)
 
 	----- Daily -----
-	local rewardsCard = DailyPage:Card({ Title = "Rewards", Icon = "gift" })
+	local autoDailyCard = DailyPage:Card({ Title = "Auto daily", Icon = "repeat", Side = "Left" })
+	autoDailyCard:Toggle({ Title = "M1", Flag = "dl_m1", Default = false, Callback = function(v) farm.PunchD = v end })
+	autoDailyCard:Toggle({ Title = "Rush", Flag = "dl_rush", Default = false, Callback = function(v) farm.Rush = v end })
+	autoDailyCard:Toggle({ Title = "Chi charge", Flag = "dl_chi", Default = false, Callback = function(v) farm.Chi = v end })
+	autoDailyCard:Toggle({ Title = "Tree jumps", Flag = "dl_tree", Default = false, Callback = function(v) farm.TreeD = v end })
+	autoDailyCard:Toggle({ Title = "Daily boss quests", Flag = "dl_boss", Default = false, Callback = function(v)
+		if v ~= farm.DailyBoss then if v then platformOn() else platformOff() end end   -- platform, as in boss farm
+		farm.DailyBoss = v
+	end })
+	local rewardsCard = DailyPage:Card({ Title = "Rewards", Icon = "gift", Side = "Left" })
 	rewardsCard:Button({ Title = "Claim all missions", Icon = "gift", Style = "Primary", Callback = function()
 		local st = statz()
 		local m = st and st:FindFirstChild("mission")
@@ -2795,15 +2812,6 @@ do
 			end
 		end
 		notify("Missions", "Requested daily and main mission rewards", "gift")
-	end })
-	local autoDailyCard = DailyPage:Card({ Title = "Auto daily", Icon = "repeat", Side = "Right" })
-	autoDailyCard:Toggle({ Title = "M1", Flag = "dl_m1", Default = false, Callback = function(v) farm.PunchD = v end })
-	autoDailyCard:Toggle({ Title = "Rush", Flag = "dl_rush", Default = false, Callback = function(v) farm.Rush = v end })
-	autoDailyCard:Toggle({ Title = "Chi charge", Flag = "dl_chi", Default = false, Callback = function(v) farm.Chi = v end })
-	autoDailyCard:Toggle({ Title = "Tree jumps", Flag = "dl_tree", Default = false, Callback = function(v) farm.TreeD = v end })
-	autoDailyCard:Toggle({ Title = "Daily boss quests", Flag = "dl_boss", Default = false, Callback = function(v)
-		if v ~= farm.DailyBoss then if v then platformOn() else platformOff() end end   -- platform, as in boss farm
-		farm.DailyBoss = v
 	end })
 	-- Schedule: starts the dailies on a new day, claims each one when it is done (and stops its toggle), tells you when
 	-- all are done. A new day is noticed when a daily's progress goes back down (the game's daily reset).
