@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.70
+-- Qustāh · Shindo Life · V1.71
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -10,6 +10,45 @@ if game.GameId ~= 1511883870 then                               -- Shindo Life o
 	return
 end
 repeat task.wait() until game:IsLoaded()
+
+----- Mentor boss (headless) -----
+-- The 5th mentor task takes you to the training boss map (workspace.bossbattle). While Farm › Mentor › Auto mentor is
+-- on (the file below exists), the hub opens there without its window: it only teleports above each NPC, sets its
+-- health to its negative (as the kill aura does) and presses M1. When the boss dies the game sends you back, and the
+-- hub queued for that teleport opens normally and carries on with the next mentor task.
+local mentorAutoFile = "QustahShindoMentor.on"
+if workspace:FindFirstChild("bossbattle") and isfile and isfile(mentorAutoFile) then
+	local player = game:GetService("Players").LocalPlayer
+	local queueFn = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
+	if queueFn then pcall(queueFn, ("loadstring(game:HttpGet(%q, true))()"):format(rawLink)) end
+	pcall(function()
+		game:GetService("StarterGui"):SetCore("SendNotification", { Title = "Qustāh", Text = "Mentor boss: farming, the menu opens back on the map", Duration = 6 })
+	end)
+	local function bossTarget()
+		local folder = workspace:FindFirstChild("npc")
+		for _, v in ipairs(folder and folder:GetChildren() or {}) do
+			local hum, root, head = v:FindFirstChild("Humanoid"), v:FindFirstChild("HumanoidRootPart"), v:FindFirstChild("Head")
+			if v:IsA("Model") and v:FindFirstChild("npctype") and string.find(v.Name, "npc") and hum and root and head
+				and head.Position.Y > -1000 and hum.Health > 0 then
+				return v
+			end
+		end
+	end
+	env.QustahMentorBoss = game:GetService("RunService").Heartbeat:Connect(function()
+		local char = player.Character
+		local root = char and char:FindFirstChild("HumanoidRootPart")
+		local target = root and bossTarget()
+		if not target then return end
+		local anti = target:FindFirstChild("antiexploit")
+		if anti then pcall(function() anti:Destroy() end) end
+		root.CFrame = target.HumanoidRootPart.CFrame * CFrame.new(0, 7, 0.3)
+		workspace.CurrentCamera.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position, target.HumanoidRootPart.Position)
+		pcall(function() target.Humanoid.Health = -target.Humanoid.Health end)
+		local update = char:FindFirstChild("combat") and char.combat:FindFirstChild("update")
+		if update then update:FireServer("mouse1", true) end
+	end)
+	return
+end
 
 if env.QustahShindoCore and env.QustahShindoCore.Unload then
 	pcall(env.QustahShindoCore.Unload)
@@ -393,7 +432,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.70",
+	Version = "V1.71",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -2490,7 +2529,8 @@ do
 		StuckAfter = 60,                                         -- cancel stuck missions (no setting, handled internally)
 		Stats = {}, AutoRank = false, RankAfterMax = false, RankRC = false, RankStop = false, RankStopAt = 500,
 		-- Mentor and Daily use separate keys so turning one off does not stop the other
-		PunchM = false, PunchD = false, TreeM = false, TreeD = false, Shoot = false, Rush = false, Chi = false, DailyBoss = false,
+		PunchM = false, PunchD = false, TreeM = false, TreeD = false, Shoot = false, Deflect = false, MentorBoss = false,
+		MentorAuto = false, MentorTask = nil, Rush = false, Chi = false, DailyBoss = false,
 	}
 	local greenScroll = "http://www.roblox.com/asset/?id=5459241648"
 	if env.QustahShindoCore then env.QustahShindoCore.Farm, env.QustahShindoCore.Hub = farm, hub end   -- for tests
@@ -2825,9 +2865,21 @@ do
 		end
 		notify("Mentor", "No mentor on this map", "triangle-alert", "warning")
 	end })
-	mentorCard:Toggle({ Title = "Auto punch", Flag = "mt_punch", Default = false, Callback = function(v) farm.PunchM = v end })
-	mentorCard:Toggle({ Title = "Auto tree jump", Flag = "mt_tree", Default = false, Callback = function(v) farm.TreeM = v end })
-	mentorCard:Toggle({ Title = "Auto kunai shoot", Flag = "mt_shoot", Default = false, Callback = function(v) farm.Shoot = v end })
+	-- Auto mentor: takes a mission from this map's mentor when none is running and does it by its title (the five
+	-- trainings below). The fifth (boss) runs on the boss map without the menu; see "Mentor boss (headless)" at the top.
+	mentorCard:Toggle({ Title = "Auto mentor", Flag = "mt_auto", Default = false, Callback = function(v)
+		farm.MentorAuto = v
+		if not v then farm.MentorTask = nil end
+		pcall(function()
+			if v then writefile(mentorAutoFile, "1") queueHub() elseif isfile(mentorAutoFile) then delfile(mentorAutoFile) end
+		end)
+	end })
+	mentorCard:Divider({ Title = "Tasks" })
+	mentorCard:Toggle({ Title = "Push-ups", Flag = "mt_punch", Default = false, Callback = function(v) farm.PunchM = v end })
+	mentorCard:Toggle({ Title = "Tree jumps", Flag = "mt_tree", Default = false, Callback = function(v) farm.TreeM = v end })
+	mentorCard:Toggle({ Title = "Accuracy", Flag = "mt_shoot", Default = false, Callback = function(v) farm.Shoot = v end })
+	mentorCard:Toggle({ Title = "Deflecting", Flag = "mt_deflect", Default = false, Callback = function(v) farm.Deflect = v end })
+	mentorCard:Toggle({ Title = "Boss", Flag = "mt_boss", Default = false, Callback = function(v) farm.MentorBoss = v end })
 	mentorCard:Button({ Title = "Kenjutsu training", Icon = "sword", Callback = function() fire("trainkenmaster") end })
 
 	-- Progress: read from statz.senseifolder (trainings done per mentor, today's count, completed) and the
@@ -2871,18 +2923,82 @@ do
 			missionBar:Set(0)
 		end
 	end)
+	-- a task runs when its toggle is on or Auto mentor picked it
+	local function doing(task, manual) return manual or farm.MentorTask == task end
+	-- where the kunai targets stand, from each map's mentor (as DogeHub has them)
+	local kunaiSpots = {
+		[5451398863] = { "Narumaki", Vector3.new(-22, 0, -45) }, [6901575446] = { "Jiso Seishin", Vector3.new(50, 0, 10) },
+		[5451401540] = { "Shindai Akuma", Vector3.new(-100, 7, -170) }, [5431071837] = { "Ryuji Kenichi", Vector3.new(0, 320, -300) },
+	}
+	local function mentorGiver(name)
+		local sensei = workspace:FindFirstChild("sensei")
+		local g = sensei and sensei:FindFirstChild("missions") and sensei.missions:FindFirstChild(name)
+		return g and g:FindFirstChild("missiongiver") and g.missiongiver:FindFirstChild("HumanoidRootPart") and g
+	end
+	local lastSpotTp = 0
+	local function toKunaiSpot()                                   -- every 5 s, as the game moves you away after a throw
+		local spot = kunaiSpots[game.PlaceId]
+		local g = spot and mentorGiver(spot[1])
+		if g and os.clock() - lastSpotTp > 5 then
+			lastSpotTp = os.clock()
+			tpTo(g.missiongiver.HumanoidRootPart.CFrame + spot[2])
+		end
+	end
+	local function aimAtKunai()
+		local mine = workspace.Terrain:FindFirstChild(LocalPlayer.Name)
+		local aim = mine and mine:FindFirstChild("kunaiaim")
+		if aim then lookAt(aim.Position) end
+	end
+	local missionTasks = {
+		["[Objective: Push-Up Training]"] = "punch", ["[Objective: Tree-Jump Training]"] = "tree",
+		["[Objective: Accuracy Training]"] = "shoot", ["[Objective: Deflecting Training]"] = "deflect",
+	}
+	local lastTalk = 0
+	loop("Auto mentor", 0.25, function()
+		if not farm.MentorAuto then return end
+		if placeType == "bossbattle" then farm.MentorTask = "boss" return end
+		local m = missionUI()
+		if m and m.Visible then
+			local title = m:FindFirstChild("title")
+			farm.MentorTask = title and missionTasks[title.Text] or nil
+			return
+		end
+		farm.MentorTask = nil
+		if os.clock() - lastTalk < 1.5 then return end              -- no mission: ask this map's mentor for one
+		lastTalk = os.clock()
+		for _, name in ipairs(mentors) do
+			local g = mentorGiver(name)
+			if g then talkTo(g) return end
+		end
+	end)
 	loop("Mentor", 0.05, function()
 		if hub.FarmBusy or hub.ScrollBusy then return end
-		if farm.PunchM or farm.PunchD or farm.Shoot then
-			if farm.Shoot then
-				local mine = workspace.Terrain:FindFirstChild(LocalPlayer.Name)
-				local aim = mine and mine:FindFirstChild("kunaiaim")
-				if aim then lookAt(aim.Position) end
-			end
-			combat("mouse1", true)
+		local shoot, deflect = doing("shoot", farm.Shoot), doing("deflect", farm.Deflect)
+		if shoot or deflect then
+			toKunaiSpot()
+			aimAtKunai()                                             -- deflecting: face the kunai; accuracy: face and throw
 		end
-		if farm.TreeM or farm.TreeD then combat("takemovement2") end
+		if doing("punch", farm.PunchM) or farm.PunchD or shoot then combat("mouse1", true) end
+		if doing("tree", farm.TreeM) or farm.TreeD then combat("takemovement2") end
+		if doing("boss", farm.MentorBoss) then                       -- the boss map, when the menu is open there
+			local target
+			local folder = workspace:FindFirstChild("npc")
+			for _, v in ipairs(folder and folder:GetChildren() or {}) do
+				local hum, root = v:FindFirstChild("Humanoid"), v:FindFirstChild("HumanoidRootPart")
+				if v:IsA("Model") and v:FindFirstChild("npctype") and string.find(v.Name, "npc") and hum and root and hum.Health > 0 then target = v break end
+			end
+			if target then
+				local anti = target:FindFirstChild("antiexploit")
+				if anti then pcall(function() anti:Destroy() end) end
+				tpTo(target.HumanoidRootPart.CFrame * CFrame.new(0, 7, 0.3))
+				lookAt(target.HumanoidRootPart.Position)
+				pcall(function() target.Humanoid.Health = -target.Humanoid.Health end)
+				combat("mouse1", true)
+			end
+		end
 	end)
+	-- Auto mentor stays on across teleports while its file is there
+	if isfile and pcall(isfile, mentorAutoFile) and isfile(mentorAutoFile) then task.defer(function() Window:SetFlag("mt_auto", true) end) end
 
 	----- Daily -----
 	local autoDailyCard = DailyPage:Card({ Title = "Auto daily", Icon = "repeat", Side = "Left" })
