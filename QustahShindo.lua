@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.58
+-- Qustāh · Shindo Life · V1.59
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -393,7 +393,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.58",
+	Version = "V1.59",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -412,15 +412,15 @@ Window:DashboardTab({ Info = {
 local Tabs = {
 	Farm = Window:Tab({ Title = "Farm", Icon = "swords" }),
 	Spin = placeType == "menu" and Window:Tab({ Title = "Spin", Icon = "dices" }) or nil,   -- spins only work in the main menu
-	Combat = Window:Tab({ Title = "Combat", Icon = "crosshair" }),
+	Combat = Window:Tab({ Title = "Combat", Icon = "crosshair", Compact = true }),
 	Visuals = Window:Tab({ Title = "Visuals", Icon = "eye" }),
 	Player = Window:Tab({ Title = "Player", Icon = "user-round-cog" }),
 	Loadout = Window:Tab({ Title = "Loadout", Icon = "dna" }),
-	Server = Window:Tab({ Title = "Server", Icon = "server" }),
+	Server = Window:Tab({ Title = "Server", Icon = "server", Compact = true }),
 }
 -- Player tab: four pages, Player (game features), Movement, Teleports and Colors
 local playerPage = Tabs.Player:Page("Player")
-local movementPage = Tabs.Player:Page("Movement")
+local movementPage = Tabs.Player:Page("Movement", { Compact = true })
 local teleportsPage = Tabs.Player:Page("Teleports")
 local colorsPage = Tabs.Player:Page("Colors")
 
@@ -1356,7 +1356,7 @@ end
 do
 local Visuals = Tabs.Visuals
 local EspPage = Visuals:Page("ESP")
-local ExtraPage = Visuals:Page("Extra")
+local ExtraPage = Visuals:Page("Extra", { Compact = true })
 local StylePage = Visuals:Page("Style")
 
 local General = EspPage:Card({ Title = "General", Icon = "scan-eye" })
@@ -1416,7 +1416,7 @@ Filters:Toggle({ Title = "Fade with distance", Flag = "esp_fade", Default = true
 Filters:Toggle({ Title = "Performance mode", Desc = "Update distant chams every other frame", Flag = "esp_perf", Default = false, Callback = set("Perf") })
 
 ----- World -----
-local World = Visuals:Page("World")
+local World = Visuals:Page("World", { Compact = true })
 local Light = World:Card({ Title = "Lighting", Icon = "lightbulb" })
 Light:Toggle({ Title = "Fullbright", Flag = "w_fullbright", Default = false, Callback = set("Fullbright") })
 Light:Toggle({ Title = "No fog", Flag = "w_nofog", Default = false, Callback = set("NoFog") })
@@ -2080,8 +2080,8 @@ end
 do
 	local Farm = Tabs.Farm
 	local QuestPage = Farm:Page("Quests")
-	local MentorPage = Farm:Page("Mentor")
-	local DailyPage = Farm:Page("Daily")
+	local MentorPage = Farm:Page("Mentor", { Compact = true })
+	local DailyPage = Farm:Page("Daily", { Compact = true })
 
 	local farm = {
 		Scroll = false, Boss = false,
@@ -3517,7 +3517,7 @@ end
 buildLists()
 
 ----- Loadout -----
-local Loadout = Tabs.Loadout:Page("Changer")
+local Loadout = Tabs.Loadout:Page("Changer", { Compact = true })
 
 local Elem = Loadout:Card({ Title = "Element", Icon = "flame", Desc = "Change element slots" })
 dropdowns.element = Elem:Dropdown({ Title = "Element", Flag = "ld_elem", Items = itemsOf("element"), Search = true, Callback = pickSet("element") })
@@ -3570,7 +3570,7 @@ toolRow:Button({ Title = "Show code names", Icon = "scan-search", Callback = sho
 Tools:Paragraph({ Title = "Note", Content = "Lists show the game's real names. If a list is empty, press Refresh lists once you're fully in the game. Changes are client side." })
 
 ----- RC Shop -----
-local Shop = Tabs.Loadout:Page("RC Shop")
+local Shop = Tabs.Loadout:Page("RC Shop", { Compact = true })
 local ShopCard = Shop:Card({ Title = "Shop", Icon = "store" })
 ShopCard:Button({ Title = "Show RC Shop", Icon = "eye", Toggle = true, OnTitle = "Hide RC Shop", OnIcon = "eye-off",   -- no Flag: the shop must not open by itself on startup
 	Callback = function(on) setShopVisible(on) end })
@@ -3637,7 +3637,7 @@ do
 end
 
 ----- Startup -----
-Window:SettingsTab()
+Window:SettingsTab({ Compact = true })
 Window.Config:LoadAutoLoad()
 for _, fn in ipairs(hub.AfterAutoLoad or {}) do pcall(fn) end
 Window:Notify({ Title = "Qustāh Shindo", Content = "Loaded · " .. placeName() .. " · RShift to toggle", Icon = "sparkles" })
