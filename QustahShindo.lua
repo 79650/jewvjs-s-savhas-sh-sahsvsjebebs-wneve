@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.82
+-- Qustāh · Shindo Life · V1.83
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -432,7 +432,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.82",
+	Version = "V1.83",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -518,7 +518,7 @@ local settings = {
     -- esp
     ESP_Enabled = false, ESP_TeamCheck = true, ESP_MaxDist = 2500, PlayerLimit = 30, Pins = {},
     Box = false, BoxStyle = "Corner", BoxCorner = 30, BoxFill = false, BoxFillAlpha = 0.85, HealthBar = true, ModeBar = true, Outline = true,
-    HealthPreset = "Classic", ModePreset = "Ocean", ModeFlash = true,
+    HealthPreset = "Classic", ModePreset = "Ocean",
     Name = true, User = true, HealthText = true, Distance = true, TextSize = 14,
     HealthSegments = 5, ModeText = false, ModeSegments = 1,
     Chams = true, ChamsWalls = true, ChamsStyle = "Solid", ChamsFill = 0.55, ChamsOutlineAlpha = 0.1,
@@ -578,7 +578,7 @@ local function healthValue(hum)
 end
 local function isAlive(hum) return hum and healthValue(hum) > 0 end
 -- mode bar colour (Visuals › Style › Mode bar colors): fades from the preset's first colour (empty) to its second
--- (full); with "Flash when full" a full bar pulses to white
+-- (full)
 local modePresets = {
     Ocean = { Color3.fromRGB(30, 58, 138), Color3.fromRGB(90, 216, 255) },
     Aurora = { Color3.fromRGB(45, 212, 191), Color3.fromRGB(167, 139, 250) },
@@ -587,11 +587,7 @@ local modePresets = {
 }
 local function modeColorFor(mode)
     local preset = modePresets[settings.ModePreset] or modePresets.Ocean
-    local color = preset[1]:Lerp(preset[2], clamp(mode or 1, 0, 1))
-    if settings.ModeFlash and mode and mode >= 0.999 then
-        color = color:Lerp(Color3.new(1, 1, 1), (math.sin(os.clock() * math.pi * 2 / 5) + 1) / 2 * 0.7)
-    end
-    return color
+    return preset[1]:Lerp(preset[2], clamp(mode or 1, 0, 1))
 end
 local function isTeammate(plr)
     if not plr.Team or not LocalPlayer.Team then return false end
@@ -1087,16 +1083,12 @@ function esp.UpdatePanel(panel, info)
         local ratio = clamp(mode / (info.modeCap or panel.peak), 0, 1)
         local color = modeColorFor(ratio)
         esp.SetIf(panel.modeFill, "Size", UDim2.fromScale(ratio, 1))
-        -- the preset's gradient from empty up to the current amount; a full bar flashes with "Flash when full"
-        local flash = settings.ModeFlash and ratio >= 0.999
+        -- the preset's gradient from empty up to the current amount (redone only when it changes)
         local key = settings.ModePreset .. "|" .. math.floor(ratio * 100 + 0.5)
-        if flash or panel.modeKey ~= key then
-            panel.modeKey = flash and nil or key
+        if panel.modeKey ~= key then
+            panel.modeKey = key
             local preset = modePresets[settings.ModePreset] or modePresets.Ocean
-            local pulse = flash and (math.sin(os.clock() * math.pi * 2 / 5) + 1) / 2 * 0.7 or 0
-            panel.modeGradient.Color = esp.Gradient(function(p)
-                return preset[1]:Lerp(preset[2], p):Lerp(Color3.new(1, 1, 1), pulse)
-            end, 0, math.max(ratio, 0.001))
+            panel.modeGradient.Color = esp.Gradient(function(p) return preset[1]:Lerp(preset[2], p) end, 0, math.max(ratio, 0.001))
         end
         esp.SetIf(panel.modeLabel, "TextColor3", color)
         esp.SetIf(panel.modeLabel, "Text", "MD " .. esp.Compact(mode) .. (info.modeCap and (" / " .. esp.Compact(info.modeCap)) or " · relative"))
@@ -1888,7 +1880,6 @@ ModeColors:Swatches({ Title = "From empty to full", Flag = "esp_modecolors", Def
     { "Ocean", modePresets.Ocean[1], modePresets.Ocean[2] }, { "Aurora", modePresets.Aurora[1], modePresets.Aurora[2] },
     { "Sunset", modePresets.Sunset[1], modePresets.Sunset[2] }, { "Toxic", modePresets.Toxic[1], modePresets.Toxic[2] },
 }, Callback = function(_, name) settings.ModePreset = name end })
-ModeColors:Toggle({ Title = "Flash when full", Desc = "The bar pulses while mode is at 100%", Flag = "esp_modeflash", Default = true, Callback = set("ModeFlash") })
 end
 
 ----- World -----
