@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.68
+-- Qustāh · Shindo Life · V1.69
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -393,7 +393,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.68",
+	Version = "V1.69",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -481,7 +481,7 @@ local settings = {
     Box = true, BoxStyle = "Corner", BoxCorner = 30, BoxFill = false, BoxFillAlpha = 0.85, HealthBar = true, ModeBar = true, Outline = true,
     HealthPreset = "Classic", ModePreset = "Ocean", ModeFlash = true,
     Name = true, DisplayName = true, HealthText = true, Distance = true, DistUnit = "Studs", Weapon = true, TextSize = 13,
-    Chams = true, ChamsWalls = true, ChamsFill = 0.6, ChamsOutline = rgb(1, 1, 1),
+    Chams = true, ChamsWalls = true, ChamsStyle = "Solid", ChamsFill = 0.6, ChamsOutline = rgb(1, 1, 1),
     Tracer = false, TracerFrom = "Bottom", Skeleton = false, LookDir = false, HeadDot = false,
     LineThick = 1, LineAlpha = 0, LineRainbow = false,                -- shared style of tracer, look direction, skeleton and head dot
     ColEnemy = rgb(1, 0.23, 0.23), ColAlly = rgb(0.23, 1, 0.42), ColHidden = rgb(1, 0.69, 0.23), ColTarget = rgb(0.75, 0.45, 1),
@@ -870,6 +870,7 @@ local cornerSigns = {
 }
 local function updateChams(e, char, color, alpha)
     local fillAlpha = (1 - settings.ChamsFill) * alpha
+    local solid = settings.ChamsStyle ~= "Outline"                  -- "Outline": only the part edges, no fill
     local n = 0
     for _, part in ipairs(char:GetChildren()) do
         if n >= 16 then break end
@@ -886,12 +887,12 @@ local function updateChams(e, char, color, alpha)
                 if #h >= 3 then
                     n += 1
                     local key = "cham" .. n
-                    local q1 = use(e, key .. "a", "Quad")
+                    local q1 = solid and use(e, key .. "a", "Quad")
                     if q1 then
                         q1.PointA, q1.PointB, q1.PointC, q1.PointD = h[1], h[2], h[3], h[4] or h[3]
                         q1.Color, q1.Filled, q1.Thickness, q1.Transparency, q1.ZIndex, q1.Visible = color, true, 1, fillAlpha, 0, true
                     end
-                    if #h > 4 then
+                    if solid and #h > 4 then
                         local q2 = use(e, key .. "b", "Quad")
                         if q2 then
                             q2.PointA, q2.PointB, q2.PointC, q2.PointD = h[1], h[4], h[5], h[6] or h[5]
@@ -1590,8 +1591,10 @@ local Chams = ExtraPage:Card({ Title = "Chams", Icon = "paint-bucket" })
 ----- Chams preview -----
 -- Your character (a still copy) painted the way chams would paint it: each part tinted by the fill colour and
 -- transparency, and its outline drawn in the outline colour (same part hulls as the in-game chams). Menu GUI.
+local chamsRow = Chams:Row({ Gap = 10 })
+local chamsLeft, chamsRight = chamsRow:Column(), chamsRow:Column()   -- preview on the left, its switches on the right
 do
-    local chamsView = Chams:Viewport({ Height = 150, Spin = false })
+    local chamsView = chamsLeft:Viewport({ Height = 118, Spin = false })
     local holder = chamsView.View and chamsView.View.Parent
     local overlay, lines, originals = nil, {}, {}
     if holder then
@@ -1629,7 +1632,7 @@ do
         local model = chamsView.Model
         local used = 0
         if model then
-            local fillAlpha = settings.Chams and (1 - settings.ChamsFill) or 0
+            local fillAlpha = (settings.Chams and settings.ChamsStyle ~= "Outline") and (1 - settings.ChamsFill) or 0
             local size = holder.AbsoluteSize
             for _, part in ipairs(model:GetDescendants()) do
                 if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
@@ -1682,8 +1685,10 @@ do
         drawChamsPreview()
     end)
 end
-Chams:Toggle({ Title = "Chams", Flag = "esp_chams", Default = true, Style = "Switch", Callback = set("Chams") })
-Chams:Toggle({ Title = "Through walls", Flag = "esp_chamswalls", Default = true, Style = "Switch", DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsWalls") })
+chamsRight:Toggle({ Title = "Chams", Flag = "esp_chams", Default = true, Style = "Switch", Callback = set("Chams") })
+chamsRight:Toggle({ Title = "Through walls", Flag = "esp_chamswalls", Default = true, Style = "Switch", DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsWalls") })
+chamsRight:Segment({ Title = "Chams style", Flag = "esp_chamsstyle", Items = { "Solid", "Outline" }, Default = "Solid", Wide = true,
+    DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsStyle") })
 Chams:Slider({ Title = "Fill transparency", Flag = "esp_chamsfill", Min = 0, Max = 100, Default = 60, Suffix = "%", DependsOn = { Flag = "esp_chams", Reason = "" },
     Callback = function(v) settings.ChamsFill = v / 100 end })
 Chams:ColorPicker({ Title = "Outline color", Flag = "esp_chamsout", Default = white, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsOutline") })
