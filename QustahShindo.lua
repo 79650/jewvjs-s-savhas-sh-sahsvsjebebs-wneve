@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.60
+-- Qustāh · Shindo Life · V1.61
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -393,7 +393,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.60",
+	Version = "V1.61",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -479,6 +479,7 @@ local settings = {
     -- esp
     ESP_Enabled = false, ESP_TeamCheck = true, ESP_MaxDist = 1500,
     Box = true, BoxStyle = "Corner", BoxCorner = 30, BoxFill = false, BoxFillAlpha = 0.85, HealthBar = true, ModeBar = true, Outline = true,
+    HealthPreset = "Classic", ModeColor = Color3.fromRGB(90, 158, 255), ModeFlash = true,
     Name = true, DisplayName = true, HealthText = true, Distance = true, DistUnit = "Studs", Weapon = true, TextSize = 13,
     Chams = false, ChamsWalls = true, ChamsFill = 0.6, ChamsOutline = rgb(1, 1, 1),
     Tracer = false, TracerFrom = "Bottom", Skeleton = false, LookDir = false, HeadDot = false,
@@ -550,7 +551,14 @@ local function modeOf(char)
     maxValue = (okMax and tonumber(maxValue) and maxValue > 0) and maxValue or 100
     return clamp(value / maxValue, 0, 1)
 end
-local modeColor = rgb(0.35, 0.62, 1)
+-- mode bar colour (Visuals › Style › Mode bar colors); with "Flash when full" a full bar pulses to white
+local function modeColorFor(mode)
+    local color = settings.ModeColor
+    if settings.ModeFlash and mode and mode >= 0.999 then
+        color = color:Lerp(Color3.new(1, 1, 1), (math.sin(os.clock() * 8) + 1) / 2 * 0.7)
+    end
+    return color
+end
 local function isTeammate(plr)
     if not plr.Team or not LocalPlayer.Team then return false end
     if plr.Neutral or LocalPlayer.Neutral then return false end
@@ -560,8 +568,16 @@ local function toScreen(pos)
     local v, on = Camera:WorldToViewportPoint(pos)
     return vec2(v.X, v.Y), on, v.Z
 end
+-- health bar colour by the chosen preset (Visuals › Style › Health bar colors); "Classic" goes red → yellow → green
+local healthPresets = {
+    Cool = { rgb(0.71, 0.55, 0.91), rgb(0.5, 0.71, 1) },
+    Mono = { rgb(0.36, 0.38, 0.42), rgb(0.93, 0.94, 0.96) },
+    Heat = { rgb(1, 0.23, 0.23), rgb(1, 0.82, 0.23) },
+}
 local function healthColor(p)
     p = clamp(p, 0, 1)
+    local preset = healthPresets[settings.HealthPreset]
+    if preset then return preset[1]:Lerp(preset[2], p) end
     if p < 0.5 then return Color3.fromRGB(255, floor(510 * p), 0) end
     return Color3.fromRGB(floor(255 - (p - 0.5) * 510), 255, 0)
 end
@@ -976,7 +992,7 @@ local function updatePlayer(plr)
         local bg = use(e, "mb_bg", "Square")
         if bg then bg.Position, bg.Size, bg.Color, bg.Filled, bg.Transparency, bg.ZIndex, bg.Visible = vec2(modeX - 1, boxTop - 1), vec2(4, h + 2), black, true, alpha, 1, true end
         local bar = use(e, "mb", "Square")
-        if bar then bar.Position, bar.Size, bar.Color, bar.Filled, bar.Transparency, bar.ZIndex, bar.Visible = vec2(modeX, boxTop + h * (1 - mode)), vec2(2, h * mode), modeColor, true, alpha, 2, true end
+        if bar then bar.Position, bar.Size, bar.Color, bar.Filled, bar.Transparency, bar.ZIndex, bar.Visible = vec2(modeX, boxTop + h * (1 - mode)), vec2(2, h * mode), modeColorFor(mode), true, alpha, 2, true end
         leftEdge = modeX - 1
     end
 
@@ -1505,7 +1521,7 @@ do
         local mode = settings.ModeBar and char and modeOf(char)
         if mode then
             bar(parts.mbBg, leftEdge - 5, y1 - 1, 4, h + 2, Color3.new(0, 0, 0))
-            bar(parts.mb, leftEdge - 4, y1 + h * (1 - mode), 2, h * mode, modeColor)
+            bar(parts.mb, leftEdge - 4, y1 + h * (1 - mode), 2, h * mode, modeColorFor(mode))
             leftEdge = leftEdge - 5
         end
         local textSize = settings.TextSize
@@ -1590,6 +1606,21 @@ local Filters = StylePage:Card({ Title = "Filters", Icon = "sliders-horizontal",
 Filters:Toggle({ Title = "Visibility color", Desc = "Different color behind walls", Flag = "esp_viscolor", Default = true, Callback = set("VisColor") })
 Filters:Toggle({ Title = "Fade with distance", Flag = "esp_fade", Default = true, Callback = set("Fade") })
 Filters:Toggle({ Title = "Performance mode", Desc = "Update distant chams every other frame", Flag = "esp_perf", Default = false, Callback = set("Perf") })
+
+-- bar colours, side by side: health on the left, mode on the right
+local HealthColors = StylePage:Card({ Title = "Health bar colors", Icon = "heart", Side = "Left" })
+HealthColors:Swatches({ Title = "From empty to full", Flag = "esp_hpcolors", Default = "Classic", Columns = 2, Items = {
+    { "Classic", Color3.fromRGB(255, 59, 59), Color3.fromRGB(91, 210, 74) },
+    { "Cool", healthPresets.Cool[1], healthPresets.Cool[2] },
+    { "Mono", healthPresets.Mono[1], healthPresets.Mono[2] },
+    { "Heat", healthPresets.Heat[1], healthPresets.Heat[2] },
+}, Callback = function(_, name) settings.HealthPreset = name end })
+local ModeColors = StylePage:Card({ Title = "Mode bar colors", Icon = "zap", Side = "Right" })
+ModeColors:Swatches({ Title = "Color", Flag = "esp_modecolor", Default = "Blue", Columns = 2, Items = {
+    { "Blue", Color3.fromRGB(90, 158, 255) }, { "Cyan", Color3.fromRGB(80, 220, 230) },
+    { "Violet", Color3.fromRGB(180, 139, 232) }, { "Gold", Color3.fromRGB(242, 184, 75) },
+}, Callback = function(color) settings.ModeColor = color end })
+ModeColors:Toggle({ Title = "Flash when full", Desc = "The bar pulses while mode is at 100%", Flag = "esp_modeflash", Default = true, Callback = set("ModeFlash") })
 
 ----- World -----
 local World = Visuals:Page("World", { Compact = true })
@@ -2774,6 +2805,64 @@ do
 		if v ~= farm.DailyBoss then if v then platformOn() else platformOff() end end   -- platform, as in boss farm
 		farm.DailyBoss = v
 	end })
+	-- Schedule: starts the dailies on a new day, claims each one when it is done (and stops its toggle), tells you when
+	-- all are done. A new day is noticed when a daily's progress goes back down (the game's daily reset).
+	local scheduleCard = DailyPage:Card({ Title = "Schedule", Icon = "clock", Side = "Right" })
+	local schedule = { Start = false, Claim = true, Notify = false }
+	scheduleCard:Toggle({ Title = "Start at reset", Desc = "Begins the dailies right after the reset", Flag = "dl_start", Default = false, Callback = function(v) schedule.Start = v end })
+	scheduleCard:Toggle({ Title = "Claim when done", Desc = "Claims a finished daily and turns it off", Flag = "dl_claim", Default = true, Callback = function(v) schedule.Claim = v end })
+	scheduleCard:Toggle({ Title = "Notify when all done", Flag = "dl_notify", Default = false, Callback = function(v) schedule.Notify = v end })
+	local nextReset = scheduleCard:Info({ Title = "Next reset", Value = "-" })
+	-- daily quest type -> Auto daily toggle
+	local dailyFlags = { punch = "dl_m1", rush = "dl_rush", chakra = "dl_chi", treejump = "dl_tree", fightboss = "dl_boss" }
+	local dailyState = { dl_m1 = "PunchD", dl_rush = "Rush", dl_chi = "Chi", dl_tree = "TreeD", dl_boss = "DailyBoss" }   -- flag -> farm field
+	local lastAmount, allDoneSaid = {}, false
+	loop("Daily schedule", 2, function()
+		-- countdown to 00:00 UTC (Roblox's day; shown until the game's own reset is seen to differ)
+		local now = os.time()
+		local left = 86400 - now % 86400
+		nextReset:Set(string.format("%02d:%02d:%02d", math.floor(left / 3600), math.floor(left % 3600 / 60), left % 60))
+		local st = statz()
+		local m = st and st:FindFirstChild("mission")
+		if not m then return end
+		local reset, tracked, done = false, 0, 0
+		for i = 1, 14 do
+			local q = m:FindFirstChild("dailyquest" .. i)
+			local flag = q and dailyFlags[tostring(q.Value)]
+			if flag then
+				local amount, maxAmount, claimed = q:FindFirstChild("amount"), q:FindFirstChild("maxamount"), q:FindFirstChild("claim")
+				local a, mx = tonumber(amount and amount.Value) or 0, tonumber(maxAmount and maxAmount.Value) or 0
+				if lastAmount[i] and a < lastAmount[i] then reset = true end
+				lastAmount[i] = a
+				local finished = mx > 0 and a >= mx
+				local running = farm[dailyState[flag]] == true
+				if running or finished then tracked += 1 end
+				if finished then
+					done += 1
+					if schedule.Claim then
+						if claimed and claimed.Value == false then fire("claim", q) end
+						if running then Window:SetFlag(flag, false) end
+					end
+				end
+			end
+		end
+		if reset then
+			allDoneSaid = false
+			if schedule.Start then
+				for i = 1, 14 do
+					local q = m:FindFirstChild("dailyquest" .. i)
+					local flag = q and dailyFlags[tostring(q.Value)]
+					if flag then Window:SetFlag(flag, true) end
+				end
+				notify("Daily", "New day: dailies started", "clock")
+			end
+		end
+		if schedule.Notify and not allDoneSaid and tracked > 0 and done >= tracked then
+			allDoneSaid = true
+			notify("Daily", "All dailies are done", "check")
+		end
+	end)
+
 	loop("Daily", 0.05, function()
 		if hub.FarmBusy or hub.ScrollBusy then return end
 		if farm.Rush then combat("rushw") end
