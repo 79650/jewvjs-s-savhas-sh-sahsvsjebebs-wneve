@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.71
+-- Qustāh · Shindo Life · V1.72
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -432,7 +432,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.71",
+	Version = "V1.72",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -3507,6 +3507,13 @@ do
 	local Aura = Game
 	Aura:Divider({ Title = "Utility" })
 	Aura:Toggle({ Title = "NPC Kill Aura", Flag = "sh_aura", Default = false, Callback = function(v) shindo.Aura = v end })
+	-- Spam E: presses and releases E every frame (chakra charge / interact spam while farming)
+	Aura:Toggle({ Title = "Spam E", Flag = "sh_spame", Default = false, Callback = function(v) shindo.SpamE = v end })
+	hubConnect(RunService.Stepped, function()
+		if not (hub.Running and shindo.SpamE) then return end
+		combat("key", "e")
+		combat("key", "eend")
+	end)
 	-- Kill aura: hits only the current target. If the farm is attacking a mob it is that mob, otherwise the closest valid NPC.
 	-- The target's "antiexploit" is removed and its health is set to its negative, as NukePlat does (Health = -Health, 5 times; client side).
 	-- Runs when either Player > NPC kill aura or Farm > Configurations is on.
@@ -3555,6 +3562,36 @@ do
 	local Scroll = Game
 	Scroll:Toggle({ Title = "Scroll snipe", Desc = "Grabs scrolls that spawn on the map", Flag = "sh_scroll", Default = false, Callback = function(v) shindo.Scroll = v end })
 	Scroll:Toggle({ Title = "Teleport to spawn after", Flag = "sh_scrollspawn", Default = true, Callback = function(v) shindo.ScrollSpawn = v end })
+	----- Display rank -----
+	-- Client side only: other players still see your real rank. "Real" puts the original value back.
+	do
+		local ranks = { "Real", "RELL", "F 0", "D 1", "D 2", "D 3", "C 1", "C 2", "C 3", "B 1", "B 2", "B 3", "A 1", "A 2", "A 3",
+			"S 1", "S 2", "S 3", "V 1", "V 2", "V 3", "X 1", "X 2", "X 3", "Y 1", "Y 2", "Y 3", "Z 1", "Z 2", "Z 3",
+			"MAX-69", "MAX-420", "MAX-666", "MAX-999", "GOD", "Dragon", "Hacker", "???" }
+		local realRank
+		local function rankValue()
+			local ls = LocalPlayer:FindFirstChild("leaderstats")
+			return ls and ls:FindFirstChild("Rank")
+		end
+		local function applyRank()
+			local rv = rankValue()
+			if not rv then return end
+			local want = shindo.DisplayRank
+			if want and want ~= "Real" then
+				if realRank == nil then realRank = rv.Value end
+				if rv.Value ~= want then pcall(function() rv.Value = want end) end
+			elseif realRank ~= nil then
+				pcall(function() rv.Value = realRank end)
+				realRank = nil
+			end
+		end
+		Game:Dropdown({ Title = "Display rank", Flag = "sh_rank", Default = "Real", Items = ranks, Callback = function(v)
+			shindo.DisplayRank = v
+			applyRank()
+		end })
+		loop("Display rank", 1, applyRank)                         -- the server rewrites it on rank-up, so it is reapplied
+		hub.Cleanup[#hub.Cleanup + 1] = function() shindo.DisplayRank = "Real" applyRank() end
+	end
 	Game:Toggle({ Title = "Anti-AFK", Desc = "Prevents the 20 minute idle kick", Flag = "p_antiafk", Default = true, Callback = function(v) settings.AntiAfk = v end })
 	local function toSpawn()
 		local sp = workspace:FindFirstChild("SpawnLocation")
@@ -3867,6 +3904,25 @@ do
 			local pad = d and d:FindFirstChild("pad", true)
 			if pad and not pad:IsA("BasePart") then pad = pad:FindFirstChildWhichIsA("BasePart", true) end
 			return pad and pad.CFrame + Vector3.new(0, 3, 0)
+		end },
+		{ "Logs", "axe", function()
+			local folder = workspace:FindFirstChild("npc")
+			if not folder then return nil end
+			for _, v in ipairs(folder:GetChildren()) do
+				local hrp = v.Name == "logtraining" and v:FindFirstChild("HumanoidRootPart")
+				local head = v:FindFirstChild("Head")
+				if hrp and head and head.Position.Y > -1000 then return hrp.CFrame * CFrame.new(0, 2, 10) end
+			end
+		end },
+		{ "Training", "dumbbell", function()
+			-- training spots differ per map: a platform, seats or pads inside workspace.training
+			local names = { [5255237254] = "Part", [5824792748] = "MeshPart", [6602103757] = "Meshes/mounty_Cube.003" }
+			local want = names[game.PlaceId]
+			local folder = workspace:FindFirstChild("training")
+			if not (want and folder) then return nil end
+			for _, v in ipairs(folder:GetChildren()) do
+				if v.Name == want and v:IsA("BasePart") then return v.CFrame * CFrame.new(0, want == "Part" and 1 or 2, 0) end
+			end
 		end },
 		{ "Ramen", "soup", function()
 			local r = workspace:FindFirstChild("EAT") and workspace.EAT:FindFirstChild("Ramen")
