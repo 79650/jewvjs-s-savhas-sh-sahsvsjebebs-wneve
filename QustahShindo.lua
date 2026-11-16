@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.64
+-- Qustāh · Shindo Life · V1.65
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -393,7 +393,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.64",
+	Version = "V1.65",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -481,7 +481,7 @@ local settings = {
     Box = true, BoxStyle = "Corner", BoxCorner = 30, BoxFill = false, BoxFillAlpha = 0.85, HealthBar = true, ModeBar = true, Outline = true,
     HealthPreset = "Classic", ModePreset = "Ocean", ModeFlash = true,
     Name = true, DisplayName = true, HealthText = true, Distance = true, DistUnit = "Studs", Weapon = true, TextSize = 13,
-    Chams = false, ChamsWalls = true, ChamsFill = 0.6, ChamsOutline = rgb(1, 1, 1),
+    Chams = true, ChamsWalls = true, ChamsFill = 0.6, ChamsOutline = rgb(1, 1, 1),
     Tracer = false, TracerFrom = "Bottom", Skeleton = false, LookDir = false, HeadDot = false,
     LineThick = 1, LineAlpha = 0, LineRainbow = false,                -- shared style of tracer, look direction, skeleton and head dot
     ColEnemy = rgb(1, 0.23, 0.23), ColAlly = rgb(0.23, 1, 0.42), ColHidden = rgb(1, 0.69, 0.23), ColTarget = rgb(0.75, 0.45, 1),
@@ -1682,7 +1682,7 @@ do
         drawChamsPreview()
     end)
 end
-Chams:Toggle({ Title = "Chams", Desc = "Fills the character's body parts", Flag = "esp_chams", Default = false, Callback = set("Chams") })
+Chams:Toggle({ Title = "Chams", Flag = "esp_chams", Default = true, Callback = set("Chams") })
 Chams:Toggle({ Title = "Through walls", Flag = "esp_chamswalls", Default = true, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsWalls") })
 Chams:Slider({ Title = "Fill transparency", Flag = "esp_chamsfill", Min = 0, Max = 100, Default = 60, Suffix = "%", DependsOn = { Flag = "esp_chams", Reason = "" },
     Callback = function(v) settings.ChamsFill = v / 100 end })
