@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.84
+-- Qustāh · Shindo Life · V1.85
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -432,7 +432,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.84",
+	Version = "V1.85",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -524,7 +524,7 @@ local settings = {
     HealthSegments = 5, ModeText = false, ModeSegments = 1,
     Chams = true, ChamsWalls = true, ChamsStyle = "Solid", ChamsFill = 0.55, ChamsOutlineAlpha = 0.1,
     ChamsColor = rgb(1, 1, 1), ChamsOutline = rgb(0, 0, 0),
-    RefreshRate = "Balanced", DistanceThrottle = false, OffscreenSleep = false,
+    DistanceThrottle = false, OffscreenSleep = false,
     Tracer = false, TracerFrom = "Bottom", Skeleton = false,
     LineThick = 1, LineAlpha = 0, LineRainbow = false,                -- shared style of tracer and skeleton
     ColEnemy = rgb(1, 0.23, 0.23), ColAlly = rgb(0.23, 1, 0.42), ColTarget = rgb(0.75, 0.45, 1),
@@ -882,7 +882,7 @@ end
 -- The ESP of Qustah (code revision 464), ported as it is: a BillboardGui (300 x 78, 3 studs above the head, always on
 -- top) per player with, from the top, the mode bar ("MD" text on its right), the segmented health bar, the name with
 -- the [username] in grey and the dodge cooldown icon, then "health / max" and "[distance studs]"; a Highlight for
--- the chams. Nearest players, Target pins, refresh rate, distance throttle and offscreen sleep work as there.
+-- the chams. Nearest players, Target pins, distance throttle and offscreen sleep work as there.
 -- Our own additions stay on top: the box, tracer and skeleton (Drawing), the health / mode colour presets and the
 -- team check. Everything lives in the `esp` table (the main chunk is near Luau's 200 local limit).
 esp.Panels = {}
@@ -1151,7 +1151,7 @@ function esp.HidePanel(item)
     esp.SetIf(item.gui, "Enabled", false)
     esp.SetIf(item.highlight, "Enabled", false)
 end
--- one pass over the players (run at the ESP refresh rate)
+-- one pass over the players (run 25 times a second)
 function esp.UpdatePanels()
     local camera = Workspace.CurrentCamera
     if not camera then return end
@@ -1659,7 +1659,6 @@ General:Toggle({ Title = "ESP enabled", Flag = "esp_enabled", Default = false, B
 General:Toggle({ Title = "Team check", Desc = "Don't show teammates", Flag = "esp_team", Default = true, Callback = set("ESP_TeamCheck") })
 General:Slider({ Title = "Range", Flag = "esp_maxdist", Min = 100, Max = 5000, Default = 2500, Step = 50, Suffix = " studs", Callback = set("ESP_MaxDist") })
 General:Slider({ Title = "Nearest players", Desc = "Only the closest ones are drawn", Flag = "esp_limit", Min = 5, Max = 30, Default = 30, Callback = set("PlayerLimit") })
-General:Segment({ Title = "Refresh rate", Flag = "esp_rate", Items = { "Smooth", "Balanced", "Low" }, Default = "Balanced", Callback = set("RefreshRate") })
 General:Toggle({ Title = "Distance throttle", Desc = "Far ESP updates less often", Flag = "esp_throttle", Default = false, Callback = set("DistanceThrottle") })
 General:Toggle({ Title = "Offscreen sleep", Desc = "Pauses ESP outside the screen", Flag = "esp_sleep", Default = false, Callback = set("OffscreenSleep") })
 
@@ -2573,12 +2572,11 @@ local function safe(tag, fn, ...)
 end
 Render.safe = safe
 
--- the BillboardGui / Highlight ESP refreshes at its own rate (Visuals › ESP › Refresh rate: Smooth 0.03 s, Balanced 0.1 s, Low 0.25 s)
+-- the BillboardGui / Highlight ESP refreshes 25 times a second
 task.spawn(function()
-    local intervals = { Smooth = 0.03, Balanced = 0.1, Low = 0.25 }
     while Running do
         safe("ESP", esp.UpdatePanels)
-        task.wait(intervals[settings.RefreshRate] or 0.1)
+        task.wait(1 / 25)
     end
 end)
 
