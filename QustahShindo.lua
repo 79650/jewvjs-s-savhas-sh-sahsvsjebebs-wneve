@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V2.04
+-- Qustāh · Shindo Life · V2.05
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -476,7 +476,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V2.04",
+	Version = "V2.05",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -1725,8 +1725,9 @@ do
     end
     ----- Preview controls -----
     -- Two capsules along the bottom of the preview (HP, MD): the six colour presets as gradient dots, a Smooth / Stripes
-    -- switch and the bar opacity (scroll on it, or click for 100 / 75 / 50 / 25 %). They set the same flags as
-    -- Visuals › Style, so both stay in step; refreshControls() follows the settings when they change elsewhere.
+    -- switch and the bar opacity (scroll on it, or click for 100 / 75 / 50 / 25 %; the page does not scroll meanwhile).
+    -- They set the same flags as Visuals › Style, so both stay in step; refreshControls() follows the settings when they
+    -- change elsewhere. A capsule dims and ignores clicks while its bar is off; hovering a control shows its name.
     local refreshControls = function() end
     if holder then
         local controls = Instance.new("Frame")
@@ -1743,7 +1744,12 @@ do
             return object
         end
         local function round(object, radius) make("UICorner", object, { CornerRadius = UDim.new(0, radius) }) end
+        local function tip(button, text)
+            button.MouseEnter:Connect(function() if Window._tip then pcall(Window._tip, Window, text) end end)
+            button.MouseLeave:Connect(function() if Window._hideTip then pcall(Window._hideTip, Window) end end)
+        end
         local function capsule(order, label, presets, keys)
+            local dimmable = {}                                  -- { object, property, normal } faded while the bar is off
             local frame = make("Frame", controls, { Name = label, LayoutOrder = order, AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 22),
                 BackgroundColor3 = Color3.fromRGB(11, 12, 16), BackgroundTransparency = 0.22, BorderSizePixel = 0, ZIndex = 8 })
             round(frame, 11)
@@ -1751,8 +1757,10 @@ do
             make("UIPadding", frame, { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 7) })
             make("UIListLayout", frame, { FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center,
                 Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder })
-            make("TextLabel", frame, { LayoutOrder = 1, Size = UDim2.fromOffset(16, 14), BackgroundTransparency = 1, Font = Enum.Font.GothamBold, TextSize = 9,
+            local title = make("TextLabel", frame, { LayoutOrder = 1, Size = UDim2.fromOffset(16, 14), BackgroundTransparency = 1, Font = Enum.Font.GothamBold, TextSize = 9,
                 TextColor3 = Color3.fromRGB(154, 158, 168), Text = label, ZIndex = 9 })
+            dimmable[#dimmable + 1] = { title, "TextTransparency", 0 }
+            local function usable() return settings[keys.barSetting] ~= false end
             -- colours
             local rings = {}
             local dots = make("Frame", frame, { LayoutOrder = 2, AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 16), BackgroundTransparency = 1 })
@@ -1767,10 +1775,14 @@ do
                 local dot = make("Frame", button, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(9, 9),
                     BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, ZIndex = 10 })
                 round(dot, 5)
+                dimmable[#dimmable + 1] = { dot, "BackgroundTransparency", 0 }
+                button.MouseEnter:Connect(function() if usable() then dot.Size = UDim2.fromOffset(11, 11) end end)
+                button.MouseLeave:Connect(function() dot.Size = UDim2.fromOffset(9, 9) end)
+                tip(button, name)
                 local points = {}
                 for i = 2, #preset do points[#points + 1] = ColorSequenceKeypoint.new((i - 2) / (#preset - 2), preset[i]) end
                 make("UIGradient", dot, { Color = ColorSequence.new(points), Rotation = 35 })
-                button.Activated:Connect(function() Window:SetFlag(keys.colors, name) end)
+                button.Activated:Connect(function() if usable() then Window:SetFlag(keys.colors, name) end end)
             end
             -- Smooth / Stripes: a plain bar and a striped bar
             local switch = make("Frame", frame, { LayoutOrder = 3, Size = UDim2.fromOffset(43, 17), BackgroundColor3 = Color3.fromRGB(11, 12, 16), BorderSizePixel = 0, ZIndex = 9 })
@@ -1791,12 +1803,29 @@ do
                     end
                 end
                 options[style] = { button = button, icon = icon }
-                button.Activated:Connect(function() Window:SetFlag(keys.style, style) end)
+                tip(button, style)
+                button.Activated:Connect(function() if usable() then Window:SetFlag(keys.style, style) end end)
             end
             -- opacity: scroll to change by 5 %, click for the next of 100 / 75 / 50 / 25 %
             local opacity = make("TextButton", frame, { LayoutOrder = 4, Size = UDim2.fromOffset(28, 14), BackgroundTransparency = 1, Font = Enum.Font.GothamMedium,
                 TextSize = 9, TextColor3 = Color3.fromRGB(154, 158, 168), Text = "100%", AutoButtonColor = false, ZIndex = 9 })
-            local function setOpacity(value) Window:SetFlag(keys.opacity, clamp(math.floor(value + 0.5), 10, 100)) end
+            dimmable[#dimmable + 1] = { opacity, "TextTransparency", 0 }
+            tip(opacity, "Opacity · scroll or click")
+            local function setOpacity(value)
+                if usable() then Window:SetFlag(keys.opacity, clamp(math.floor(value + 0.5), 10, 100)) end
+            end
+            -- while the mouse is on the number the wheel changes it, not the page
+            local scroller
+            opacity.MouseEnter:Connect(function()
+                local node = opacity.Parent
+                while node and not node:IsA("ScrollingFrame") do node = node.Parent end
+                if node and node.ScrollingEnabled then scroller = node node.ScrollingEnabled = false end
+            end)
+            local function releaseScroll()
+                if scroller then pcall(function() scroller.ScrollingEnabled = true end) scroller = nil end
+            end
+            opacity.MouseLeave:Connect(releaseScroll)
+            hub.Cleanup[#hub.Cleanup + 1] = releaseScroll
             opacity.Activated:Connect(function()
                 local now = math.floor((settings[keys.opacitySetting] or 1) * 100 + 0.5)
                 local steps = { 100, 75, 50, 25 }
@@ -1816,19 +1845,24 @@ do
                     local on = name == style
                     option.button.BackgroundTransparency = on and 0 or 1
                     option.icon.BackgroundTransparency = on and 0 or 0.55
-                    for _, stripe in ipairs(option.icon:GetChildren()) do stripe.BackgroundTransparency = on and 0 or 0.55 end
+                    for _, stripe in ipairs(option.icon:GetChildren()) do
+                        if stripe:IsA("Frame") then stripe.BackgroundTransparency = on and 0 or 0.55 end
+                    end
                 end
                 opacity.Text = math.floor((settings[keys.opacitySetting] or 1) * 100 + 0.5) .. "%"
+                local off = not usable()
+                for _, item in ipairs(dimmable) do item[1][item[2]] = off and 0.65 or item[3] end
+                frame.BackgroundTransparency = off and 0.5 or 0.22
             end
         end
         local refreshHealth = capsule(1, "HP", healthPresets, { colors = "esp_hpcolors", style = "esp_hpstyle", opacity = "esp_hpopacity",
-            presetSetting = "HealthPreset", styleSetting = "HealthBarStyle", opacitySetting = "HealthBarOpacity" })
+            presetSetting = "HealthPreset", styleSetting = "HealthBarStyle", opacitySetting = "HealthBarOpacity", barSetting = "HealthBar" })
         local refreshMode = capsule(2, "MD", modePresets, { colors = "esp_modecolors", style = "esp_mdstyle", opacity = "esp_mdopacity",
-            presetSetting = "ModePreset", styleSetting = "ModeBarStyle", opacitySetting = "ModeBarOpacity" })
+            presetSetting = "ModePreset", styleSetting = "ModeBarStyle", opacitySetting = "ModeBarOpacity", barSetting = "ModeBar" })
         local shownKey
         refreshControls = function()
-            local key = table.concat({ settings.HealthPreset, settings.HealthBarStyle, settings.HealthBarOpacity,
-                settings.ModePreset, settings.ModeBarStyle, settings.ModeBarOpacity }, "|")
+            local key = table.concat({ settings.HealthPreset, settings.HealthBarStyle, settings.HealthBarOpacity, tostring(settings.HealthBar),
+                settings.ModePreset, settings.ModeBarStyle, settings.ModeBarOpacity, tostring(settings.ModeBar) }, "|")
             if key == shownKey then return end
             shownKey = key
             refreshHealth()
