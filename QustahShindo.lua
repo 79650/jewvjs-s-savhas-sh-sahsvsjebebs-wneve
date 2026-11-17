@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V2.05
+-- Qustāh · Shindo Life · V2.06
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -476,7 +476,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V2.05",
+	Version = "V2.06",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -811,8 +811,7 @@ local function use(e, key, kind)                                 -- objects are 
     e.Vis[key] = true
     return o
 end
--- Hides the objects not used this frame. Visibility is tracked by us: on some executors Drawing
--- properties cannot be read (o.Visible always returns nil), which used to leave ESP on screen after a player left the view.
+-- Hides FOV / target-line drawings not used this frame; track visibility for executors without readable properties.
 local function hideUnused(e, all)
     for key, o in pairs(e.Obj) do
         if e.Vis[key] and (all or e.Stamp[key] ~= esp.Frame) then
@@ -990,7 +989,7 @@ function esp.BuildPanel(parent)
 end
 function esp.Escape(text) return (tostring(text):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")) end
 -- The bars show the preset as a real gradient over their whole width (like its swatch): a fill that ends at
--- `to` shows the colours from `from` to `to` of the preset (sampled 5 times, so 3-colour presets come out right).
+-- `to` shows the colours from `from` to `to` of the preset.
 -- Bar styles (Visuals › Style): Smooth eases the gradient (the end colours stay longer, the middle passes quicker);
 -- Stripes is the same with light diagonal stripes on top. Sampled 9 times so the eased curve comes out right.
 function esp.Gradient(colorAt, from, to)
@@ -1816,16 +1815,22 @@ do
             end
             -- while the mouse is on the number the wheel changes it, not the page
             local scroller
+            local function releaseScroll()
+                if scroller then pcall(function() scroller.ScrollingEnabled = true end) scroller = nil end
+            end
             opacity.MouseEnter:Connect(function()
+                releaseScroll()
+                if not hub.Running or not usable() then return end
                 local node = opacity.Parent
                 while node and not node:IsA("ScrollingFrame") do node = node.Parent end
                 if node and node.ScrollingEnabled then scroller = node node.ScrollingEnabled = false end
             end)
-            local function releaseScroll()
-                if scroller then pcall(function() scroller.ScrollingEnabled = true end) scroller = nil end
-            end
             opacity.MouseLeave:Connect(releaseScroll)
-            hub.Cleanup[#hub.Cleanup + 1] = releaseScroll
+            opacity.Destroying:Connect(releaseScroll)
+            local stopScrollWatch = Lib.Util.watchInView(opacity, function(visible)
+                if not visible then releaseScroll() end
+            end)
+            hub.Cleanup[#hub.Cleanup + 1] = function() stopScrollWatch() releaseScroll() end
             opacity.Activated:Connect(function()
                 local now = math.floor((settings[keys.opacitySetting] or 1) * 100 + 0.5)
                 local steps = { 100, 75, 50, 25 }
@@ -1851,6 +1856,7 @@ do
                 end
                 opacity.Text = math.floor((settings[keys.opacitySetting] or 1) * 100 + 0.5) .. "%"
                 local off = not usable()
+                if off then releaseScroll() end
                 for _, item in ipairs(dimmable) do item[1][item[2]] = off and 0.65 or item[3] end
                 frame.BackgroundTransparency = off and 0.5 or 0.22
             end
@@ -1961,7 +1967,7 @@ ChamsTabs.Fill:ColorPicker({ Title = "Fill color", Flag = "esp_chamscolor", Defa
 ChamsTabs.Outline:ColorPicker({ Title = "Outline color", Flag = "esp_chamsout", Default = white, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsOutline") })
 
 
--- bar colours: health on the left, mode on the right
+-- Bar colours: Health and Mode share one card with separate tabs.
 local BarColors = StylePage:Card({ Title = "Bar colors", Icon = "palette", Side = "Left" })
 local ColorTabs = BarColors:Tabs({ "Health", "Mode" })
 local HealthColors = ColorTabs.Health
@@ -2631,6 +2637,8 @@ local function updateCurrentServer()
     local p = myPing()
     srvCurrent.pl.Text = p > 0 and (p .. " ms") or "-"
 end
+-- The server row has its own visibility gate; the Players table may be below the viewport.
+loop("Current server", 2, whenVisible(srvCurrent.row, updateCurrentServer))
 
 local Opt = Server:Card({ Title = "Options", Icon = "settings-2", Side = "Right" })
 Opt:ListItem({ Title = "Staff alert", Icon = "shield-alert", Toggle = true, Flag = "s_staff", Default = false, Callback = function(on)
@@ -2746,7 +2754,6 @@ do
         end
         pcall(function()
             playerTable:SetItems(rows)
-            updateCurrentServer()
         end)
     end
     local row = playerTable.Row
@@ -3029,8 +3036,9 @@ do
 	end })
 	Conf:Toggle({ Title = "NPC Kill Aura", Flag = "farm_aura", Default = false, Callback = function(v) hub.FarmAura = v end })
 
-	-- Selection: Random (whichever boss is ready) or Specific (only the ticked ones; the list shows only then)
-	local function pickCard(title, icon, what, list, keySpecific, keySel, flagPrefix)
+	-- Selection: Random (whichever boss is ready) or Specific (only the ticked ones; the list shows only then;
+	-- with nothing ticked it works like Random)
+	local function pickCard(title, icon, list, keySpecific, keySel, flagPrefix)
 		local pickedCard = QuestPage:Card({ Title = title, Icon = icon })
 		pickedCard:Segment({ Title = "Selection", Flag = flagPrefix .. "mode", Items = { "Random", "Specific" },
 			Default = "Random", Callback = function(v) farm[keySpecific] = v == "Specific" end })
@@ -3041,7 +3049,7 @@ do
 		return pickedCard, dd
 	end
 	local bossList = names(bossGivers())
-	local BossSet, bossDD = pickCard("Boss Farm Settings", "skull", "Boss", bossList, "BossSpecific", "BossSel", "farm_boss")
+	local BossSet, bossDD = pickCard("Boss Farm Settings", "skull", bossList, "BossSpecific", "BossSel", "farm_boss")
 	local bossTotal = 0
 	local bossBar = BossSet:Progress({ Title = "Bosses on map", Desc = "Ready to fight", Value = 0, Max = 1,
 		Format = function(v) return bossTotal > 0 and ("%d / %d ready"):format(v, bossTotal) or "none" end })
@@ -3451,7 +3459,7 @@ if Tabs.Spin then                                                 -- main menu o
 			end
 			if clean.Delay then clean.Delay = math.clamp(clean.Delay, 0.1, 2) end
 			if clean.ResetAt then clean.ResetAt = math.clamp(math.floor(clean.ResetAt), 0, 100) end
-			for k, v in pairs(clean) do infSpin[k] = v end
+			for k, v in pairs(clean) do infSpin[k] = type(v) == "table" and table.clone(v) or v end
 			fromFile = clean
 		end
 	end)
@@ -3611,7 +3619,7 @@ if Tabs.Spin then                                                 -- main menu o
 				if active[c.on] then infSpin.On[c.on] = false Window:SetFlag(c.flag, false) end
 			end
 			persist()
-			notify("Inf Spin", "Got what you wanted" .. (infSpin.AutoSave and ", kaydediliyor" or ""), "sparkles", "success")
+			notify("Inf Spin", "Got what you wanted" .. (infSpin.AutoSave and ", saving" or ""), "sparkles", "success")
 			if infSpin.AutoSave then saveAndLeave() end
 		elseif low and not sent then
 			persist()
@@ -3656,7 +3664,15 @@ if Tabs.Spin then                                                 -- main menu o
 	local row = Set:Row()
 	row:Button({ Title = "Refresh lists", Icon = "refresh-cw", Callback = function()
 		elementList, bloodlineList, kenjutsuList, raceList = lists()
-		ddE:SetItems(orDash(elementList), true) ddB:SetItems(orDash(bloodlineList), true) ddK:SetItems(orDash(kenjutsuList), true) ddR:SetItems(orDash(raceList), true)
+		local function refreshWanted(dropdown, items, key)
+			dropdown:SetItems(orDash(items), true)
+			infSpin[key] = mapList(dropdown:Get(), toCode)
+		end
+		refreshWanted(ddE, elementList, "Elements")
+		refreshWanted(ddB, bloodlineList, "Bloodlines")
+		refreshWanted(ddK, kenjutsuList, "Kenjutsu")
+		refreshWanted(ddR, raceList, "Races")
+		persist()
 	end })
 	row:Button({ Title = "Reset spins", Icon = "rotate-ccw", Confirm = "Sure?", Callback = resetAndRejoin })
 	row:Button({ Title = "Save spins", Icon = "save", Style = "Soft", Confirm = "Sure?", Callback = saveAndLeave })
@@ -3666,8 +3682,11 @@ if Tabs.Spin then                                                 -- main menu o
 	hub.AfterAutoLoad[#hub.AfterAutoLoad + 1] = function()
 		if type(fromFile) ~= "table" then return end
 		local function put(flag, v) if v ~= nil then Window:SetFlag(flag, v) end end
-		put("is_elem_on_list", fromFile.Elements) put("is_bl_on_list", fromFile.Bloodlines)
-		put("is_ken_on_list", fromFile.Kenjutsu) put("is_race_on_list", fromFile.Races)
+		local function putWanted(flag, values)
+			if type(values) == "table" then put(flag, mapList(values, toLabel)) end
+		end
+		putWanted("is_elem_on_list", fromFile.Elements) putWanted("is_bl_on_list", fromFile.Bloodlines)
+		putWanted("is_ken_on_list", fromFile.Kenjutsu) putWanted("is_race_on_list", fromFile.Races)
 		put("is_elem_on_slots", fromFile.ElemSlots) put("is_bl_on_slots", fromFile.BlSlots) put("is_ken_on_slots", fromFile.KenSlots)
 		put("is_reset", fromFile.ResetAt) put("is_delay", fromFile.Delay) put("is_autosave", fromFile.AutoSave)
 		local on = type(fromFile.On) == "table" and fromFile.On or {}
@@ -3873,7 +3892,7 @@ do
 		end)
 	end)
 
-	local Scroll = Game
+	local Scroll = Aura
 	Scroll:Toggle({ Title = "Scroll snipe", Desc = "Grabs scrolls that spawn on the map", Flag = "sh_scroll", Default = false, Callback = function(v) shindo.Scroll = v end })
 	Scroll:Toggle({ Title = "Teleport to spawn after", Flag = "sh_scrollspawn", Default = true, Callback = function(v) shindo.ScrollSpawn = v end })
 	----- Display rank -----
