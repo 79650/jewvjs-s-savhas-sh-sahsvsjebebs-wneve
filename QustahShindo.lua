@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.89
+-- Qustāh · Shindo Life · V1.90
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -432,7 +432,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.89",
+	Version = "V1.90",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -1644,7 +1644,6 @@ end
 do
 local Visuals = Tabs.Visuals
 local EspPage = Visuals:Page("ESP")
-local ExtraPage = Visuals:Page("Extra", { Compact = true })
 local StylePage = Visuals:Page("Style")
 
 local General = EspPage:Card({ Title = "General", Icon = "scan-eye", Side = "Left" })
@@ -1837,8 +1836,8 @@ PinsCard:PlayerList({ Flag = "esp_pins", Multi = true, Height = 120, Callback = 
 end })
 end
 
-do -- Visuals › Extra and Style (a block: their locals end here)
-local Chams = ExtraPage:Card({ Title = "Chams", Icon = "paint-bucket" })
+do -- Visuals › ESP (Chams) and Style (a block: their locals end here)
+local Chams = EspPage:Card({ Title = "Chams", Icon = "paint-bucket", Side = "Left" })
 Chams:Toggle({ Title = "Chams", Flag = "esp_chams", Default = true, Style = "Switch", Callback = set("Chams") })
 Chams:Segment({ Title = "Chams style", Flag = "esp_chamsstyle", Items = { "Solid", "Outline" }, Default = "Solid", Wide = true,
     DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsStyle") })
@@ -1849,11 +1848,9 @@ Chams:Slider({ Title = "Outline transparency", Flag = "esp_chamsoutalpha", Min =
 Chams:ColorPicker({ Title = "Fill color", Flag = "esp_chamscolor", Default = white, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsColor") })
 Chams:ColorPicker({ Title = "Outline color", Flag = "esp_chamsout", Default = black, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsOutline") })
 
-local Colors = StylePage:Card({ Title = "Colors", Icon = "palette" })
-Colors:ColorPicker({ Title = "Enemy", Flag = "col_enemy", Default = settings.ColEnemy, Callback = set("ColEnemy") })
 
--- bar colours on the right, health over mode
-local HealthColors = StylePage:Card({ Title = "Health bar colors", Icon = "heart", Side = "Right" })
+-- bar colours: health on the left, mode on the right
+local HealthColors = StylePage:Card({ Title = "Health bar colors", Icon = "heart", Side = "Left" })
 HealthColors:Segment({ Title = "Bar style", Flag = "esp_hpstyle", Items = { "Smooth", "Stripes" }, Default = "Smooth", Callback = set("HealthBarStyle") })
 HealthColors:Swatches({ Title = "From empty to full", Flag = "esp_hpcolors", Default = "Classic", Columns = 2, Items = healthPresets,
     Callback = function(_, name) settings.HealthPreset = name end })
