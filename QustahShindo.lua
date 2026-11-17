@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V2.00
+-- Qustāh · Shindo Life · V2.01
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -271,6 +271,27 @@ local function hubConnect(signal, fn)
 	hub.Conns[#hub.Conns + 1] = c
 	return c
 end
+local function whenVisible(object, fn)
+	if not object then return fn end
+	local visible = false
+	local function run(...)
+		if hub.Running and visible then return fn(...) end
+	end
+	if Lib.Util.watchInView then
+		hub.Cleanup[#hub.Cleanup + 1] = Lib.Util.watchInView(object, function(on)
+			visible = on
+			if on and hub.Running then
+				local ok, err = pcall(fn)
+				if not ok then hubError("Visible panel", err) end
+			end
+		end)
+	else
+		return function(...)
+			if hub.Running and Lib.Util.inView(object) then return fn(...) end
+		end
+	end
+	return run
+end
 local function notify(title, content, icon, color)
 	if Window then Window:Notify({ Title = title, Content = content, Icon = icon or "bell", Color = color }) end
 end
@@ -440,10 +461,7 @@ local function attackNPC(v)
 	local ae = v:FindFirstChild("antiexploit")                     -- remove the mob's protection (as in NukeVsCity)
 	if ae then ae:Destroy() end
 	lookAt(hrp.Position)
-	if Attack.Mode == "Melee (M1)" then
-		tpTo(hrp.CFrame * CFrame.new(0, 0, meleeDistance()))
-		combat("mouse1", true)
-	elseif Attack.Mode == "Legacy (M1 + E)" then                -- stay close, both M1 and E
+	if Attack.Mode == "Legacy (M1 + E)" then                -- stay close, both M1 and E
 		tpTo(hrp.CFrame * CFrame.new(0, 0, meleeDistance()))
 		combat("mouse1", true)
 		combat("key", "e") combat("key", "eend")
@@ -458,7 +476,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V2.00",
+	Version = "V2.01",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -528,7 +546,7 @@ end
 
 local newcclosure = newcclosure or function(f) return f end
 local vec2, vec3, cframe, rgb = Vector2.new, Vector3.new, CFrame.new, Color3.new
-local floor, clamp, max, min, rad, tan = math.floor, math.clamp, math.max, math.min, math.rad, math.tan
+local floor, clamp = math.floor, math.clamp
 local black, white = rgb(0, 0, 0), rgb(1, 1, 1)
 
 ----- Settings -----
@@ -536,14 +554,14 @@ local settings = {
     -- silent aim
     SA_Enabled = false, SA_HitChance = 100, SA_Part = "Head", SA_Priority = "Mouse",
     SA_InfRange = false,                                             -- Parvus-style ScreenPointToRay (see the hook)
-    SA_TeamCheck = false, SA_VisCheck = false, SA_IgnoreFriends = false, SA_MaxDist = 1000,
-    SA_Predict = false, SA_PredStrength = 100, SA_Whitelist = {},
+    SA_VisCheck = false, SA_MaxDist = 1000,
+    SA_Predict = false, SA_PredStrength = 100,
     -- fov
     FOV_Show = true, FOV_Radius = 120, FOV_Sides = 64, FOV_Thick = 1, FOV_Color = rgb(1, 1, 1), FOV_Alpha = 0,
     FOV_Filled = false, FOV_Origin = "Mouse", FOV_TargetLine = false,
     -- esp
     ESP_Enabled = true, ESP_MaxDist = 2500, PlayerLimit = 30, Pins = {},
-    HealthBar = true, ModeBar = true, Outline = true,
+    HealthBar = true, ModeBar = true,
     HealthPreset = "Ice", ModePreset = "Aurora", HealthBarStyle = "Smooth", ModeBarStyle = "Stripes",
     HealthBarOpacity = 1, ModeBarOpacity = 1,
     Name = true, User = true, HealthText = true, Distance = true, TextSize = 14,
@@ -551,25 +569,18 @@ local settings = {
     Chams = true, ChamsFill = 0.65, ChamsOutlineAlpha = 0.35,
     ChamsColor = rgb(0, 0, 0), ChamsOutline = rgb(1, 1, 1),
     DistanceThrottle = false, OffscreenSleep = false,
-    ColEnemy = rgb(1, 0.23, 0.23), ColAlly = rgb(0.23, 1, 0.42), ColTarget = rgb(0.75, 0.45, 1),
+    ColTarget = rgb(0.75, 0.45, 1),
     -- world
     Fullbright = false, NoFog = false, CustomTime = false, ClockTime = 14, NoShadows = false,
     CustomAmbient = false, Ambient = rgb(0.7, 0.7, 0.7),
     -- player
-    SpeedOn = false, WalkSpeed = 16, JumpOn = false, JumpPower = 50, InfJump = false,
     NoClip = false, AntiAfk = true, ClickTP = false, UnlockZoom = false,
     -- server
     StaffAlert = false, StaffGroup = 0, StaffRank = 1, StaffAction = "Notify", AutoRejoin = false,
 }
 local function set(key) return function(v) settings[key] = v end end
-local function toSet(list)
-    local out = {}
-    for _, v in ipairs(type(list) == "table" and list or {}) do out[v] = true end
-    return out
-end
-
 ----- Render: Drawing -----
--- Everything on screen is drawn with the executor's Drawing API (no Roblox GUI objects).
+-- Only the on-screen FOV and target line use Drawing; ESP uses BillboardGui.
 local Render = { Available = type(Drawing) == "table" and type(Drawing.new) == "function" }
 Render.Unsupported = {}
 function Render.new(kind)
@@ -644,11 +655,6 @@ end
 local function modeColorFor(mode)
     return presetAt(modePresets[settings.ModePreset] or modePresets.Ocean, mode)
 end
-local function isTeammate(plr)
-    if not plr.Team or not LocalPlayer.Team then return false end
-    if plr.Neutral or LocalPlayer.Neutral then return false end
-    return plr.Team == LocalPlayer.Team
-end
 local function toScreen(pos)
     local v, on = Camera:WorldToViewportPoint(pos)
     return vec2(v.X, v.Y), on, v.Z
@@ -656,15 +662,6 @@ end
 -- health bar colour by the chosen preset (Visuals › Style › Health bar colors); "Classic" goes red → yellow → green
 local function healthColor(p)
     return presetAt(healthPresets[settings.HealthPreset] or healthPresets.Classic, p)
-end
-
-local FriendCache = {}
-local function isFriend(plr)
-    local cached = FriendCache[plr.UserId]
-    if cached ~= nil then return cached end
-    local ok, res = pcall(function() return LocalPlayer:IsFriendsWith(plr.UserId) end)
-    FriendCache[plr.UserId] = ok and res or false
-    return FriendCache[plr.UserId]
 end
 
 -- visibility: up to 10 raycasts per player per second (cached)
@@ -729,9 +726,9 @@ local function findTarget()
     local origin = fovOrigin()
     local best, bestScore = nil, math.huge
     for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and not settings.SA_Whitelist[plr.UserId] then
+        if plr ~= LocalPlayer then
             local char, hum, root = getCharacter(plr)
-            if char and isAlive(hum) and not (settings.SA_TeamCheck and isTeammate(plr)) and not (settings.SA_IgnoreFriends and isFriend(plr)) then
+            if char and isAlive(hum) then
                 local dist = (root.Position - Camera.CFrame.Position).Magnitude
                 if dist <= settings.SA_MaxDist then
                     local part = pickPart(plr, char, origin)
@@ -1202,8 +1199,14 @@ function esp.SelectPlayers(camera, now, limit)
         return a.dist < b.dist
     end)
     local entries = {}
-    for index, c in ipairs(candidates) do
-        if index <= limit or c.pinned then entries[#entries + 1] = c end
+    local normal = 0
+    for _, c in ipairs(candidates) do
+        if c.pinned then
+            entries[#entries + 1] = c
+        elseif normal < limit then
+            normal += 1
+            entries[#entries + 1] = c
+        end
     end
     return { entries = entries, refreshAt = now + 0.25, camera = camera,
         pins = settings.Pins, range = settings.ESP_MaxDist, limit = limit }
@@ -1420,19 +1423,10 @@ function NoClip.bind(char)
     end)
     for _, obj in ipairs(char:GetDescendants()) do add(obj) end
 end
-local Defaults = setmetatable({}, { __mode = "k" })
 local originalZoom
-local function restorePlayer()
-    for hum, d in pairs(Defaults) do
-        if d.WalkSpeed then pcall(function() hum.WalkSpeed = d.WalkSpeed end) end
-        if d.JumpPower then pcall(function()
-            hum.JumpPower, hum.UseJumpPower = d.JumpPower, d.UseJumpPower
-        end) end
-    end
-    table.clear(Defaults)
+hub.Cleanup[#hub.Cleanup + 1] = function()
     if originalZoom then LocalPlayer.CameraMaxZoomDistance = originalZoom originalZoom = nil end
 end
-hub.Cleanup[#hub.Cleanup + 1] = restorePlayer
 
 connect(RunService.Stepped, function()
     if not Running then return end
@@ -1452,36 +1446,13 @@ end)
 
 connect(RunService.Heartbeat, function()
     if not Running then return end
-    local char, hum, root = getCharacter(LocalPlayer)
     if originalZoom and not settings.UnlockZoom then
         LocalPlayer.CameraMaxZoomDistance = originalZoom
         originalZoom = nil
     elseif settings.UnlockZoom then
         originalZoom = originalZoom or LocalPlayer.CameraMaxZoomDistance
-        LocalPlayer.CameraMaxZoomDistance = 1e4
+        if LocalPlayer.CameraMaxZoomDistance ~= 1e4 then LocalPlayer.CameraMaxZoomDistance = 1e4 end
     end
-    if not char then return end
-    local d = Defaults[hum] or {}
-    Defaults[hum] = d
-    if settings.SpeedOn then
-        d.WalkSpeed = d.WalkSpeed or hum.WalkSpeed
-        hum.WalkSpeed = settings.WalkSpeed
-    elseif d.WalkSpeed then
-        hum.WalkSpeed, d.WalkSpeed = d.WalkSpeed, nil
-    end
-    if settings.JumpOn then
-        if d.JumpPower == nil then d.JumpPower, d.UseJumpPower = hum.JumpPower, hum.UseJumpPower end
-        hum.UseJumpPower, hum.JumpPower = true, settings.JumpPower
-    elseif d.JumpPower then
-        hum.JumpPower, hum.UseJumpPower = d.JumpPower, d.UseJumpPower
-        d.JumpPower, d.UseJumpPower = nil, nil
-    end
-end)
-
-connect(UserInputService.JumpRequest, function()
-    if not (Running and settings.InfJump) then return end
-    local _, hum = getCharacter(LocalPlayer)
-    if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
 end)
 
 connect(UserInputService.InputBegan, function(input, processed)
@@ -1696,7 +1667,7 @@ General:Toggle({ Title = "ESP enabled", Flag = "esp_enabled", Default = true, Bi
         Window:SetModule("ESP", on and "On" or "Off", nil, { Icon = "eye", Tab = "Visuals" })
     end })
 General:Slider({ Title = "Range", Flag = "esp_maxdist", Min = 100, Max = 5000, Default = 2500, Step = 50, Suffix = " studs", Callback = set("ESP_MaxDist") })
-General:Slider({ Title = "Nearest players", Desc = "Only the closest ones are drawn", Flag = "esp_limit", Min = 5, Max = 30, Default = 30, Callback = set("PlayerLimit") })
+General:Slider({ Title = "Nearest players", Desc = "Closest unpinned players; pins are extra", Flag = "esp_limit", Min = 5, Max = 30, Default = 30, Callback = set("PlayerLimit") })
 General:Toggle({ Title = "Distance throttle", Desc = "Far ESP updates less often", Flag = "esp_throttle", Default = false, Callback = set("DistanceThrottle") })
 General:Toggle({ Title = "Offscreen sleep", Desc = "Pauses ESP outside the screen", Flag = "esp_sleep", Default = false, Callback = set("OffscreenSleep") })
 
@@ -1838,12 +1809,14 @@ Chams:ColorPicker({ Title = "Outline color", Flag = "esp_chamsout", Default = wh
 
 
 -- bar colours: health on the left, mode on the right
-local HealthColors = StylePage:Card({ Title = "Health bar colors", Icon = "heart", Side = "Left" })
+local BarColors = StylePage:Card({ Title = "Bar colors", Icon = "palette", Side = "Left" })
+local ColorTabs = BarColors:Tabs({ "Health", "Mode" })
+local HealthColors = ColorTabs.Health
 HealthColors:Segment({ Title = "Bar style", Flag = "esp_hpstyle", Items = { "Smooth", "Stripes" }, Default = "Smooth", Callback = set("HealthBarStyle") })
 HealthColors:Slider({ Title = "Opacity", Flag = "esp_hpopacity", Min = 10, Max = 100, Default = 100, Suffix = "%", Callback = function(v) settings.HealthBarOpacity = v / 100 end })
 HealthColors:Swatches({ Title = "From empty to full", Flag = "esp_hpcolors", Default = "Ice", Columns = 2, Items = healthPresets,
     Callback = function(_, name) settings.HealthPreset = name end })
-local ModeColors = StylePage:Card({ Title = "Mode bar colors", Icon = "zap", Side = "Right" })
+local ModeColors = ColorTabs.Mode
 ModeColors:Segment({ Title = "Bar style", Flag = "esp_mdstyle", Items = { "Smooth", "Stripes" }, Default = "Stripes", Callback = set("ModeBarStyle") })
 ModeColors:Slider({ Title = "Opacity", Flag = "esp_mdopacity", Min = 10, Max = 100, Default = 100, Suffix = "%", Callback = function(v) settings.ModeBarOpacity = v / 100 end })
 ModeColors:Swatches({ Title = "From empty to full", Flag = "esp_modecolors", Default = "Aurora", Columns = 2, Items = modePresets,
@@ -2497,14 +2470,14 @@ else
     task.delay(1, function() if Running then refreshServers() end end)
 end
 
--- the "Players" info the old code expected → now updates the "you are here" row in the list
-local playersInfo = { Set = function()
+-- the "you are here" row: player count and your ping
+local function updateCurrentServer()
     local n, m = #Players:GetPlayers(), Players.MaxPlayers
     srvCurrent.cnt.Text = ("%d/%d"):format(n, m)
     srvCurrent.fill.Size = UDim2.new(m > 0 and n / m or 0, 0, 1, 0)
     local p = myPing()
     srvCurrent.pl.Text = p > 0 and (p .. " ms") or "-"
-end }
+end
 
 local Opt = Server:Card({ Title = "Options", Icon = "settings-2", Side = "Right" })
 Opt:ListItem({ Title = "Staff alert", Icon = "shield-alert", Toggle = true, Flag = "s_staff", Default = false, Callback = function(on)
@@ -2552,7 +2525,6 @@ connect(Workspace:GetPropertyChangedSignal("CurrentCamera"), function()
 end)
 connect(Players.PlayerRemoving, function(plr)
     removeEntry(plr)
-    FriendCache[plr.UserId] = nil
     if Spectating == plr then spectate(nil) end
 end)
 connect(Players.PlayerAdded, checkStaff)
@@ -2565,13 +2537,19 @@ local function safe(tag, fn, ...)
     return ok
 end
 
--- the BillboardGui / Highlight ESP refreshes 25 times a second
-task.spawn(function()
-    while Running do
+-- A deadline-based 25 Hz target: work time is not added to the next interval.
+-- Frame scheduling still limits the observable rate on low-FPS clients.
+do
+    local period, nextRefresh = 1 / 25, 0
+    connect(RunService.Heartbeat, function()
+        if not Running then return end
+        local now = os.clock()
+        if now < nextRefresh then return end
+        if nextRefresh == 0 then nextRefresh = now end
+        nextRefresh = nextRefresh + (math.floor((now - nextRefresh) / period) + 1) * period
         safe("ESP", esp.UpdatePanels)
-        task.wait(1 / 25)
-    end
-end)
+    end)
+end
 
 connect(RunService.RenderStepped, function()
     if not Running then return end
@@ -2615,7 +2593,7 @@ do
         end
         pcall(function()
             playerTable:SetItems(rows)
-            playersInfo:Set(#Players:GetPlayers() .. " / " .. Players.MaxPlayers)
+            updateCurrentServer()
         end)
     end
     local row = playerTable.Row
@@ -2898,19 +2876,15 @@ do
 	end })
 	Conf:Toggle({ Title = "NPC Kill Aura", Flag = "farm_aura", Default = false, Callback = function(v) hub.FarmAura = v end })
 
-	-- Specific / Random: turning one on turns the other off (as in DogeHub)
+	-- Selection: Random (whichever boss is ready) or Specific (only the ticked ones; the list shows only then)
 	local function pickCard(title, icon, what, list, keySpecific, keySel, flagPrefix)
 		local pickedCard = QuestPage:Card({ Title = title, Icon = icon })
-		pickedCard:Toggle({ Title = "Specific " .. what, Flag = flagPrefix .. "specific", Default = false, Callback = function(v)
-			farm[keySpecific] = v
-			if v then Window:SetFlag(flagPrefix .. "random", false) end
-		end })
-		-- multi-select: several bosses can be ticked and whichever is ready first is taken (nothing ticked behaves like Random)
-		local dd = pickedCard:Dropdown({ Title = "Specific " .. what:lower() .. " to kill", Flag = flagPrefix .. "pick", Items = list, Default = {}, Multi = true,
-			AllowNone = true, Search = true, Callback = function(v) farm[keySel] = type(v) == "table" and v or { v } end })
-		pickedCard:Toggle({ Title = "Random " .. what .. "es", Flag = flagPrefix .. "random", Default = true, Callback = function(v)
-			if v then Window:SetFlag(flagPrefix .. "specific", false) end
-		end })
+		pickedCard:Segment({ Title = "Selection", Flag = flagPrefix .. "mode", Items = { "Random", "Specific" },
+			Default = "Random", Callback = function(v) farm[keySpecific] = v == "Specific" end })
+		local dd = pickedCard:Dropdown({ Title = "Bosses", Flag = flagPrefix .. "pick", Items = list, Default = {}, Multi = true,
+			AllowNone = true, Search = true,
+			DependsOn = { Flag = flagPrefix .. "mode", Value = "Specific", Mode = "Hide" },
+			Callback = function(v) farm[keySel] = type(v) == "table" and v or { v } end })
 		return pickedCard, dd
 	end
 	local bossList = names(bossGivers())
@@ -2940,7 +2914,7 @@ do
 		bossBar:Set(bReady)
 	end
 	pcall(updateCounts)
-	loop("Farm counts", 2, updateCounts)
+	loop("Farm counts", 2, whenVisible(BossSet.frame, updateCounts))
 	-- Boss NPCs may load later (distant ones): the lists refresh by themselves when a missiongiver appears or disappears
 	local pending = false
 	local function queueRefresh(obj)
@@ -3055,7 +3029,7 @@ do
 		local maxAmount = mission and mission:FindFirstChild("maxamount")
 		if amount and maxAmount and tonumber(maxAmount.Value) and maxAmount.Value > 0 then return tonumber(amount.Value) or 0, maxAmount.Value end
 	end
-	loop("Mentor progress", 1, function()
+	loop("Mentor progress", 1, whenVisible(progressCard.frame, function()
 		local st = statz()
 		local folder = st and st:FindFirstChild("senseifolder")
 		local current = st and st:FindFirstChild("currentsensei")
@@ -3079,7 +3053,7 @@ do
 			missionBar:SetMax(1)
 			missionBar:Set(0)
 		end
-	end)
+	end))
 	-- a task runs when its toggle is on or Auto mentor picked it
 	local function doing(task, manual) return manual or farm.MentorTask == task end
 	-- where the kunai targets stand, from each map's mentor (as DogeHub has them)
@@ -3644,7 +3618,8 @@ do
 
 	-- one card with two sections: Defense (immortal, unbreakable, combat) and Utility (kill aura, scroll snipe, anti-AFK)
 	local Game = playerTab:Card({ Title = "Player", Icon = "user", Side = "Left" })
-	Game:Divider({ Title = "Defense" })
+	local PlayerCard = Game
+	Game = PlayerCard:Section({ Title = "Defense", Opened = true })
 	Game:Toggle({ Title = "Disable in combat", Desc = "Teleport / leave even while in combat", Flag = "sh_nocombat", Default = false, Callback = function(v) shindo.NoCombat = v end })
 	Game:Toggle({ Title = "Immortal", Desc = "Get up instantly when knocked down (no knockdown)", Flag = "sh_immortal", Default = false,
 		Callback = function(v) shindo.Immortal = v end })
@@ -3691,8 +3666,7 @@ do
 		if shindo.NoCombat and LocalPlayer:FindFirstChild("incombat") then LocalPlayer.incombat.Value = false end
 	end)
 
-	local Aura = Game
-	Aura:Divider({ Title = "Utility" })
+	local Aura = PlayerCard:Section({ Title = "Utility", Opened = true })
 	Aura:Toggle({ Title = "NPC Kill Aura", Flag = "sh_aura", Default = false, Callback = function(v) shindo.Aura = v end })
 	-- Spam E: presses and releases E every frame (chakra charge / interact spam while farming)
 	Aura:Toggle({ Title = "Spam E", Flag = "sh_spame", Default = false, Callback = function(v) shindo.SpamE = v end })
@@ -3772,14 +3746,14 @@ do
 				realRank = nil
 			end
 		end
-		Game:Dropdown({ Title = "Display rank", Flag = "sh_rank", Default = "Real", Items = ranks, Callback = function(v)
+		Aura:Dropdown({ Title = "Display rank", Flag = "sh_rank", Default = "Real", Items = ranks, Callback = function(v)
 			shindo.DisplayRank = v
 			applyRank()
 		end })
 		loop("Display rank", 1, applyRank)                         -- the server rewrites it on rank-up, so it is reapplied
 		hub.Cleanup[#hub.Cleanup + 1] = function() shindo.DisplayRank = "Real" applyRank() end
 	end
-	Game:Toggle({ Title = "Anti-AFK", Desc = "Prevents the 20 minute idle kick", Flag = "p_antiafk", Default = true, Callback = function(v)
+	Aura:Toggle({ Title = "Anti-AFK", Desc = "Prevents the 20 minute idle kick", Flag = "p_antiafk", Default = true, Callback = function(v)
 		if hub.SetAntiAfk then hub.SetAntiAfk(v) end
 	end })
 	local function toSpawn()
@@ -4077,9 +4051,9 @@ do
 				local p = byName[item.Title]
 				if p then teleportFromPage(CFrame.new(p[2], p[3], p[4])) end
 			end })
-		loop("Teleport distances", 2, function()                    -- distances follow you around
+		loop("Teleport distances", 2, whenVisible(placeList.Row, function()                    -- distances follow you around
 			for _, p in ipairs(here) do placeList:SetDesc(p[1], distanceText(p)) end
-		end)
+		end))
 	end
 
 	-- each spot returns the CFrame to teleport to, or nil when it is not on this map
@@ -4406,7 +4380,13 @@ local function need(key, label)
 end
 local function refreshLists(silent)
 	buildLists()
-	for key, dd in pairs(dropdowns) do pcall(function() dd:SetItems(itemsOf(key), true) end) end
+	for key, dd in pairs(dropdowns) do
+		local ok, err = pcall(function()
+			dd:SetItems(itemsOf(key), true)
+			pickSet(key)(dd:Get())
+		end)
+		if not ok then hubError("Loadout refresh", err) end
+	end
 	if not silent then
 		notify("Lists refreshed", ("%d bloodlines · %d elements · %d kenjutsu · %d styles · %d clothes"):format(
 			count(Lists.bloodline), count(Lists.element), count(Lists.kenjutsu), count(Lists.style), count(Lists.cloth)), "refresh-cw")
@@ -4502,36 +4482,65 @@ end
 
 ----- Lock icon -----
 -- While the setting it depends on is off, the row is greyed out; only a small lock is shown next to the title (no text).
+-- Rows on screen follow their title (text / position changes); a flag change repaints them once.
 do
 	local marks = {}
 	for _, el in pairs(Window.flags or {}) do
 		local row = type(el) == "table" and el.Row
 		local title = row and row:FindFirstChild("Title")
-		if title and not marks[el] then
+		if title then
 			local ok, img = pcall(function()
 				return Lib.Icons.Image("lock", { Size = UDim2.fromOffset(10, 10), Color = Color3.fromRGB(150, 155, 168) })
 			end)
 			if ok and img then
-				img.AnchorPoint = Vector2.new(0, 0.5)
-				img.ZIndex = 23
-				img.Visible = false
-				img.Parent = row
-				marks[el] = { img = img, title = title }
+				img.AnchorPoint, img.ZIndex, img.Visible, img.Parent = Vector2.new(0, 0.5), 23, false, row
+				local mark = { row = row, visible = false }
+				function mark.paint()
+					local show = el._depLocked == true and title.Parent ~= nil
+					img.Visible = show
+					if show then
+						img.Position = UDim2.fromOffset(
+							title.AbsolutePosition.X - row.AbsolutePosition.X + title.TextBounds.X + 5,
+							title.AbsolutePosition.Y - row.AbsolutePosition.Y + title.AbsoluteSize.Y / 2)
+					end
+				end
+				local links = {}
+				local function clear()
+					for _, c in ipairs(links) do c:Disconnect() end
+					table.clear(links)
+				end
+				local stop = Lib.Util.watchInView(row, function(visible)
+					clear()
+					mark.visible = visible and hub.Running
+					if mark.visible then
+						mark.paint()
+						for _, spec in ipairs({ { title, "TextBounds" }, { title, "AbsolutePosition" }, { title, "AbsoluteSize" }, { row, "AbsolutePosition" } }) do
+							links[#links + 1] = spec[1]:GetPropertyChangedSignal(spec[2]):Connect(mark.paint)
+						end
+					else img.Visible = false end
+				end)
+				marks[#marks + 1] = mark
+				hub.Cleanup[#hub.Cleanup + 1] = function() stop() clear() end
 			end
 		end
 	end
-	loop("Lock icons", 0.15, function()
-			for el, m in pairs(marks) do
-				local show = el._depLocked == true and m.title.Parent ~= nil
-				m.img.Visible = show
-				if show then
-					local row = el.Row
-					m.img.Position = UDim2.fromOffset(
-						m.title.AbsolutePosition.X - row.AbsolutePosition.X + m.title.TextBounds.X + 5,
-						m.title.AbsolutePosition.Y - row.AbsolutePosition.Y + m.title.AbsoluteSize.Y / 2)
+	-- The dependents list runs from its end, so this runs before the rows' own DependsOn checks: the repaint waits a
+	-- step to see the new lock states, and several flag changes in a row share one repaint.
+	local queued = false
+	Window._dependents = Window._dependents or {}
+	Window._dependents[#Window._dependents + 1] = function()
+		if not hub.Running then return false end
+		if not queued then
+			queued = true
+			task.defer(function()
+				queued = false
+				for _, mark in ipairs(marks) do
+					if mark.visible and mark.row.Parent then mark.paint() end
 				end
-			end
-	end)
+			end)
+		end
+		return true
+	end
 end
 
 ----- Startup -----
