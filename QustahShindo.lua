@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.99
+-- Qustāh · Shindo Life · V2.00
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -458,7 +458,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.99",
+	Version = "V2.00",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -595,9 +595,20 @@ local function getCharacter(plr)
     return char, hum, root
 end
 ----- Health -----
--- Humanoid.Health reacts first when a hit lands, so it is read directly. The maximum is Humanoid.MaxHealth; when
--- the game leaves it below the current health, the health itself is used so the bar never shows more than full.
-local function healthValue(hum) return tonumber(hum.Health) or 0 end
+-- Measured in game: for your own character Humanoid.Health changes first (and alone reaches 0 when you die); for
+-- other players the server's "fakehealth" value changes first, sometimes a frame earlier, and alone reaches 0 when
+-- they die. So your health is read from the Humanoid and everyone else's from fakehealth (the Humanoid while it is
+-- missing, e.g. just after a respawn). The maximum is Humanoid.MaxHealth; when the game leaves it below the current
+-- health, the health itself is used so the bar never shows more than full.
+local function healthValue(hum)
+    local char = hum.Parent
+    if char and char ~= LocalPlayer.Character then
+        local fake = FindFirstChild(char, "fakehealth")
+        local value = fake and fake:IsA("ValueBase") and tonumber(fake.Value)
+        if value then return value end
+    end
+    return tonumber(hum.Health) or 0
+end
 local function healthMax(hum, health) return math.max(tonumber(hum.MaxHealth) or 1, health or 0, 1) end
 local function isAlive(hum) return hum and healthValue(hum) > 0 end
 -- Bar colour presets (Visuals › Style): three stops each, from empty through the middle to full. A preset's colour
