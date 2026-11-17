@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.88
+-- Qustāh · Shindo Life · V1.89
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -432,7 +432,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.88",
+	Version = "V1.89",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -519,7 +519,7 @@ local settings = {
     -- esp
     ESP_Enabled = false, ESP_MaxDist = 2500, PlayerLimit = 30, Pins = {},
     Box = false, BoxCorner = 30, BoxFill = false, BoxFillAlpha = 0.85, HealthBar = true, ModeBar = true, Outline = true,
-    HealthPreset = "Classic", ModePreset = "Ocean",
+    HealthPreset = "Classic", ModePreset = "Ocean", HealthBarStyle = "Smooth", ModeBarStyle = "Smooth",
     Name = true, User = true, HealthText = true, Distance = true, TextSize = 14,
     HealthSegments = 5, ModeText = false, ModeSegments = 1,
     Chams = true, ChamsStyle = "Solid", ChamsFill = 0.55, ChamsOutlineAlpha = 0.1,
@@ -997,9 +997,10 @@ function esp.BuildPanel(parent)
     for index = 1, segments do
         local slot = esp.New("Frame", bar, { Size = UDim2.new(1 / segments, 0, 1, 0), Position = UDim2.fromScale((index - 1) / segments, 0),
             BackgroundTransparency = 1, BorderSizePixel = 0, ClipsDescendants = true })
-        local segment = esp.New("Frame", slot, { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0 })
+        local segment = esp.New("Frame", slot, { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, ClipsDescendants = true })
         esp.New("UICorner", segment, { CornerRadius = UDim.new(0, 2) })
         esp.New("UIGradient", segment, { Name = "Gradient" })
+        esp.Stripes(segment, 110 / segments)
         panel.healthSegments[index] = segment
     end
     for index = 1, segments - 1 do
@@ -1022,6 +1023,8 @@ function esp.BuildPanel(parent)
     panel.modeFill = esp.New("Frame", modeBar, { Name = "Fill", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0 })
     esp.New("UICorner", panel.modeFill, { CornerRadius = UDim.new(0, 2) })
     panel.modeGradient = esp.New("UIGradient", panel.modeFill, { Name = "Gradient" })
+    panel.modeFill.ClipsDescendants = true
+    esp.Stripes(panel.modeFill, 110)
     for index = 1, modeSegments - 1 do
         esp.New("Frame", modeBar, { Size = UDim2.new(0, 1, 1, 0), Position = UDim2.fromScale(index / modeSegments, 0), BackgroundColor3 = esp.Colors.split, BorderSizePixel = 0, ZIndex = 3 })
     end
@@ -1038,10 +1041,26 @@ end
 function esp.Escape(text) return (tostring(text):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")) end
 -- The bars show the preset as a real gradient over their whole width (like its swatch): a fill that ends at
 -- `to` shows the colours from `from` to `to` of the preset (sampled 5 times, so 3-colour presets come out right).
+-- Bar styles (Visuals › Style): Smooth eases the gradient (the end colours stay longer, the middle passes quicker);
+-- Stripes is the same with light diagonal stripes on top. Sampled 9 times so the eased curve comes out right.
 function esp.Gradient(colorAt, from, to)
     local points = {}
-    for i = 0, 4 do points[#points + 1] = ColorSequenceKeypoint.new(i / 4, colorAt(from + (to - from) * i / 4)) end
+    for i = 0, 8 do
+        local p = from + (to - from) * i / 8
+        points[#points + 1] = ColorSequenceKeypoint.new(i / 8, colorAt(p * p * (3 - 2 * p)))
+    end
     return ColorSequence.new(points)
+end
+-- the stripes: a white frame over a fill (as wide as the full slot, so the stripes keep their spacing while the
+-- fill shrinks; the fill clips it) whose transparency alternates every ~6 px, tilted by the gradient rotation
+function esp.Stripes(fill, width)
+    local count = math.clamp(math.floor(width / 12 + 0.5), 1, 9)
+    local points = {}
+    for i = 0, count * 2 do points[#points + 1] = NumberSequenceKeypoint.new(i / (count * 2), i % 2 == 0 and 1 or 0.72) end
+    local overlay = esp.New("Frame", fill, { Name = "Stripes", Size = UDim2.new(0, width, 1, 0), BackgroundColor3 = Color3.new(1, 1, 1),
+        BorderSizePixel = 0, ZIndex = 2, Visible = false })
+    esp.New("UIGradient", overlay, { Transparency = NumberSequence.new(points), Rotation = 25 })
+    return overlay
 end
 function esp.SetIf(object, property, value) if object[property] ~= value then object[property] = value end end
 -- Fills the panel. info = { display, user, health (nil: no fakehealth), maxHealth, downed, mode, modeCap, distance, dodge }
@@ -1065,6 +1084,7 @@ function esp.UpdatePanel(panel, info)
         for index, segment in ipairs(panel.healthSegments) do
             local amount = clamp(ratio * panel.segments - (index - 1), 0, 1)
             esp.SetIf(segment, "Size", UDim2.fromScale(amount, 1))
+            esp.SetIf(segment.Stripes, "Visible", settings.HealthBarStyle == "Stripes")
             -- this segment's slice of the gradient (only redone when its fill or the preset changes)
             local key = settings.HealthPreset .. "|" .. math.floor(amount * 100 + 0.5)
             if amount > 0 and panel.amounts[index] ~= key then
@@ -1084,6 +1104,7 @@ function esp.UpdatePanel(panel, info)
         local ratio = clamp(mode / (info.modeCap or panel.peak), 0, 1)
         local color = modeColorFor(ratio)
         esp.SetIf(panel.modeFill, "Size", UDim2.fromScale(ratio, 1))
+        esp.SetIf(panel.modeFill.Stripes, "Visible", settings.ModeBarStyle == "Stripes")
         -- the preset's gradient from empty up to the current amount (redone only when it changes)
         local key = settings.ModePreset .. "|" .. math.floor(ratio * 100 + 0.5)
         if panel.modeKey ~= key then
@@ -1833,9 +1854,11 @@ Colors:ColorPicker({ Title = "Enemy", Flag = "col_enemy", Default = settings.Col
 
 -- bar colours on the right, health over mode
 local HealthColors = StylePage:Card({ Title = "Health bar colors", Icon = "heart", Side = "Right" })
+HealthColors:Segment({ Title = "Bar style", Flag = "esp_hpstyle", Items = { "Smooth", "Stripes" }, Default = "Smooth", Callback = set("HealthBarStyle") })
 HealthColors:Swatches({ Title = "From empty to full", Flag = "esp_hpcolors", Default = "Classic", Columns = 2, Items = healthPresets,
     Callback = function(_, name) settings.HealthPreset = name end })
 local ModeColors = StylePage:Card({ Title = "Mode bar colors", Icon = "zap", Side = "Right" })
+ModeColors:Segment({ Title = "Bar style", Flag = "esp_mdstyle", Items = { "Smooth", "Stripes" }, Default = "Smooth", Callback = set("ModeBarStyle") })
 ModeColors:Swatches({ Title = "From empty to full", Flag = "esp_modecolors", Default = "Ocean", Columns = 2, Items = modePresets,
     Callback = function(_, name) settings.ModePreset = name end })
 end
