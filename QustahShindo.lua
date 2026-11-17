@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.94
+-- Qustāh · Shindo Life · V1.95
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -432,7 +432,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.94",
+	Version = "V1.95",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -993,6 +993,7 @@ function esp.BuildPanel(parent)
     local panel = { segments = segments, modeSegments = modeSegments, peak = 1 }
     local bar = esp.New("Frame", parent, { Name = "HealthBar", Size = UDim2.fromOffset(110, 8), Position = UDim2.new(0.5, -55, 0, 14),
         BackgroundColor3 = esp.Colors.back, BackgroundTransparency = 0.05, BorderSizePixel = 0, ClipsDescendants = true })
+    bar:SetAttribute("Base", 0.05)
     esp.New("UICorner", bar, { CornerRadius = UDim.new(0, 3) })
     esp.New("UIStroke", bar, { Color = Color3.new(), Thickness = 1.25, Transparency = 0, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, LineJoinMode = Enum.LineJoinMode.Round })
     -- one fill with one gradient over the whole bar; the segments are only the dark divider lines on top
@@ -1052,24 +1053,43 @@ end
 -- the stripes: a white frame over a fill (as wide as the full slot, so the stripes keep their spacing while the
 -- fill shrinks; the fill clips it) whose transparency alternates every ~6 px, tilted by the gradient rotation
 -- bar opacity (Visuals › Style): the bar's back, outline, fill, dividers and stripes together; texts are not touched.
--- Every frame in a bar is opaque at 100% except the back (5% see-through), so one value covers them all.
+-- A frame's own see-through amount at 100% is kept in its "Base" attribute (0 when unset: fill, dividers; the back
+-- 0.05, the stripes 0.7, their holder 1), so one value scales them all.
+function esp.Fade(frame, opacity)
+    frame.BackgroundTransparency = 1 - opacity * (1 - (frame:GetAttribute("Base") or 0))
+end
 function esp.BarOpacity(bar, opacity)
     if bar:GetAttribute("Opacity") == opacity then return end
     bar:SetAttribute("Opacity", opacity)
     bar.BackgroundTransparency = 1 - opacity * 0.95
     for _, d in ipairs(bar:GetDescendants()) do
         if d:IsA("UIStroke") then d.Transparency = 1 - opacity
-        elseif d:IsA("Frame") then d.BackgroundTransparency = 1 - opacity end
+        elseif d:IsA("Frame") then esp.Fade(d, opacity) end
     end
 end
+-- Stripes: diagonal "/" lines every 6 px over the fill, each made of four 2 px steps (a rotated frame would not be
+-- clipped by the fill, and a rotated gradient barely tilts on an 8 px tall bar). The holder is as wide as the bar, so
+-- the stripes keep their place while the fill shrinks; it is filled the first time Stripes is chosen.
 function esp.Stripes(fill, width)
-    local count = math.clamp(math.floor(width / 12 + 0.5), 1, 9)
-    local points = {}
-    for i = 0, count * 2 do points[#points + 1] = NumberSequenceKeypoint.new(i / (count * 2), i % 2 == 0 and 1 or 0.72) end
-    local overlay = esp.New("Frame", fill, { Name = "Stripes", Size = UDim2.new(0, width, 1, 0), BackgroundColor3 = Color3.new(1, 1, 1),
+    local holder = esp.New("Frame", fill, { Name = "Stripes", Size = UDim2.new(0, width, 1, 0), BackgroundTransparency = 1,
         BorderSizePixel = 0, ZIndex = 2, Visible = false })
-    esp.New("UIGradient", overlay, { Transparency = NumberSequence.new(points), Rotation = 25 })
-    return overlay
+    holder:SetAttribute("Base", 1)
+    holder:SetAttribute("Width", width)
+    return holder
+end
+function esp.ShowStripes(holder, on, opacity)
+    if on and not holder:GetAttribute("Built") then
+        holder:SetAttribute("Built", true)
+        for x = -6, holder:GetAttribute("Width"), 6 do
+            for step = 0, 3 do
+                local line = esp.New("Frame", holder, { Position = UDim2.fromOffset(x + 3 - step, step * 2), Size = UDim2.fromOffset(3, 2),
+                    BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, ZIndex = 2 })
+                line:SetAttribute("Base", 0.7)
+                esp.Fade(line, opacity)
+            end
+        end
+    end
+    esp.SetIf(holder, "Visible", on)
 end
 function esp.SetIf(object, property, value) if object[property] ~= value then object[property] = value end end
 -- Fills the panel. info = { display, user, health (nil: no fakehealth), maxHealth, downed, mode, modeCap, distance, dodge }
@@ -1082,6 +1102,8 @@ function esp.UpdatePanel(panel, info)
     esp.SetIf(panel.name, "TextSize", settings.TextSize)
     -- health: segments fill one after another; "1.2K / 2K", "… · Death" while downed
     esp.SetIf(panel.bar, "Visible", settings.HealthBar)
+    esp.ShowStripes(panel.healthFill.Stripes, settings.HealthBarStyle == "Stripes", settings.HealthBarOpacity)
+    esp.ShowStripes(panel.modeFill.Stripes, settings.ModeBarStyle == "Stripes", settings.ModeBarOpacity)
     esp.BarOpacity(panel.bar, settings.HealthBarOpacity)
     esp.BarOpacity(panel.modeBar, settings.ModeBarOpacity)
     esp.SetIf(panel.health, "Visible", settings.HealthText)
@@ -1093,7 +1115,6 @@ function esp.UpdatePanel(panel, info)
         local health, maximum = math.max(info.health, 0), math.max(info.maxHealth or 1, 1)
         local ratio = clamp(health / maximum, 0, 1)
         esp.SetIf(panel.healthFill, "Size", UDim2.fromScale(ratio, 1))
-        esp.SetIf(panel.healthFill.Stripes, "Visible", settings.HealthBarStyle == "Stripes")
         -- the preset's gradient from empty up to the current health (redone only when it changes)
         local key = settings.HealthPreset .. "|" .. math.floor(ratio * 100 + 0.5)
         if ratio > 0 and panel.healthKey ~= key then
@@ -1112,7 +1133,6 @@ function esp.UpdatePanel(panel, info)
         local ratio = clamp(mode / (info.modeCap or panel.peak), 0, 1)
         local color = modeColorFor(ratio)
         esp.SetIf(panel.modeFill, "Size", UDim2.fromScale(ratio, 1))
-        esp.SetIf(panel.modeFill.Stripes, "Visible", settings.ModeBarStyle == "Stripes")
         -- the preset's gradient from empty up to the current amount (redone only when it changes)
         local key = settings.ModePreset .. "|" .. math.floor(ratio * 100 + 0.5)
         if panel.modeKey ~= key then
