@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.91
+-- Qustāh · Shindo Life · V1.92
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -432,7 +432,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.91",
+	Version = "V1.92",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -1667,41 +1667,65 @@ HealthCard:Slider({ Title = "Health bar segments", Flag = "esp_hpseg", Min = 1, 
 end
 
 ----- ESP live preview -----
--- Your own character (a still copy in a Viewport) with the ESP drawn over it as it would look in game: the overhead
--- block (the same panel the in-game BillboardGui shows) and the box. Values are your real ones (fakehealth,
--- combat.mode, your dodge cooldown) and follow the settings at once. Drawn in the menu, so this part is GUI.
+-- The overhead panel exactly as the in-game BillboardGui shows it (esp.BuildPanel / UpdatePanel), on a soft blurred
+-- colour background; no character. Values are your real ones (fakehealth, combat.mode, your dodge cooldown) and
+-- follow the settings at once. Drawn in the menu, so this part is GUI.
 local PreviewCard = EspPage:Card({ Title = "Preview", Icon = "scan-eye", Side = "Right" })
-local espView = PreviewCard:Viewport({ Height = 230, Spin = false })
+local espCanvas = PreviewCard:Canvas({ Height = 120 })
 do
-    local holder = espView.View and espView.View.Parent
-    local overlay, pool, used = nil, {}, {}
+    local holder = espCanvas.Frame
     if holder then
-        overlay = Instance.new("Frame")
-        overlay.Name, overlay.BackgroundTransparency, overlay.Size, overlay.ZIndex = "EspOverlay", 1, UDim2.fromScale(1, 1), 2
-        overlay.ClipsDescendants = true
-        overlay.Parent = holder
-    end
-    -- GUI objects reused by key ("rect3", "text1", ...), like the Drawing objects in game
-    local function get(key, class)
-        local object = pool[key]
-        if not object then
-            object = Instance.new(class)
-            object.Name, object.BorderSizePixel = key, 0
-            if class == "TextLabel" then
-                object.BackgroundTransparency, object.Font = 1, Enum.Font.GothamBold
-                object.TextStrokeColor3, object.TextStrokeTransparency = Color3.new(0, 0, 0), 0.25
-                object.TextXAlignment, object.TextYAlignment = Enum.TextXAlignment.Left, Enum.TextYAlignment.Top
-            end
-            object.Parent = overlay
-            pool[key] = object
+        holder.ClipsDescendants = true
+        -- background: a dark gradient with a few large, very soft colour blobs (a blurred look)
+        local back = Instance.new("Frame")
+        back.Name, back.Size, back.BorderSizePixel, back.BackgroundColor3 = "Backdrop", UDim2.fromScale(1, 1), 0, Color3.new(1, 1, 1)
+        local tint = Instance.new("UIGradient")
+        tint.Color = ColorSequence.new(Color3.fromRGB(28, 30, 52), Color3.fromRGB(18, 38, 44))
+        tint.Rotation = 20
+        tint.Parent = back
+        back.Parent = holder
+        for _, blob in ipairs({
+            { 0.18, 0.30, 170, Color3.fromRGB(96, 70, 190) }, { 0.80, 0.25, 150, Color3.fromRGB(40, 140, 170) },
+            { 0.55, 0.95, 190, Color3.fromRGB(190, 70, 120) }, { 0.05, 1.00, 120, Color3.fromRGB(40, 120, 90) },
+        }) do
+            local glow = Instance.new("Frame")
+            glow.AnchorPoint, glow.Position = Vector2.new(0.5, 0.5), UDim2.fromScale(blob[1], blob[2])
+            glow.Size, glow.BorderSizePixel, glow.BackgroundColor3 = UDim2.fromOffset(blob[3], blob[3]), 0, blob[4]
+            local round = Instance.new("UICorner")
+            round.CornerRadius = UDim.new(1, 0)
+            round.Parent = glow
+            local fade = Instance.new("UIGradient")                     -- bright centre fading out to nothing: the blur
+            fade.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.55), NumberSequenceKeypoint.new(0.5, 0.8), NumberSequenceKeypoint.new(1, 1) })
+            fade.Parent = glow
+            glow.Parent = back
         end
-        used[key] = true
-        object.Visible = true
-        return object
     end
-    local function rect(key, x, y, w, h, color, z)
-        local f = get(key, "Frame")
-        f.Position, f.Size, f.BackgroundColor3, f.ZIndex = UDim2.fromOffset(x, y), UDim2.fromOffset(math.max(w, 1), math.max(h, 1)), color, 2 + (z or 0)
+    local box, panel
+    local function drawPreview()
+        if not holder then return end
+        if panel and (panel.segments ~= clamp(math.floor(settings.HealthSegments + 0.5), 1, 10)
+            or panel.modeSegments ~= clamp(math.floor(settings.ModeSegments + 0.5), 1, 10)) then
+            box:Destroy()
+            box, panel = nil, nil
+        end
+        if not box then
+            box = Instance.new("Frame")
+            box.Name, box.BackgroundTransparency, box.Size, box.ZIndex = "Panel", 1, UDim2.fromOffset(300, 78), 5
+            box.AnchorPoint, box.Position = Vector2.new(0.5, 0.5), UDim2.new(0.5, 0, 0.5, 4)
+            box.Parent = holder
+            panel = esp.BuildPanel(box)
+        end
+        local char = character()
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local fake = char and char:FindFirstChild("fakehealth")
+        local mode, modeCap
+        if char then mode, modeCap = esp.ModeInfo(char) end
+        esp.UpdatePanel(panel, {
+            display = LocalPlayer.DisplayName, user = LocalPlayer.Name,
+            health = fake and fake:IsA("ValueBase") and tonumber(fake.Value) or nil, maxHealth = hum and hum.MaxHealth or 100,
+            downed = char ~= nil and char:FindFirstChild("stayonground") ~= nil,
+            mode = mode, modeCap = modeCap, distance = 42, dodge = esp.DodgeCooldown(LocalPlayer),
+        })
     end
     local function shown(gui)
         while gui do
@@ -1711,95 +1735,11 @@ do
         end
         return false
     end
-    local function project(point, size)
-        local cam = espView.Camera
-        local rel = cam.CFrame:PointToObjectSpace(point)
-        if rel.Z >= -0.01 then return nil end
-        local f = 1 / math.tan(math.rad(cam.FieldOfView / 2))
-        local sx = (rel.X / -rel.Z) * f / (size.X / size.Y)
-        local sy = (rel.Y / -rel.Z) * f
-        return vec2((sx + 1) / 2 * size.X, (1 - sy) / 2 * size.Y)
-    end
-    local previewBox, previewPanel
-    local function drawPreview()
-        if not overlay then return end
-        table.clear(used)
-        local model = espView.Model
-        local root = model and model:FindFirstChild("HumanoidRootPart")
-        local head = model and model:FindFirstChild("Head")
-        local size = holder.AbsoluteSize
-        if root and size.X >= 10 and size.Y >= 10 then
-            local color = settings.ColEnemy
-            -- box (extra)
-            local top, bottom = project(root.Position + vec3(0, 2.6, 0), size), project(root.Position - vec3(0, 3, 0), size)
-            if top and bottom and settings.Box then
-                local h = math.max(bottom.Y - top.Y, 6)
-                local w = h * 0.62
-                local x1, y1, x2, y2 = top.X - w / 2, top.Y, top.X + w / 2, top.Y + h
-                if settings.BoxFill then
-                    rect("fill", x1, y1, w, h, color, 0)
-                    pool.fill.BackgroundTransparency = settings.BoxFillAlpha
-                end
-                local edges
-                if settings.BoxCorner < 100 then
-                    local cx, cy = w * settings.BoxCorner / 100 / 2, h * settings.BoxCorner / 100 / 2
-                    edges = { { x1, y1, cx, 1 }, { x1, y1, 1, cy }, { x2 - cx, y1, cx, 1 }, { x2 - 1, y1, 1, cy },
-                              { x1, y2 - 1, cx, 1 }, { x1, y2 - cy, 1, cy }, { x2 - cx, y2 - 1, cx, 1 }, { x2 - 1, y2 - cy, 1, cy } }
-                else
-                    edges = { { x1, y1, w, 1 }, { x1, y2 - 1, w, 1 }, { x1, y1, 1, h }, { x2 - 1, y1, 1, h } }
-                end
-                for i, e in ipairs(edges) do
-                    if settings.Outline then rect("bo" .. i, e[1] - 1, e[2] - 1, e[3] + 2, e[4] + 2, Color3.new(0, 0, 0), 1) end
-                    rect("b" .. i, e[1], e[2], e[3], e[4], color, 2)
-                end
-            end
-            -- the overhead block: the same panel as in game (esp.BuildPanel / UpdatePanel) in a plain 300 x 78 frame,
-            -- centred 3 studs above the head and kept inside the preview (at least 40 px from the top)
-            local anchor = project((head or root).Position + vec3(0, head and 3 or 5, 0), size)
-            if previewPanel and (previewPanel.segments ~= clamp(math.floor(settings.HealthSegments + 0.5), 1, 10)
-                or previewPanel.modeSegments ~= clamp(math.floor(settings.ModeSegments + 0.5), 1, 10)) then
-                previewBox:Destroy()
-                previewBox, previewPanel = nil, nil
-            end
-            if not previewBox then
-                previewBox = Instance.new("Frame")
-                previewBox.Name, previewBox.BackgroundTransparency, previewBox.Size, previewBox.ZIndex = "Panel", 1, UDim2.fromOffset(300, 78), 5
-                previewBox.Parent = overlay
-                previewPanel = esp.BuildPanel(previewBox)
-            end
-            previewBox.Visible = anchor ~= nil
-            if anchor then
-                previewBox.Position = UDim2.fromOffset(math.floor(anchor.X - 150), math.floor(math.max(anchor.Y, 40) - 39))
-                local char = character()
-                local hum = char and char:FindFirstChildOfClass("Humanoid")
-                local fake = char and char:FindFirstChild("fakehealth")
-                local mode, modeCap
-                if char then mode, modeCap = esp.ModeInfo(char) end
-                esp.UpdatePanel(previewPanel, {
-                    display = LocalPlayer.DisplayName, user = LocalPlayer.Name,
-                    health = fake and fake:IsA("ValueBase") and tonumber(fake.Value) or nil, maxHealth = hum and hum.MaxHealth or 100,
-                    downed = char ~= nil and char:FindFirstChild("stayonground") ~= nil,
-                    mode = mode, modeCap = modeCap, distance = 42, dodge = esp.DodgeCooldown(LocalPlayer),
-                })
-            end
-        end
-        for key, object in pairs(pool) do if not used[key] then object.Visible = false end end
-    end
-    -- the copy follows your character (respawns, outfit changes need a respawn); drawn ~15 times a second, only while on screen
-    local function loadCharacter(char)
-        if not char then return end
-        task.spawn(function()
-            char:WaitForChild("HumanoidRootPart", 10)
-            task.wait(0.5)                                              -- clothes and accessories load a moment later
-            if hub.Running and LocalPlayer.Character == char then pcall(function() espView:SetObject(char) end) end
-        end)
-    end
-    loadCharacter(LocalPlayer.Character)
-    hubConnect(LocalPlayer.CharacterAdded, loadCharacter)
+    -- refreshed ~15 times a second, only while on screen
     local last = 0
     hubConnect(RunService.Heartbeat, function()
         local now = os.clock()
-        if now - last < 1 / 15 or not (overlay and shown(holder)) then return end
+        if now - last < 1 / 15 or not (holder and shown(holder)) then return end
         last = now
         drawPreview()
     end)
