@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V2.02
+-- Qustāh · Shindo Life · V2.03
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -476,7 +476,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V2.02",
+	Version = "V2.03",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -1687,6 +1687,9 @@ local HealthCard = ElementTabs.Health
 HealthCard:Toggle({ Title = "Health bar", Desc = "Segmented health indicator", Flag = "esp_hbar", Default = true, Callback = set("HealthBar") })
 HealthCard:Toggle({ Title = "Health text", Desc = "Current / maximum health", Flag = "esp_hptext", Default = true, Callback = set("HealthText") })
 HealthCard:Slider({ Title = "Health bar segments", Flag = "esp_hpseg", Min = 1, Max = 10, Default = 5, DependsOn = { Flag = "esp_hbar", Reason = "" }, Callback = set("HealthSegments") })
+-- quick colour row: the same presets as Visuals › Style (one row of gradient dots, the name on hover), kept in step with it
+esp.HealthDots = HealthCard:Swatches({ Title = "Colors", Style = "Dots", Items = healthPresets, Default = "Ice", DependsOn = { Flag = "esp_hbar", Reason = "" },
+    Callback = function(_, name) Window:SetFlag("esp_hpcolors", name) end })
 end
 
 ----- ESP live preview -----
@@ -1790,6 +1793,8 @@ local ModeCard = ElementTabs.Mode
 ModeCard:Toggle({ Title = "Mode bar", Desc = "Shows player mode HP", Flag = "esp_mbar", Default = true, Callback = set("ModeBar") })
 ModeCard:Toggle({ Title = "Mode text", Desc = "Current mode amount", Flag = "esp_mtext", Default = false, DependsOn = { Flag = "esp_mbar", Reason = "" }, Callback = set("ModeText") })
 ModeCard:Slider({ Title = "Mode bar segments", Flag = "esp_mseg", Min = 1, Max = 10, Default = 1, DependsOn = { Flag = "esp_mbar", Reason = "" }, Callback = set("ModeSegments") })
+esp.ModeDots = ModeCard:Swatches({ Title = "Colors", Style = "Dots", Items = modePresets, Default = "Aurora", DependsOn = { Flag = "esp_mbar", Reason = "" },
+    Callback = function(_, name) Window:SetFlag("esp_modecolors", name) end })
 
 
 -- Target Pins: pinned players ignore the range and the nearest-players limit
@@ -1820,12 +1825,18 @@ local HealthColors = ColorTabs.Health
 HealthColors:Segment({ Title = "Bar style", Flag = "esp_hpstyle", Items = { "Smooth", "Stripes" }, Default = "Smooth", Callback = set("HealthBarStyle") })
 HealthColors:Slider({ Title = "Opacity", Flag = "esp_hpopacity", Min = 10, Max = 100, Default = 100, Suffix = "%", Callback = function(v) settings.HealthBarOpacity = v / 100 end })
 HealthColors:Swatches({ Title = "From empty to full", Flag = "esp_hpcolors", Default = "Ice", Columns = 2, Items = healthPresets,
-    Callback = function(_, name) settings.HealthPreset = name end })
+    Callback = function(_, name)
+        settings.HealthPreset = name
+        if esp.HealthDots then esp.HealthDots:Set(name, true) end         -- the colour row under Elements › Health
+    end })
 local ModeColors = ColorTabs.Mode
 ModeColors:Segment({ Title = "Bar style", Flag = "esp_mdstyle", Items = { "Smooth", "Stripes" }, Default = "Stripes", Callback = set("ModeBarStyle") })
 ModeColors:Slider({ Title = "Opacity", Flag = "esp_mdopacity", Min = 10, Max = 100, Default = 100, Suffix = "%", Callback = function(v) settings.ModeBarOpacity = v / 100 end })
 ModeColors:Swatches({ Title = "From empty to full", Flag = "esp_modecolors", Default = "Aurora", Columns = 2, Items = modePresets,
-    Callback = function(_, name) settings.ModePreset = name end })
+    Callback = function(_, name)
+        settings.ModePreset = name
+        if esp.ModeDots then esp.ModeDots:Set(name, true) end             -- the colour row under Elements › Mode
+    end })
 end
 
 ----- World -----
