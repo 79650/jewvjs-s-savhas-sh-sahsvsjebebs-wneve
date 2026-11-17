@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.93
+-- Qustāh · Shindo Life · V1.94
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -432,7 +432,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.93",
+	Version = "V1.94",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -518,12 +518,12 @@ local settings = {
     FOV_Filled = false, FOV_Origin = "Mouse", FOV_TargetLine = false,
     -- esp
     ESP_Enabled = false, ESP_MaxDist = 2500, PlayerLimit = 30, Pins = {},
-    Box = false, BoxCorner = 30, BoxFill = false, BoxFillAlpha = 0.85, HealthBar = true, ModeBar = true, Outline = true,
+    HealthBar = true, ModeBar = true, Outline = true,
     HealthPreset = "Classic", ModePreset = "Ocean", HealthBarStyle = "Smooth", ModeBarStyle = "Smooth",
     HealthBarOpacity = 1, ModeBarOpacity = 1,
     Name = true, User = true, HealthText = true, Distance = true, TextSize = 14,
     HealthSegments = 5, ModeText = false, ModeSegments = 1,
-    Chams = true, ChamsStyle = "Solid", ChamsFill = 0.55, ChamsOutlineAlpha = 0.1,
+    Chams = true, ChamsFill = 0.55, ChamsOutlineAlpha = 0.1,
     ChamsColor = rgb(1, 1, 1), ChamsOutline = rgb(0, 0, 0),
     DistanceThrottle = false, OffscreenSleep = false,
     ColEnemy = rgb(1, 0.23, 0.23), ColAlly = rgb(0.23, 1, 0.42), ColTarget = rgb(0.75, 0.45, 1),
@@ -885,7 +885,7 @@ end
 -- top) per player with, from the top, the mode bar ("MD" text on its right), the segmented health bar, the name with
 -- the [username] in grey and the dodge cooldown icon, then "health / max" and "[distance studs]"; a Highlight for
 -- the chams. Nearest players, Target pins, distance throttle and offscreen sleep work as there.
--- Our own additions stay on top: the box (Drawing) and the health / mode colour presets. Everything lives in the `esp` table (the main chunk is near Luau's 200 local limit).
+-- Our own additions stay on top: the health / mode colour presets and bar styles. Everything lives in the `esp` table (the main chunk is near Luau's 200 local limit).
 esp.Panels = {}
 esp.Colors = { back = Color3.fromRGB(18, 18, 18), split = Color3.fromRGB(8, 8, 8),
     red = Color3.fromRGB(195, 85, 85), green = Color3.fromRGB(115, 185, 130) }
@@ -1248,7 +1248,7 @@ function esp.RefreshPanel(c, index, limit, now, camera)
             if chams then
                 esp.SetIf(h, "FillColor", settings.ChamsColor)
                 esp.SetIf(h, "OutlineColor", settings.ChamsOutline)
-                esp.SetIf(h, "FillTransparency", settings.ChamsStyle == "Outline" and 1 or settings.ChamsFill)
+                esp.SetIf(h, "FillTransparency", settings.ChamsFill)
                 esp.SetIf(h, "OutlineTransparency", settings.ChamsOutlineAlpha)
             end
         end
@@ -1258,61 +1258,6 @@ end
 function esp.DestroyPanels()
     for plr in pairs(esp.Panels) do esp.DropPanel(plr) end
     if esp.Folder then pcall(function() esp.Folder:Destroy() end) esp.Folder = nil end
-end
-
-local function updatePlayer(plr)
-    local e = entry(plr)
-    local char, hum, root = getCharacter(plr)
-    if not (settings.ESP_Enabled and char and isAlive(hum)) then
-        e.chamsReady = false
-        return hideUnused(e)
-    end
-    -- pinned players ignore the range and the nearest-players limit (esp.Allowed is filled each frame by the loop)
-    local pinned = settings.Pins[plr.UserId] == true
-    local dist = (root.Position - Camera.CFrame.Position).Magnitude
-    if not pinned and (dist > settings.ESP_MaxDist or (esp.Allowed and not esp.Allowed[plr])) then
-        e.chamsReady = false
-        return hideUnused(e)
-    end
-    if e.char ~= char then e.char = char end
-    local head = char:FindFirstChild("Head") or root
-    local enemy = not isTeammate(plr)
-    local color = enemy and settings.ColEnemy or settings.ColAlly
-    local alpha = 1
-
-    -- (chams and the name / health / mode block are the BillboardGui + Highlight above: esp.UpdatePanels)
-    local rootScreen, onScreen = toScreen(root.Position)
-    if not onScreen then
-        return hideUnused(e)
-    end
-
-    -- the box around the body (the top of the head and the bottom of the feet projected: stable, not affected by
-    -- accessories)
-    local top = toScreen(root.Position + vec3(0, 2.6, 0))
-    local bottom = toScreen(root.Position - vec3(0, 3, 0))
-    local h = max(bottom.Y - top.Y, 6)
-    local w = h * 0.62
-    local boxLeft, boxTop = floor(rootScreen.X - w / 2), floor(top.Y)
-    local boxRight, boxBottom = floor(boxLeft + w), floor(boxTop + h)
-
-    if settings.Box then
-        if settings.BoxFill then
-            local f = use(e, "fill", "Square")
-            if f then f.Position, f.Size, f.Color, f.Filled, f.Transparency, f.ZIndex, f.Visible = vec2(boxLeft, boxTop), vec2(boxRight - boxLeft, boxBottom - boxTop), color, true, (1 - settings.BoxFillAlpha) * alpha, 0, true end
-        end
-        local frac = settings.BoxCorner / 100                      -- (100% = a full box)
-        local cx, cy = (boxRight - boxLeft) / 2 * frac, (boxBottom - boxTop) / 2 * frac
-        drawLine(e, "b1", vec2(boxLeft, boxTop), vec2(boxLeft + cx, boxTop), color, 1, alpha)
-        drawLine(e, "b2", vec2(boxLeft, boxTop), vec2(boxLeft, boxTop + cy), color, 1, alpha)
-        drawLine(e, "b3", vec2(boxRight, boxTop), vec2(boxRight - cx, boxTop), color, 1, alpha)
-        drawLine(e, "b4", vec2(boxRight, boxTop), vec2(boxRight, boxTop + cy), color, 1, alpha)
-        drawLine(e, "b5", vec2(boxLeft, boxBottom), vec2(boxLeft + cx, boxBottom), color, 1, alpha)
-        drawLine(e, "b6", vec2(boxLeft, boxBottom), vec2(boxLeft, boxBottom - cy), color, 1, alpha)
-        drawLine(e, "b7", vec2(boxRight, boxBottom), vec2(boxRight - cx, boxBottom), color, 1, alpha)
-        drawLine(e, "b8", vec2(boxRight, boxBottom), vec2(boxRight, boxBottom - cy), color, 1, alpha)
-    end
-
-    hideUnused(e)
 end
 
 -- FOV circle and target line (global objects)
@@ -1765,15 +1710,6 @@ ModeCard:Toggle({ Title = "Mode bar", Desc = "Shows player mode HP", Flag = "esp
 ModeCard:Toggle({ Title = "Mode text", Desc = "Current mode amount", Flag = "esp_mtext", Default = false, DependsOn = { Flag = "esp_mbar", Reason = "" }, Callback = set("ModeText") })
 ModeCard:Slider({ Title = "Mode bar segments", Flag = "esp_mseg", Min = 1, Max = 10, Default = 1, DependsOn = { Flag = "esp_mbar", Reason = "" }, Callback = set("ModeSegments") })
 
--- the box around the body is an extra on top of the Qustah layout (off by default)
-local BoxCard = EspPage:Card({ Title = "Box", Icon = "square-dashed", Side = "Right" })
-BoxCard:Toggle({ Title = "Box", Flag = "esp_box", Default = false, Callback = set("Box") })
-BoxCard:Slider({ Title = "Corner size", Flag = "esp_corner", Min = 10, Max = 100, Default = 30, Suffix = "%", Desc = "100% draws a full box",
-    Callback = set("BoxCorner") })
-BoxCard:Toggle({ Title = "Fill", Flag = "esp_fill", Default = false, Callback = set("BoxFill") })
-BoxCard:Slider({ Title = "Fill transparency", Flag = "esp_fillalpha", Min = 0, Max = 100, Default = 85, Suffix = "%", DependsOn = { Flag = "esp_fill", Reason = "" },
-    Callback = function(v) settings.BoxFillAlpha = v / 100 end })
-BoxCard:Toggle({ Title = "Outline", Desc = "Black edge behind the box", Flag = "esp_outline", Default = true, Callback = set("Outline") })
 
 -- Target Pins: pinned players ignore the range and the nearest-players limit
 local PinsCard = EspPage:Card({ Title = "Target pins", Icon = "pin", Wide = "Bottom", Desc = "Pinned players ignore range and Nearest players" })
@@ -1787,8 +1723,6 @@ end
 do -- Visuals › ESP (Chams) and Style (a block: their locals end here)
 local Chams = EspPage:Card({ Title = "Chams", Icon = "paint-bucket", Side = "Left" })
 Chams:Toggle({ Title = "Chams", Flag = "esp_chams", Default = true, Style = "Switch", Callback = set("Chams") })
-Chams:Segment({ Title = "Chams style", Flag = "esp_chamsstyle", Items = { "Solid", "Outline" }, Default = "Solid", Wide = true,
-    DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsStyle") })
 Chams:Slider({ Title = "Fill transparency", Flag = "esp_chamsfill", Min = 0, Max = 100, Default = 55, Suffix = "%", DependsOn = { Flag = "esp_chams", Reason = "" },
     Callback = function(v) settings.ChamsFill = v / 100 end })
 Chams:Slider({ Title = "Outline transparency", Flag = "esp_chamsoutalpha", Min = 0, Max = 100, Default = 10, Suffix = "%", DependsOn = { Flag = "esp_chams", Reason = "" },
@@ -2519,28 +2453,7 @@ connect(RunService.RenderStepped, function()
     end
     if not safe("Silent Aim", function() Silent.Target = findTarget() end) then Silent.Target = nil end
     if Render.Available then                                     -- no Drawing API: nothing can be drawn
-        safe("FOV", updateGlobal)                                -- FOV first: it is drawn whatever happens to the ESP
-        -- nearest players: only the closest N (Visuals › ESP › Nearest players) are drawn; pins are added in updatePlayer
-        safe("ESP limit", function()
-            local list = {}
-            local camPos = Camera.CFrame.Position
-            for _, plr in ipairs(Players:GetPlayers()) do
-                local _, _, root = getCharacter(plr)
-                if plr ~= LocalPlayer and root then list[#list + 1] = { plr, (root.Position - camPos).Magnitude } end
-            end
-            local limit = clamp(math.floor(settings.PlayerLimit or 30), 5, 30)
-            if #list <= limit then esp.Allowed = nil return end
-            table.sort(list, function(a, b) return a[2] < b[2] end)
-            local allowed = {}
-            for i = 1, limit do allowed[list[i][1]] = true end
-            esp.Allowed = allowed
-        end)
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer and not safe("ESP", updatePlayer, plr) then
-                local e = esp.Entries[plr]                       -- do not leave a half-drawn frame on screen
-                if e then hideUnused(e, true) end
-            end
-        end
+        safe("FOV", updateGlobal)                                -- FOV circle and target line (Combat)
     end
     safe("World", updateWorld)
     if Spectating then
