@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.96
+-- Qustāh · Shindo Life · V1.97
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -432,7 +432,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.96",
+	Version = "V1.97",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -488,8 +488,6 @@ local VirtualUser = service("VirtualUser")
 local LocalPlayer = Players.LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
 local Camera = Workspace.CurrentCamera
--- The real reference for hook comparisons: a cloneref copy is not == to the game's workspace
-local RealWorkspace = workspace
 local FindFirstChild = game.FindFirstChild                      -- a plain call so no namecall happens inside the hook
 
 local env = (getgenv and getgenv()) or _G
@@ -511,8 +509,8 @@ local black, white = rgb(0, 0, 0), rgb(1, 1, 1)
 local settings = {
     -- silent aim
     SA_Enabled = false, SA_HitChance = 100, SA_Part = "Head", SA_Priority = "Mouse",
-    SA_Methods = { Raycast = true, FindPartOnRay = true, ["Mouse.Hit"] = true },
-    SA_TeamCheck = false, SA_VisCheck = false, SA_IgnoreFriends = false, SA_MaxDist = 1000, SA_SafeOrigin = true,
+    SA_InfRange = false,                                             -- Parvus-style ScreenPointToRay (see the hook)
+    SA_TeamCheck = false, SA_VisCheck = false, SA_IgnoreFriends = false, SA_MaxDist = 1000,
     SA_Predict = false, SA_PredStrength = 100, SA_Whitelist = {},
     -- fov
     FOV_Show = true, FOV_Radius = 120, FOV_Sides = 64, FOV_Thick = 1, FOV_Color = rgb(1, 1, 1), FOV_Alpha = 0,
@@ -652,7 +650,7 @@ local function isVisible(plr, char, part)
 end
 
 ----- Silent Aim: target selection -----
-local Silent = { Target = nil, Hooked = false, IndexHooked = false }
+local Silent = { Target = nil, Hooked = false }
 local CanHook = typeof(hookmetamethod) == "function" and typeof(getnamecallmethod) == "function" and typeof(checkcaller) == "function"
 local RandomPick = {}
 
@@ -727,50 +725,24 @@ local function findTarget()
 end
 
 local function roll() return math.random(1, 100) <= settings.SA_HitChance end
-local function fromShooter(origin)                               -- only redirect rays fired from your own weapon
-    if not settings.SA_SafeOrigin then return true end
-    if (origin - Camera.CFrame.Position).Magnitude < 25 then return true end
-    -- note: calling char:FindFirstChild (a namecall) inside the hook breaks the game's original call
-    local char = LocalPlayer.Character
-    local head = char and FindFirstChild(char, "Head")
-    return head ~= nil and (origin - head.Position).Magnitude < 25
-end
 
-local setnamecall = setnamecallmethod
 local function installNamecallHook()
     if Silent.Hooked or not CanHook then return Silent.Hooked end
     local old
-    local function callOld(method, self, ...)                  -- restore the method name if it changed in between
-        if setnamecall then setnamecall(method) end
-        return old(self, ...)
-    end
     local wrapper = newcclosure(function(self, ...)
         if Running and settings.SA_Enabled and not checkcaller() then
             local t = Silent.Target
             if t then
+                -- Silent Aim works through Camera:ScreenPointToRay / ViewportPointToRay only (the game turns the
+                -- mouse into a ray with it):
+                --   normal:    a ray from the camera towards the target, 1 stud long, like the real function returns
+                --              (the game scales it by its own range, so the target must be within that range);
+                --   Inf range: Parvus' ray, starting at the target itself and pointing away from the camera, so the
+                --              shot lands on the target at any distance.
                 local method = getnamecallmethod()
-                if self == RealWorkspace then
-                    if method == "Raycast" and settings.SA_Methods.Raycast then
-                        local origin, direction = ...
-                        if typeof(origin) == "Vector3" and typeof(direction) == "Vector3" and fromShooter(origin) and roll() then
-                            local args = table.pack(...)
-                            local to = t.Position - origin
-                            args[2] = to.Unit * max(direction.Magnitude, to.Magnitude + 2)
-                            return callOld(method, self, table.unpack(args, 1, args.n))
-                        end
-                    elseif (method == "FindPartOnRay" or method == "FindPartOnRayWithIgnoreList" or method == "FindPartOnRayWithWhitelist")
-                        and settings.SA_Methods.FindPartOnRay then
-                        local ray = ...
-                        if typeof(ray) == "Ray" and fromShooter(ray.Origin) and roll() then
-                            local args = table.pack(...)
-                            local to = t.Position - ray.Origin
-                            args[1] = Ray.new(ray.Origin, to.Unit * max(ray.Direction.Magnitude, to.Magnitude + 2))
-                            return callOld(method, self, table.unpack(args, 1, args.n))
-                        end
-                    end
-                elseif self == Camera and (method == "ScreenPointToRay" or method == "ViewportPointToRay")
-                    and settings.SA_Methods.ScreenPointToRay and roll() then
+                if self == Camera and (method == "ScreenPointToRay" or method == "ViewportPointToRay") and roll() then
                     local origin = Camera.CFrame.Position
+                    if settings.SA_InfRange then return Ray.new(t.Position, t.Position - origin) end
                     return Ray.new(origin, (t.Position - origin).Unit)
                 end
             end
@@ -788,33 +760,6 @@ local function installNamecallHook()
     hub.Cleanup[#hub.Cleanup + 1] = function()
         pcall(hookmetamethod, game, "__namecall", old)
         Silent.Hooked = false
-    end
-    return true
-end
-
-local function installIndexHook()                                -- Mouse.Hit / Mouse.Target (only installed when selected)
-    if Silent.IndexHooked or not CanHook then return Silent.IndexHooked end
-    local old
-    local wrapper = newcclosure(function(self, key)
-        if Running and self == Mouse and settings.SA_Enabled and not checkcaller() then
-            local t = Silent.Target
-            if t then
-                if key == "Hit" and settings.SA_Methods["Mouse.Hit"] and roll() then return cframe(t.Position) end
-                if key == "Target" and settings.SA_Methods["Mouse.Target"] and roll() then return t.Part end
-            end
-        end
-        return old(self, key)
-    end)
-    local ok, result = pcall(hookmetamethod, game, "__index", wrapper)
-    if not ok or type(result) ~= "function" then
-        hubError("Silent Aim __index", result or "Hook did not return the original function")
-        return false
-    end
-    old = result
-    Silent.IndexHooked = true
-    hub.Cleanup[#hub.Cleanup + 1] = function()
-        pcall(hookmetamethod, game, "__index", old)
-        Silent.IndexHooked = false
     end
     return true
 end
@@ -1527,23 +1472,10 @@ if not CanHook then
     Combat.Pages[1]:Warning("Your executor doesn't support hookmetamethod; Silent Aim won't work.", { Title = "No hook", Level = "danger" })
 end
 local function refreshAimStatus()
-    local m = settings.SA_Methods
-    local wantsNamecall = m.Raycast or m.FindPartOnRay or m.ScreenPointToRay
-    local wantsIndex = m["Mouse.Hit"] or m["Mouse.Target"]
-    local active, failed = false, false
-    if settings.SA_Enabled and CanHook then
-        if wantsNamecall then
-            local ok = installNamecallHook()
-            active, failed = active or ok, failed or not ok
-        end
-        if wantsIndex then
-            local ok = installIndexHook()
-            active, failed = active or ok, failed or not ok
-        end
-    end
-    local limited = not CanHook or settings.SA_Enabled and (failed or not active)
+    local active = settings.SA_Enabled and CanHook and installNamecallHook()
+    local limited = not CanHook or settings.SA_Enabled and not active
     Window:SetModule("Silent Aim", limited and "Limited" or (active and "On" or "Off"),
-        limited and "Hook unavailable or no method selected" or nil, { Icon = "target", Tab = "Combat" })
+        limited and "Hook unavailable" or nil, { Icon = "target", Tab = "Combat" })
 end
 local saToggle = Aim:Toggle({ Title = "Enabled", Flag = "sa_enabled", Default = false, Bindable = true,
     Callback = function(on)
@@ -1559,18 +1491,11 @@ Aim:Dropdown({ Title = "Priority", Flag = "sa_priority", Default = "Mouse", Item
     { Title = "Distance", Icon = "ruler", Desc = "Closest to you" },
     { Title = "Health", Icon = "heart", Desc = "Lowest health" },
 }, Callback = set("SA_Priority") })
-Aim:Dropdown({ Title = "Methods", Flag = "sa_methods", Multi = true,
-    Help = "The function the game uses when shooting. If it doesn't work, try another one.",
-    Items = { "Raycast", "FindPartOnRay", "ScreenPointToRay", "Mouse.Hit", "Mouse.Target" },
-    Default = { "Raycast", "FindPartOnRay", "Mouse.Hit" },
-    Callback = function(list)
-        settings.SA_Methods = toSet(list)
-        refreshAimStatus()
-    end })
+Aim:Toggle({ Title = "Inf range", Desc = "Hits the target at any distance (Parvus method)", Flag = "sa_infrange", Default = false,
+    DependsOn = { Flag = "sa_enabled", Mode = "Hide", Reason = "" }, Callback = set("SA_InfRange") })
 
 local Checks = Combat:Card({ Title = "Checks", Icon = "shield-check", Side = "Left" })
 Checks:Toggle({ Title = "Visibility check", Desc = "Don't target players behind walls", Flag = "sa_vischeck", Default = false, Callback = set("SA_VisCheck") })
-Checks:Toggle({ Title = "Safe origin", Desc = "Only change shots that come from you", Flag = "sa_safe", Default = true, Callback = set("SA_SafeOrigin") })
 Checks:Slider({ Title = "Max distance", Flag = "sa_maxdist", Min = 50, Max = 3000, Default = 1000, Step = 10, Suffix = " studs", Callback = set("SA_MaxDist") })
 Checks:Toggle({ Title = "Prediction", Desc = "Aim ahead of moving targets", Flag = "sa_predict", Default = false, Callback = set("SA_Predict") })
 Checks:Slider({ Title = "Prediction strength", Flag = "sa_predstr", Min = 0, Max = 300, Default = 100, Step = 5, Suffix = "%", DependsOn = { Flag = "sa_predict", Reason = "" }, Callback = set("SA_PredStrength") })
