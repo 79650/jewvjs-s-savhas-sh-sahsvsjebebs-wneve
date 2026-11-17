@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.98
+-- Qustāh · Shindo Life · V1.99
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -275,12 +275,16 @@ local function notify(title, content, icon, color)
 	if Window then Window:Notify({ Title = title, Content = content, Icon = icon or "bell", Color = color }) end
 end
 local function setValue(getter, value, label)
-	local ok, obj = pcall(getter)
-	if ok and obj then
+	local ok, err = pcall(function()
+		local obj = getter()
+		if not obj or not obj:IsA("ValueBase") then error("Value not found", 0) end
 		obj.Value = value
-		notify(label, value .. " set", "check")
+	end)
+	if ok then
+		notify(label, tostring(value) .. " set", "check")
 	else
-		notify(label, "Not found here (" .. placeName() .. ")", "triangle-alert", "warning")
+		hubError(label, err)
+		notify(label, "Could not set value (" .. placeName() .. ")", "triangle-alert", "warning")
 	end
 end
 
@@ -454,7 +458,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.98",
+	Version = "V1.99",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -580,7 +584,6 @@ end
 function Render.remove(o)
     pcall(function() o:Remove() end)
 end
-function Render.flush() end                                      -- Drawing objects update immediately
 
 ----- Helpers -----
 local function getCharacter(plr)
@@ -591,12 +594,11 @@ local function getCharacter(plr)
     if not (hum and root) then return end
     return char, hum, root
 end
--- Shindo keeps the real health in the character's "fakehealth" value; Humanoid.Health is only the fallback.
-local function healthValue(hum)
-    local char = hum.Parent
-    local fake = char and FindFirstChild(char, "fakehealth")
-    return (fake and fake:IsA("ValueBase") and tonumber(fake.Value)) or hum.Health
-end
+----- Health -----
+-- Humanoid.Health reacts first when a hit lands, so it is read directly. The maximum is Humanoid.MaxHealth; when
+-- the game leaves it below the current health, the health itself is used so the bar never shows more than full.
+local function healthValue(hum) return tonumber(hum.Health) or 0 end
+local function healthMax(hum, health) return math.max(tonumber(hum.MaxHealth) or 1, health or 0, 1) end
 local function isAlive(hum) return hum and healthValue(hum) > 0 end
 -- Bar colour presets (Visuals › Style): three stops each, from empty through the middle to full. A preset's colour
 -- at p (0..1) is read along its stops; the bars show the stops as a gradient (see esp.Gradient).
@@ -713,7 +715,6 @@ local function fovOrigin()
 end
 
 local function findTarget()
-    if not settings.SA_Enabled then return nil end
     local origin = fovOrigin()
     local best, bestScore = nil, math.huge
     for _, plr in ipairs(Players:GetPlayers()) do
@@ -750,37 +751,39 @@ local function roll() return math.random(1, 100) <= settings.SA_HitChance end
 
 local function installNamecallHook()
     if Silent.Hooked or not CanHook then return Silent.Hooked end
-    local old
-    local wrapper = newcclosure(function(self, ...)
-        if Running and settings.SA_Enabled and not checkcaller() then
-            local t = Silent.Target
-            if t then
-                -- Silent Aim works through Camera:ScreenPointToRay / ViewportPointToRay only (the game turns the
-                -- mouse into a ray with it):
-                --   normal:    a ray from the camera towards the target, 1 stud long, like the real function returns
-                --              (the game scales it by its own range, so the target must be within that range);
-                --   Inf range: Parvus' ray, starting at the target itself and pointing away from the camera, so the
-                --              shot lands on the target at any distance.
-                local method = getnamecallmethod()
-                if self == Camera and (method == "ScreenPointToRay" or method == "ViewportPointToRay") and roll() then
-                    local origin = Camera.CFrame.Position
-                    if settings.SA_InfRange then return Ray.new(t.Position, t.Position - origin) end
-                    return Ray.new(origin, (t.Position - origin).Unit)
-                end
+    local state = env.QustahShindoNamecallV1
+    if not state then
+        state = {}
+        local wrapper = newcclosure(function(self, ...)
+            local handler = state.handler
+            if handler then
+                local ray = handler(self)
+                if ray then return ray end
             end
+            return state.previous(self, ...)
+        end)
+        local ok, previous = pcall(hookmetamethod, game, "__namecall", wrapper)
+        if not ok or type(previous) ~= "function" then
+            hubError("Silent Aim __namecall", previous or "Hook did not return the original function")
+            return false
         end
-        return old(self, ...)
-    end)
-    local ok, result = pcall(hookmetamethod, game, "__namecall", wrapper)
-    if not ok or type(result) ~= "function" then
-        hubError("Silent Aim __namecall", result or "Hook did not return the original function")
-        return false
+        state.previous = previous
+        env.QustahShindoNamecallV1 = state
     end
-    old = result
+    local function redirect(self)
+        local target = Silent.Target
+        if not (Running and settings.SA_Enabled and target and Camera and self == Camera) or checkcaller() then return end
+        local method = getnamecallmethod()
+        if (method ~= "ScreenPointToRay" and method ~= "ViewportPointToRay") or not roll() then return end
+        local direction = target.Position - Camera.CFrame.Position
+        if direction.Magnitude <= 0.001 then return end
+        if settings.SA_InfRange then return Ray.new(target.Position, direction) end
+        return Ray.new(Camera.CFrame.Position, direction.Unit)
+    end
+    state.handler = redirect
     Silent.Hooked = true
-    -- put the game's own __namecall back on unload, so re-executing never stacks hook layers
     hub.Cleanup[#hub.Cleanup + 1] = function()
-        pcall(hookmetamethod, game, "__namecall", old)
+        if state.handler == redirect then state.handler = nil end
         Silent.Hooked = false
     end
     return true
@@ -1052,7 +1055,7 @@ function esp.ShowStripes(holder, on, opacity)
     esp.SetIf(holder, "Visible", on)
 end
 function esp.SetIf(object, property, value) if object[property] ~= value then object[property] = value end end
--- Fills the panel. info = { display, user, health (nil: no fakehealth), maxHealth, downed, mode, modeCap, distance, dodge }
+-- Fills the panel. info = { display, user, health (nil: unavailable or hidden), maxHealth, downed, mode, modeCap, distance, dodge }
 function esp.UpdatePanel(panel, info)
     -- name: display name, [username] in grey
     esp.SetIf(panel.name, "Visible", settings.Name or settings.User)
@@ -1060,39 +1063,37 @@ function esp.UpdatePanel(panel, info)
     if settings.User then nameText = nameText .. (settings.Name and " " or "") .. '<font color="#AFAFAF">[' .. esp.Escape(info.user) .. "]</font>" end
     esp.SetIf(panel.name, "Text", nameText)
     esp.SetIf(panel.name, "TextSize", settings.TextSize)
-    -- health: segments fill one after another; "1.2K / 2K", "… · Death" while downed
     esp.SetIf(panel.bar, "Visible", settings.HealthBar)
-    esp.ShowStripes(panel.healthFill.Stripes, settings.HealthBarStyle == "Stripes", settings.HealthBarOpacity)
-    esp.ShowStripes(panel.modeFill.Stripes, settings.ModeBarStyle == "Stripes", settings.ModeBarOpacity)
-    esp.BarOpacity(panel.bar, settings.HealthBarOpacity)
-    esp.BarOpacity(panel.modeBar, settings.ModeBarOpacity)
     esp.SetIf(panel.health, "Visible", settings.HealthText)
-    local healthText
-    if info.health == nil then
-        healthText = info.downed and "-- · Death" or "--"
-        esp.SetIf(panel.healthFill, "Size", UDim2.fromScale(0, 1))
-    else
-        local health, maximum = math.max(info.health, 0), math.max(info.maxHealth or 1, 1)
-        local ratio = clamp(health / maximum, 0, 1)
-        esp.SetIf(panel.healthFill, "Size", UDim2.fromScale(ratio, 1))
-        -- the preset's gradient from empty up to the current health (redone only when it changes)
-        local key = settings.HealthPreset .. "|" .. math.floor(ratio * 100 + 0.5)
-        if ratio > 0 and panel.healthKey ~= key then
-            panel.healthKey = key
-            panel.healthGradient.Color = esp.Gradient(healthColor, 0, ratio)
+    if settings.HealthBar or settings.HealthText then
+        local health = info.health and math.max(info.health, 0)
+        local maximum = math.max(info.maxHealth or 1, 1)
+        if settings.HealthBar then
+            esp.ShowStripes(panel.healthFill.Stripes, settings.HealthBarStyle == "Stripes", settings.HealthBarOpacity)
+            esp.BarOpacity(panel.bar, settings.HealthBarOpacity)
+            local ratio = clamp((health or 0) / maximum, 0, 1)
+            esp.SetIf(panel.healthFill, "Size", UDim2.fromScale(ratio, 1))
+            local key = settings.HealthPreset .. "|" .. math.floor(ratio * 100 + 0.5)
+            if ratio > 0 and panel.healthKey ~= key then
+                panel.healthKey = key
+                panel.healthGradient.Color = esp.Gradient(healthColor, 0, ratio)
+            end
         end
-        healthText = esp.Compact(health) .. " / " .. esp.Compact(maximum) .. (info.downed and " · Death" or "")
+        if settings.HealthText then
+            local healthText = health and (esp.Compact(health) .. " / " .. esp.Compact(maximum)) or "--"
+            esp.SetIf(panel.health, "Text", healthText .. (info.downed and " · Death" or ""))
+        end
     end
-    esp.SetIf(panel.health, "Text", healthText)
     -- mode: the bar (relative to the highest value seen when the game gives no maximum) and "MD 50 / 100"
     local hasMode = settings.ModeBar and info.mode ~= nil
     esp.SetIf(panel.modeBar, "Visible", hasMode)
     esp.SetIf(panel.modeLabel, "Visible", hasMode and settings.ModeText)
     if hasMode then
+        esp.ShowStripes(panel.modeFill.Stripes, settings.ModeBarStyle == "Stripes", settings.ModeBarOpacity)
+        esp.BarOpacity(panel.modeBar, settings.ModeBarOpacity)
         local mode = info.mode
         panel.peak = math.max(panel.peak, mode)
         local ratio = clamp(mode / (info.modeCap or panel.peak), 0, 1)
-        local color = modeColorFor(ratio)
         esp.SetIf(panel.modeFill, "Size", UDim2.fromScale(ratio, 1))
         -- the preset's gradient from empty up to the current amount (redone only when it changes)
         local key = settings.ModePreset .. "|" .. math.floor(ratio * 100 + 0.5)
@@ -1100,8 +1101,10 @@ function esp.UpdatePanel(panel, info)
             panel.modeKey = key
             panel.modeGradient.Color = esp.Gradient(modeColorFor, 0, math.max(ratio, 0.001))
         end
-        esp.SetIf(panel.modeLabel, "TextColor3", color)
-        esp.SetIf(panel.modeLabel, "Text", "MD " .. esp.Compact(mode) .. (info.modeCap and (" / " .. esp.Compact(info.modeCap)) or " · relative"))
+        if settings.ModeText then
+            esp.SetIf(panel.modeLabel, "TextColor3", modeColorFor(ratio))
+            esp.SetIf(panel.modeLabel, "Text", "MD " .. esp.Compact(mode) .. (info.modeCap and (" / " .. esp.Compact(info.modeCap)) or " · relative"))
+        end
     end
     -- dodge icon right after the name: the cooldown in red while it counts down
     local textWidth = tonumber(panel.name.TextBounds and panel.name.TextBounds.X) or 0
@@ -1160,13 +1163,12 @@ end
 -- ESP off (or no camera): the panels and highlights are removed, not kept hidden (Stripes alone are ~70 objects a
 -- panel); they are built again as players come into view
 function esp.DropAll()
+    esp.Selection = nil
     for plr in pairs(esp.Panels) do esp.DropPanel(plr) end
 end
 esp.StyleKeys = { "Name", "User", "TextSize", "Distance", "HealthText", "HealthBar", "ModeBar", "ModeText",
     "HealthPreset", "ModePreset", "HealthBarStyle", "ModeBarStyle", "HealthBarOpacity", "ModeBarOpacity" }
-function esp.UpdatePanels()
-    local camera = Workspace.CurrentCamera
-    if not settings.ESP_Enabled or not camera then esp.DropAll() return end
+function esp.SelectPlayers(camera, now, limit)
     local camPos = camera.CFrame.Position
     local candidates = {}
     for _, plr in ipairs(Players:GetPlayers()) do
@@ -1179,7 +1181,7 @@ function esp.UpdatePanels()
                 local dist = (camPos - root.Position).Magnitude
                 local pinned = settings.Pins[plr.UserId] == true
                 if pinned or dist <= settings.ESP_MaxDist then
-                    candidates[#candidates + 1] = { plr = plr, char = char, head = head, hum = hum, dist = dist, pinned = pinned }
+                    candidates[#candidates + 1] = { plr = plr, char = char, head = head, root = root, hum = hum, dist = dist, pinned = pinned }
                 end
             end
         end
@@ -1188,8 +1190,28 @@ function esp.UpdatePanels()
         if a.dist == b.dist then return a.plr.UserId < b.plr.UserId end
         return a.dist < b.dist
     end)
+    local entries = {}
+    for index, c in ipairs(candidates) do
+        if index <= limit or c.pinned then entries[#entries + 1] = c end
+    end
+    return { entries = entries, refreshAt = now + 0.25, camera = camera,
+        pins = settings.Pins, range = settings.ESP_MaxDist, limit = limit }
+end
+function esp.UpdatePanels()
+    local camera = Workspace.CurrentCamera
+    if not settings.ESP_Enabled or not camera then
+        if esp.Selection or next(esp.Panels) then esp.DropAll() end
+        return
+    end
+    local now = os.clock()
     local limit = clamp(math.floor(settings.PlayerLimit or 30), 5, 30)
-    local now, selected = os.clock(), {}
+    local selection = esp.Selection
+    if not selection or now >= selection.refreshAt or selection.camera ~= camera
+        or selection.limit ~= limit or selection.range ~= settings.ESP_MaxDist or selection.pins ~= settings.Pins then
+        selection = esp.SelectPlayers(camera, now, limit)
+        esp.Selection = selection
+    end
+    local selected, camPos = {}, camera.CFrame.Position
     esp.Style = esp.Style or {}
     for _, key in ipairs(esp.StyleKeys) do
         if esp.Style[key] ~= settings[key] then
@@ -1197,14 +1219,18 @@ function esp.UpdatePanels()
             esp.StyleRevision = (esp.StyleRevision or 0) + 1
         end
     end
-    for index, c in ipairs(candidates) do
-        if index <= limit or c.pinned then
-            selected[c.plr] = true
-            local ok, err = pcall(esp.RefreshPanel, c, now, camera)
-            if not ok then
-                local item = esp.Panels[c.plr]
-                if item then esp.HidePanel(item) end
-                hubError("ESP", err)
+    for _, c in ipairs(selection.entries) do
+        if c.plr.Parent and c.plr.Character == c.char and c.head.Parent == c.char
+            and c.root.Parent == c.char and c.hum.Parent == c.char then
+            c.dist = (camPos - c.root.Position).Magnitude
+            if c.pinned or c.dist <= settings.ESP_MaxDist then
+                selected[c.plr] = true
+                local ok, err = pcall(esp.RefreshPanel, c, now, camera)
+                if not ok then
+                    local item = esp.Panels[c.plr]
+                    if item then esp.HidePanel(item) end
+                    hubError("ESP", err)
+                end
             end
         end
     end
@@ -1258,10 +1284,11 @@ function esp.RefreshPanel(c, now, camera)
     if wasVisible and settings.DistanceThrottle and not c.pinned and c.dist > settings.ESP_MaxDist * 0.55
         and now - item.lastRefresh < 0.45 and item.styleRevision == esp.StyleRevision then return end
     item.lastRefresh, item.styleRevision = now, esp.StyleRevision
-    local mode, modeCap = esp.ModeInfo(c.char)
+    local mode, modeCap
+    if settings.ModeBar then mode, modeCap = esp.ModeInfo(c.char) end
     esp.UpdatePanel(item.panel, {
         display = c.plr.DisplayName, user = c.plr.Name,
-        health = healthValue(c.hum), maxHealth = c.hum.MaxHealth,
+        health = (settings.HealthBar or settings.HealthText) and healthValue(c.hum) or nil, maxHealth = healthMax(c.hum, healthValue(c.hum)),
         downed = c.char:FindFirstChild("stayonground") ~= nil,
         mode = mode, modeCap = modeCap, distance = c.dist, dodge = esp.DodgeCooldown(c.plr),
     })
@@ -1295,7 +1322,7 @@ end
 
 ----- World (Lighting) -----
 local WorldOriginal = {}
-local Atmospheres = setmetatable({}, { __mode = "k" })
+local Atmospheres = { items = {} }
 local function worldProperty(key, wanted)
     if wanted == nil then
         if WorldOriginal[key] ~= nil then
@@ -1307,17 +1334,33 @@ local function worldProperty(key, wanted)
         if Lighting[key] ~= wanted then Lighting[key] = wanted end
     end
 end
+function Atmospheres.add(obj)
+    if not obj:IsA("Atmosphere") or Atmospheres.items[obj] then return end
+    local entry = { original = obj.Density }
+    Atmospheres.items[obj] = entry
+    local function suppress()
+        if settings.NoFog and Atmospheres.items[obj] == entry and obj.Density ~= 0 then obj.Density = 0 end
+    end
+    entry.connection = obj:GetPropertyChangedSignal("Density"):Connect(suppress)
+    suppress()
+end
+function Atmospheres.remove(obj)
+    local entry = Atmospheres.items[obj]
+    if not entry then return end
+    Atmospheres.items[obj] = nil
+    entry.connection:Disconnect()
+    pcall(function() if obj.Density == 0 then obj.Density = entry.original end end)
+end
 local function fogDensity(on)
-    if on then
-        for _, a in ipairs(Lighting:GetChildren()) do
-            if a:IsA("Atmosphere") then
-                if Atmospheres[a] == nil then Atmospheres[a] = a.Density end
-                if a.Density ~= 0 then a.Density = 0 end
-            end
-        end
-    else
-        for a, d in pairs(Atmospheres) do pcall(function() a.Density = d end) end
-        table.clear(Atmospheres)
+    if on and not Atmospheres.added then
+        Atmospheres.added = Lighting.ChildAdded:Connect(Atmospheres.add)
+        Atmospheres.removed = Lighting.ChildRemoved:Connect(Atmospheres.remove)
+        for _, obj in ipairs(Lighting:GetChildren()) do Atmospheres.add(obj) end
+    elseif not on and Atmospheres.added then
+        Atmospheres.added:Disconnect()
+        Atmospheres.removed:Disconnect()
+        Atmospheres.added, Atmospheres.removed = nil, nil
+        for obj in pairs(Atmospheres.items) do Atmospheres.remove(obj) end
     end
 end
 local function restoreWorld()
@@ -1340,12 +1383,31 @@ local function updateWorld()
 end
 
 ----- Player (movement) -----
-local NoClipParts = {}
-local function stopNoClip()
-    for part, was in pairs(NoClipParts) do
-        if part.Parent then part.CanCollide = was end
+local NoClip = { parts = {}, changed = {} }
+function NoClip.restore(part)
+    if NoClip.changed[part] then
+        NoClip.changed[part] = nil
+        pcall(function() part.CanCollide = true end)
     end
-    table.clear(NoClipParts)
+end
+local function stopNoClip()
+    if NoClip.added then NoClip.added:Disconnect() NoClip.removed:Disconnect() end
+    NoClip.added, NoClip.removed, NoClip.character = nil, nil, nil
+    for part in pairs(NoClip.changed) do NoClip.restore(part) end
+    table.clear(NoClip.parts)
+end
+function NoClip.bind(char)
+    stopNoClip()
+    NoClip.character = char
+    local function add(obj)
+        if obj:IsA("BasePart") then NoClip.parts[obj] = true end
+    end
+    NoClip.added = char.DescendantAdded:Connect(add)
+    NoClip.removed = char.DescendantRemoving:Connect(function(obj)
+        NoClip.parts[obj] = nil
+        NoClip.restore(obj)
+    end)
+    for _, obj in ipairs(char:GetDescendants()) do add(obj) end
 end
 local Defaults = setmetatable({}, { __mode = "k" })
 local originalZoom
@@ -1365,13 +1427,14 @@ connect(RunService.Stepped, function()
     if not Running then return end
     local char = LocalPlayer.Character
     if settings.NoClip and char then
-        for _, p in ipairs(char:GetDescendants()) do
-            if p:IsA("BasePart") and p.CanCollide then
-                if NoClipParts[p] == nil then NoClipParts[p] = true end
-                p.CanCollide = false
+        if NoClip.character ~= char then NoClip.bind(char) end
+        for part in pairs(NoClip.parts) do
+            if part.CanCollide then
+                NoClip.changed[part] = true
+                part.CanCollide = false
             end
         end
-    elseif next(NoClipParts) then
+    elseif NoClip.character then
         stopNoClip()
     end
 end)
@@ -1423,28 +1486,43 @@ end)
 do
 -- With getconnections the game's idle handlers are switched off, so the 20 minute kick never fires and no input is sent.
 -- Without it, a fake right click answers the Idled event instead.
-local function setIdleConnections(enabled)
-    if typeof(getconnections) ~= "function" then return false end
-    local ok = pcall(function()
-        for _, c in ipairs(getconnections(LocalPlayer.Idled)) do
-            if enabled then c:Enable() else c:Disable() end
-        end
-    end)
-    return ok
+local disabledIdle = {}
+local fallbackIdle
+local function releaseIdle()
+    if fallbackIdle then fallbackIdle:Disconnect() fallbackIdle = nil end
+    for _, c in ipairs(disabledIdle) do pcall(function() c:Enable() end) end
+    table.clear(disabledIdle)
 end
 local function applyAntiAfk()
-    setIdleConnections(not (Running and settings.AntiAfk))
+    if not (Running and settings.AntiAfk) then releaseIdle() return end
+    if fallbackIdle or #disabledIdle > 0 then return end
+    if type(getconnections) == "function" then
+        local ok, links = pcall(getconnections, LocalPlayer.Idled)
+        if ok and type(links) == "table" then
+            for _, c in ipairs(links) do
+                pcall(function()
+                    -- If the executor cannot report the prior state, leave it alone.
+                    if c.Enabled == true and type(c.Enable) == "function" and type(c.Disable) == "function" then
+                        c:Disable()
+                        disabledIdle[#disabledIdle + 1] = c
+                    end
+                end)
+            end
+        end
+    end
+    if #disabledIdle == 0 then
+        fallbackIdle = LocalPlayer.Idled:Connect(function()
+            if not (Running and settings.AntiAfk) then return end
+            pcall(function()
+                VirtualUser:CaptureController()
+                VirtualUser:ClickButton2(Vector2.zero)
+            end)
+        end)
+    end
 end
-connect(LocalPlayer.Idled, function()
-    if not (Running and settings.AntiAfk) then return end
-    pcall(function()
-        VirtualUser:CaptureController()
-        VirtualUser:ClickButton2(Vector2.zero)
-    end)
-end)
 hub.SetAntiAfk = function(v) settings.AntiAfk = v applyAntiAfk() end
 applyAntiAfk()
-hub.Cleanup[#hub.Cleanup + 1] = function() setIdleConnections(true) end
+hub.Cleanup[#hub.Cleanup + 1] = releaseIdle
 end
 
 -- spectate
@@ -1479,24 +1557,33 @@ local function fetchServers()
     end
     return list
 end
+local hopBusy = false
 local function serverHop(mode)
-    local list = fetchServers()
-    if #list == 0 then
-        notify("Server hop", "No suitable server found", "server-off", "warning")
-        return
-    end
-    local pick
-    if mode == "Smallest" then
-        table.sort(list, function(a, b) return (a.playing or 0) < (b.playing or 0) end)
-        pick = list[1]
-    elseif mode == "Lowest ping" then
-        table.sort(list, function(a, b) return (a.ping or 9999) < (b.ping or 9999) end)
-        pick = list[1]
-    else
-        pick = list[math.random(1, #list)]
-    end
-    notify("Server hop", ("Joining a server with %d/%d players"):format(pick.playing or 0, pick.maxPlayers or 0), "shuffle")
-    TeleportService:TeleportToPlaceInstance(game.PlaceId, pick.id, LocalPlayer)
+    if not Running or hopBusy then return end
+    hopBusy = true
+    local ok, err = pcall(function()
+        local list = fetchServers()
+        if not Running then return end
+        if #list == 0 then
+            notify("Server hop", "No suitable server found", "server-off", "warning")
+            return
+        end
+        local pick
+        if mode == "Smallest" then
+            table.sort(list, function(a, b) return (a.playing or 0) < (b.playing or 0) end)
+            pick = list[1]
+        elseif mode == "Lowest ping" then
+            table.sort(list, function(a, b) return (a.ping or 9999) < (b.ping or 9999) end)
+            pick = list[1]
+        else
+            pick = list[math.random(1, #list)]
+        end
+        notify("Server hop", ("Joining a server with %d/%d players"):format(pick.playing or 0, pick.maxPlayers or 0), "shuffle")
+        if Running then TeleportService:TeleportToPlaceInstance(game.PlaceId, pick.id, LocalPlayer) end
+    end)
+    -- Coalesce staff checks that finish just after the first request.
+    task.delay(ok and 3 or 0, function() hopBusy = false end)
+    if not ok then hubError("Server hop", err) end
 end
 
 local function checkStaff(plr)
@@ -1618,7 +1705,7 @@ end
 
 ----- ESP live preview -----
 -- The overhead panel exactly as the in-game BillboardGui shows it (esp.BuildPanel / UpdatePanel), on a soft blurred
--- colour background; no character. Values are your real ones (fakehealth, combat.mode, your dodge cooldown) and
+-- colour background; no character. Values are your real ones (Humanoid health, combat.mode, your dodge cooldown) and
 -- follow the settings at once. Drawn in the menu, so this part is GUI.
 local PreviewCard = EspPage:Card({ Title = "Preview", Icon = "scan-eye", Side = "Right" })
 local espCanvas = PreviewCard:Canvas({ Height = 120 })
@@ -1668,10 +1755,10 @@ do
         local char = character()
         local hum = char and char:FindFirstChildOfClass("Humanoid")
         local mode, modeCap
-        if char then mode, modeCap = esp.ModeInfo(char) end
+        if char and settings.ModeBar then mode, modeCap = esp.ModeInfo(char) end
         esp.UpdatePanel(panel, {
             display = LocalPlayer.DisplayName, user = LocalPlayer.Name,
-            health = hum and healthValue(hum) or nil, maxHealth = hum and hum.MaxHealth or 100,
+            health = hum and healthValue(hum) or nil, maxHealth = hum and healthMax(hum, healthValue(hum)) or 100,
             downed = char ~= nil and char:FindFirstChild("stayonground") ~= nil,
             mode = mode, modeCap = modeCap, distance = 42, dodge = esp.DodgeCooldown(LocalPlayer),
         })
@@ -1909,6 +1996,7 @@ function Move.flyFov()
     local p = LocalPlayer
     local connections, characterConnections = {}, {}
     local cameraConnection, camera, character
+    local originalFov, lastFov
     local locked, saved, writing, alive = false, nil, false, true
     local revision = 0
     local function isFly(v)
@@ -1922,19 +2010,31 @@ function Move.flyFov()
         end
         return false
     end
-    local function enforce()
-        if locked and camera and saved and not writing and camera.FieldOfView ~= saved then
-            writing = true
-            camera.FieldOfView = saved
-            writing = false
+    local function writeFov(value)
+        if not camera or camera.FieldOfView == value then return end
+        if originalFov == nil then originalFov = camera.FieldOfView end
+        lastFov = value
+        writing = true
+        camera.FieldOfView = value
+        writing = false
+    end
+    local function releaseCamera()
+        if cameraConnection then cameraConnection:Disconnect() cameraConnection = nil end
+        if camera and originalFov ~= nil and math.abs(camera.FieldOfView - lastFov) < 0.001 then
+            camera.FieldOfView = originalFov
         end
+        originalFov, lastFov = nil, nil
+    end
+    local function enforce()
+        if locked and camera and saved and not writing then writeFov(saved) end
     end
     local function bindCamera()
-        if cameraConnection then cameraConnection:Disconnect() end
+        releaseCamera()
         camera = workspace.CurrentCamera
         if not camera then return end
         if not locked or saved == nil then saved = moveCfg.Fov or camera.FieldOfView end
         cameraConnection = camera:GetPropertyChangedSignal("FieldOfView"):Connect(enforce)
+        if moveCfg.Fov then writeFov(moveCfg.Fov) end
         enforce()
     end
     local function begin()
@@ -1976,14 +2076,14 @@ function Move.flyFov()
     Move.setFov = function(v)                                       -- slider: apply immediately; the value is also kept while flying
         moveCfg.Fov = v
         saved = v
-        if camera then writing = true camera.FieldOfView = v writing = false end
+        writeFov(v)
     end
     return function()
         Move.setFov = nil
         alive = false
         revision = revision + 1
         locked = false
-        if cameraConnection then cameraConnection:Disconnect() end
+        releaseCamera()
         for _, c in ipairs(connections) do c:Disconnect() end
         for _, c in ipairs(characterConnections) do c:Disconnect() end
     end
@@ -2453,7 +2553,6 @@ local function safe(tag, fn, ...)
     if not ok then hubError(tag, err) end                       -- reports the same error at most once every 10 s
     return ok
 end
-Render.safe = safe
 
 -- the BillboardGui / Highlight ESP refreshes 25 times a second
 task.spawn(function()
@@ -2472,17 +2571,22 @@ connect(RunService.RenderStepped, function()
         esp.DropAll()
         return
     end
-    if not safe("Silent Aim", function() Silent.Target = findTarget() end) then Silent.Target = nil end
+    if settings.SA_Enabled and Silent.Hooked then
+        local ok, target = pcall(findTarget)
+        Silent.Target = ok and target or nil
+        if not ok then hubError("Silent Aim", target) end
+    else
+        Silent.Target = nil
+    end
     if Render.Available then                                     -- no Drawing API: nothing can be drawn
         safe("FOV", updateGlobal)                                -- FOV circle and target line (Combat)
     end
     if settings.CustomAmbient or settings.Fullbright or settings.NoShadows or settings.CustomTime or settings.NoFog
-        or next(WorldOriginal) or next(Atmospheres) then safe("World", updateWorld) end
+        or next(WorldOriginal) or Atmospheres.added then safe("World", updateWorld) end
     if Spectating then
         local _, hum = getCharacter(Spectating)
         if hum and Camera.CameraSubject ~= hum then Camera.CameraSubject = hum end
     end
-    Render.flush()
 end)
 
 -- player table: refreshed every 2 seconds while it can be seen (scrolled out of the page or on another tab: skipped),
@@ -2552,6 +2656,19 @@ do
 		PunchM = false, PunchD = false, TreeM = false, TreeD = false, Shoot = false, Deflect = false, MentorBoss = false,
 		MentorAuto = false, MentorTask = nil, Rush = false, Chi = false, DailyBoss = false,
 	}
+	local missionTasks = {
+		["[Objective: Push-Up Training]"] = "punch", ["[Objective: Tree-Jump Training]"] = "tree",
+		["[Objective: Accuracy Training]"] = "shoot", ["[Objective: Deflecting Training]"] = "deflect",
+	}
+	local function mentorTaskFromUI()
+		local m = missionUI()
+		local title = m and m.Visible and m:FindFirstChild("title")
+		return title and missionTasks[title.Text] or nil
+	end
+	function hub.MentorBusy()
+		return (hub.MentorPendingUntil or 0) > os.clock()
+			or (farm.MentorAuto and mentorTaskFromUI() ~= nil)
+	end
 	local greenScroll = "http://www.roblox.com/asset/?id=5459241648"
 	if env.QustahShindoCore then env.QustahShindoCore.Farm, env.QustahShindoCore.Hub = farm, hub end   -- for tests
 
@@ -2717,7 +2834,7 @@ do
 	end
 	loop("Auto farm", 0.2, function()
 		if not farmAlive() then if SafePart or platformFixed then leaveSafe() end return end   -- farm turned off: remove the safe floor
-		if placeType ~= "map" or hub.ScrollBusy then return end
+		if placeType ~= "map" or hub.ScrollBusy or hub.MentorBusy() then return end
 		hub.FarmBusy = true
 		local ok, err = pcall(function()
 			local cur = currentMission()
@@ -2898,7 +3015,7 @@ do
 	-- trainings below). The fifth (boss) runs on the boss map without the menu; see "Mentor boss (headless)" at the top.
 	mentorCard:Toggle({ Title = "Auto mentor", Flag = "mt_auto", Default = false, Callback = function(v)
 		farm.MentorAuto = v
-		if not v then farm.MentorTask = nil end
+		if not v then farm.MentorTask, hub.MentorPendingUntil = nil, nil end
 		pcall(function()
 			if v then writefile(mentorAutoFile, "1") queueHub() elseif isfile(mentorAutoFile) then delfile(mentorAutoFile) end
 		end)
@@ -2978,26 +3095,27 @@ do
 		local aim = mine and mine:FindFirstChild("kunaiaim")
 		if aim then lookAt(aim.Position) end
 	end
-	local missionTasks = {
-		["[Objective: Push-Up Training]"] = "punch", ["[Objective: Tree-Jump Training]"] = "tree",
-		["[Objective: Accuracy Training]"] = "shoot", ["[Objective: Deflecting Training]"] = "deflect",
-	}
 	local lastTalk = 0
 	loop("Auto mentor", 0.25, function()
 		if not farm.MentorAuto then return end
 		if placeType == "bossbattle" then farm.MentorTask = "boss" return end
 		local m = missionUI()
 		if m and m.Visible then
-			local title = m:FindFirstChild("title")
-			farm.MentorTask = title and missionTasks[title.Text] or nil
+			farm.MentorTask = mentorTaskFromUI()
 			return
 		end
 		farm.MentorTask = nil
+		if hub.FarmBusy or hub.ScrollBusy or inMission() then return end
 		if os.clock() - lastTalk < 1.5 then return end              -- no mission: ask this map's mentor for one
 		lastTalk = os.clock()
 		for _, name in ipairs(mentors) do
 			local g = mentorGiver(name)
-			if g then talkTo(g) return end
+			if g then
+				leaveSafe()
+				hub.MentorPendingUntil = os.clock() + 1.5
+				talkTo(g)
+				return
+			end
 		end
 	end)
 	loop("Mentor", 0.05, function()
@@ -3671,7 +3789,7 @@ do
 		return u and (u:FindFirstChild(name) or u:FindFirstChild(name .. "scroll"))
 	end
 	loop("Scroll snipe", 0.3, function()
-		if not shindo.Scroll or hub.FarmBusy or inMission() then return end
+		if not shindo.Scroll or hub.FarmBusy or (hub.MentorBusy and hub.MentorBusy()) or inMission() then return end
 		for _, folder in ipairs({ workspace, workspace:FindFirstChild("GLOBALTIME") }) do
 			for _, v in ipairs(folder:GetChildren()) do
 				local sh = v:IsA("Model") and v:FindFirstChild("sh")
@@ -4069,6 +4187,7 @@ do
 	local interval, hue = 1, 0
 	local selected = "haircolor"
 	local colors, animated, restore, started = {}, {}, {}, {}
+	local picker
 
 	local function parseHex(text)
 		text = type(text) == "string" and text:match("^%s*#?(%x%x%x%x%x%x)%s*$")
@@ -4095,13 +4214,20 @@ do
 	local function groupOf(part) return part == "skin" and "body" or "hair" end
 	local function restoreGroup(group)
 		for _, part in ipairs(groups[group]) do
-			if animated[part] and restore[part] then send(part, restore[part]) end
+			if animated[part] then
+				local original = restore[part]
+				if original and send(part, original) then
+					colors[part] = original
+				else
+					colors[part] = currentColor(part) or colors[part] or Color3.new(1, 1, 1)
+				end
+				if hub.Running and picker and selected == part then picker:Set(colors[part], true) end
+			end
 			restore[part], animated[part] = nil, nil
 		end
 	end
 
 	local card = colorsPage:Card({ Title = "Character colors", Icon = "palette" })
-	local picker
 	card:Segment({ Title = "Part", Flag = "cc_part", Items = { "Hair", "Body", "Beard" }, Default = "Hair", Callback = function(v)
 		selected = partNames[v] or "haircolor"
 		colors[selected] = colors[selected] or currentColor(selected)
