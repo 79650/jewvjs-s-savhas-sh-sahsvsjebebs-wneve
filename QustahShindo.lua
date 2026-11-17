@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.90
+-- Qustāh · Shindo Life · V1.91
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -432,7 +432,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.90",
+	Version = "V1.91",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -989,20 +989,17 @@ end
 function esp.BuildPanel(parent)
     local segments = clamp(math.floor(settings.HealthSegments + 0.5), 1, 10)
     local modeSegments = clamp(math.floor(settings.ModeSegments + 0.5), 1, 10)
-    local panel = { segments = segments, modeSegments = modeSegments, healthSegments = {}, amounts = {}, peak = 1 }
+    local panel = { segments = segments, modeSegments = modeSegments, peak = 1 }
     local bar = esp.New("Frame", parent, { Name = "HealthBar", Size = UDim2.fromOffset(110, 8), Position = UDim2.new(0.5, -55, 0, 14),
         BackgroundColor3 = esp.Colors.back, BackgroundTransparency = 0.05, BorderSizePixel = 0, ClipsDescendants = true })
     esp.New("UICorner", bar, { CornerRadius = UDim.new(0, 3) })
     esp.New("UIStroke", bar, { Color = Color3.new(), Thickness = 1.25, Transparency = 0, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, LineJoinMode = Enum.LineJoinMode.Round })
-    for index = 1, segments do
-        local slot = esp.New("Frame", bar, { Size = UDim2.new(1 / segments, 0, 1, 0), Position = UDim2.fromScale((index - 1) / segments, 0),
-            BackgroundTransparency = 1, BorderSizePixel = 0, ClipsDescendants = true })
-        local segment = esp.New("Frame", slot, { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, ClipsDescendants = true })
-        esp.New("UICorner", segment, { CornerRadius = UDim.new(0, 2) })
-        esp.New("UIGradient", segment, { Name = "Gradient" })
-        esp.Stripes(segment, 110 / segments)
-        panel.healthSegments[index] = segment
-    end
+    -- one fill with one gradient over the whole bar; the segments are only the dark divider lines on top
+    panel.healthFill = esp.New("Frame", bar, { Name = "Fill", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(1, 1, 1),
+        BorderSizePixel = 0, ClipsDescendants = true })
+    esp.New("UICorner", panel.healthFill, { CornerRadius = UDim.new(0, 2) })
+    panel.healthGradient = esp.New("UIGradient", panel.healthFill, { Name = "Gradient" })
+    esp.Stripes(panel.healthFill, 110)
     for index = 1, segments - 1 do
         esp.New("Frame", bar, { Size = UDim2.fromOffset(1, 8), Position = UDim2.new(index / segments, 0, 0, 0), BackgroundColor3 = esp.Colors.split, BorderSizePixel = 0, ZIndex = 3 })
     end
@@ -1077,20 +1074,17 @@ function esp.UpdatePanel(panel, info)
     local healthText
     if info.health == nil then
         healthText = info.downed and "-- · Death" or "--"
-        for _, segment in ipairs(panel.healthSegments) do esp.SetIf(segment, "Size", UDim2.fromScale(0, 1)) end
+        esp.SetIf(panel.healthFill, "Size", UDim2.fromScale(0, 1))
     else
         local health, maximum = math.max(info.health, 0), math.max(info.maxHealth or 1, 1)
         local ratio = clamp(health / maximum, 0, 1)
-        for index, segment in ipairs(panel.healthSegments) do
-            local amount = clamp(ratio * panel.segments - (index - 1), 0, 1)
-            esp.SetIf(segment, "Size", UDim2.fromScale(amount, 1))
-            esp.SetIf(segment.Stripes, "Visible", settings.HealthBarStyle == "Stripes")
-            -- this segment's slice of the gradient (only redone when its fill or the preset changes)
-            local key = settings.HealthPreset .. "|" .. math.floor(amount * 100 + 0.5)
-            if amount > 0 and panel.amounts[index] ~= key then
-                panel.amounts[index] = key
-                segment.Gradient.Color = esp.Gradient(healthColor, (index - 1) / panel.segments, (index - 1 + amount) / panel.segments)
-            end
+        esp.SetIf(panel.healthFill, "Size", UDim2.fromScale(ratio, 1))
+        esp.SetIf(panel.healthFill.Stripes, "Visible", settings.HealthBarStyle == "Stripes")
+        -- the preset's gradient from empty up to the current health (redone only when it changes)
+        local key = settings.HealthPreset .. "|" .. math.floor(ratio * 100 + 0.5)
+        if ratio > 0 and panel.healthKey ~= key then
+            panel.healthKey = key
+            panel.healthGradient.Color = esp.Gradient(healthColor, 0, ratio)
         end
         healthText = esp.Compact(health) .. " / " .. esp.Compact(maximum) .. (info.downed and " · Death" or "")
     end
