@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V2.01
+-- Qustāh · Shindo Life · V2.02
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -476,7 +476,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V2.01",
+	Version = "V2.02",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -1660,26 +1660,30 @@ local Visuals = Tabs.Visuals
 local EspPage = Visuals:Page("ESP")
 local StylePage = Visuals:Page("Style")
 
-local General = EspPage:Card({ Title = "General", Icon = "scan-eye", Side = "Left" })
+-- Card tabs: ESP (Range / Performance), Elements (Text / Health / Mode) on the left; Preview and Chams (Fill / Outline)
+-- on the right; Target pins below.
+local General = EspPage:Card({ Title = "ESP", Icon = "scan-eye", Side = "Left" })
 General:Toggle({ Title = "ESP enabled", Flag = "esp_enabled", Default = true, Bindable = true,
     Callback = function(on)
         settings.ESP_Enabled = on
         Window:SetModule("ESP", on and "On" or "Off", nil, { Icon = "eye", Tab = "Visuals" })
     end })
-General:Slider({ Title = "Range", Flag = "esp_maxdist", Min = 100, Max = 5000, Default = 2500, Step = 50, Suffix = " studs", Callback = set("ESP_MaxDist") })
-General:Slider({ Title = "Nearest players", Desc = "Closest unpinned players; pins are extra", Flag = "esp_limit", Min = 5, Max = 30, Default = 30, Callback = set("PlayerLimit") })
-General:Toggle({ Title = "Distance throttle", Desc = "Far ESP updates less often", Flag = "esp_throttle", Default = false, Callback = set("DistanceThrottle") })
-General:Toggle({ Title = "Offscreen sleep", Desc = "Pauses ESP outside the screen", Flag = "esp_sleep", Default = false, Callback = set("OffscreenSleep") })
+local EspTabs = General:Tabs({ "Range", "Performance" })
+EspTabs.Range:Slider({ Title = "Range", Flag = "esp_maxdist", Min = 100, Max = 5000, Default = 2500, Step = 50, Suffix = " studs", Callback = set("ESP_MaxDist") })
+EspTabs.Range:Slider({ Title = "Nearest players", Desc = "Closest unpinned players; pins are extra", Flag = "esp_limit", Min = 5, Max = 30, Default = 30, Callback = set("PlayerLimit") })
+EspTabs.Performance:Toggle({ Title = "Distance throttle", Desc = "Far ESP updates less often", Flag = "esp_throttle", Default = false, Callback = set("DistanceThrottle") })
+EspTabs.Performance:Toggle({ Title = "Offscreen sleep", Desc = "Pauses ESP outside the screen", Flag = "esp_sleep", Default = false, Callback = set("OffscreenSleep") })
 
 -- player info, health and mode: the overhead block (see "ESP overhead")
+local ElementTabs = EspPage:Card({ Title = "Elements", Icon = "layers", Side = "Left" }):Tabs({ "Text", "Health", "Mode" })
 do
-local InfoCard = EspPage:Card({ Title = "Player info", Icon = "user", Side = "Left" })
+local InfoCard = ElementTabs.Text
 InfoCard:Toggle({ Title = "Name", Desc = "The player's visible name", Flag = "esp_name", Default = true, Callback = set("Name") })
 InfoCard:Toggle({ Title = "Username", Desc = "The account name, in grey", Flag = "esp_user", Default = true, Callback = set("User") })
 InfoCard:Toggle({ Title = "Distance", Flag = "esp_dist", Default = true, Callback = set("Distance") })
 InfoCard:Slider({ Title = "Name text size", Flag = "esp_tsize", Min = 10, Max = 20, Default = 14, Suffix = " px", Callback = set("TextSize") })
 
-local HealthCard = EspPage:Card({ Title = "Health", Icon = "heart", Side = "Left" })
+local HealthCard = ElementTabs.Health
 HealthCard:Toggle({ Title = "Health bar", Desc = "Segmented health indicator", Flag = "esp_hbar", Default = true, Callback = set("HealthBar") })
 HealthCard:Toggle({ Title = "Health text", Desc = "Current / maximum health", Flag = "esp_hptext", Default = true, Callback = set("HealthText") })
 HealthCard:Slider({ Title = "Health bar segments", Flag = "esp_hpseg", Min = 1, Max = 10, Default = 5, DependsOn = { Flag = "esp_hbar", Reason = "" }, Callback = set("HealthSegments") })
@@ -1782,7 +1786,7 @@ do
 end
 
 do
-local ModeCard = EspPage:Card({ Title = "Mode", Icon = "zap", Side = "Right" })
+local ModeCard = ElementTabs.Mode
 ModeCard:Toggle({ Title = "Mode bar", Desc = "Shows player mode HP", Flag = "esp_mbar", Default = true, Callback = set("ModeBar") })
 ModeCard:Toggle({ Title = "Mode text", Desc = "Current mode amount", Flag = "esp_mtext", Default = false, DependsOn = { Flag = "esp_mbar", Reason = "" }, Callback = set("ModeText") })
 ModeCard:Slider({ Title = "Mode bar segments", Flag = "esp_mseg", Min = 1, Max = 10, Default = 1, DependsOn = { Flag = "esp_mbar", Reason = "" }, Callback = set("ModeSegments") })
@@ -1798,14 +1802,15 @@ end })
 end
 
 do -- Visuals › ESP (Chams) and Style (a block: their locals end here)
-local Chams = EspPage:Card({ Title = "Chams", Icon = "paint-bucket", Side = "Left" })
+local Chams = EspPage:Card({ Title = "Chams", Icon = "paint-bucket", Side = "Right" })
 Chams:Toggle({ Title = "Chams", Flag = "esp_chams", Default = true, Style = "Switch", Callback = set("Chams") })
-Chams:Slider({ Title = "Fill transparency", Flag = "esp_chamsfill", Min = 0, Max = 100, Default = 65, Suffix = "%", DependsOn = { Flag = "esp_chams", Reason = "" },
+local ChamsTabs = Chams:Tabs({ "Fill", "Outline" })
+ChamsTabs.Fill:Slider({ Title = "Fill transparency", Flag = "esp_chamsfill", Min = 0, Max = 100, Default = 65, Suffix = "%", DependsOn = { Flag = "esp_chams", Reason = "" },
     Callback = function(v) settings.ChamsFill = v / 100 end })
-Chams:Slider({ Title = "Outline transparency", Flag = "esp_chamsoutalpha", Min = 0, Max = 100, Default = 35, Suffix = "%", DependsOn = { Flag = "esp_chams", Reason = "" },
+ChamsTabs.Outline:Slider({ Title = "Outline transparency", Flag = "esp_chamsoutalpha", Min = 0, Max = 100, Default = 35, Suffix = "%", DependsOn = { Flag = "esp_chams", Reason = "" },
     Callback = function(v) settings.ChamsOutlineAlpha = v / 100 end })
-Chams:ColorPicker({ Title = "Fill color", Flag = "esp_chamscolor", Default = black, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsColor") })
-Chams:ColorPicker({ Title = "Outline color", Flag = "esp_chamsout", Default = white, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsOutline") })
+ChamsTabs.Fill:ColorPicker({ Title = "Fill color", Flag = "esp_chamscolor", Default = black, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsColor") })
+ChamsTabs.Outline:ColorPicker({ Title = "Outline color", Flag = "esp_chamsout", Default = white, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsOutline") })
 
 
 -- bar colours: health on the left, mode on the right
