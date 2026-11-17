@@ -1,9 +1,11 @@
--- Qustāh · Shindo Life · V1.97
+-- Qustāh · Shindo Life · V1.98
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
 
 local env = (getgenv and getgenv()) or _G
+-- the code queued for teleports: always the latest hub from GitHub
+local function reloadSource() return ("loadstring(game:HttpGet(%q, true))()"):format(rawLink) end
 
 if game.GameId ~= 1511883870 then                               -- Shindo Life only
 	warn("Qustāh Shindo: this game is not Shindo Life, script not loaded")
@@ -11,16 +13,30 @@ if game.GameId ~= 1511883870 then                               -- Shindo Life o
 end
 repeat task.wait() until game:IsLoaded()
 
+local function stopMentorBoss()
+	local stop = env.QustahMentorBossStop
+	if type(stop) == "function" then pcall(stop) end
+	local prior = env.QustahMentorBoss
+	env.QustahMentorBoss, env.QustahMentorBossStop = nil, nil
+	if prior then pcall(function() prior:Disconnect() end) end
+end
+stopMentorBoss()
+if env.QustahShindoCore and env.QustahShindoCore.Unload then
+	pcall(env.QustahShindoCore.Unload)
+end
+
 ----- Mentor boss (headless) -----
 -- The 5th mentor task takes you to the training boss map (workspace.bossbattle). While Farm › Mentor › Auto mentor is
 -- on (the file below exists), the hub opens there without its window: it only teleports above each NPC, sets its
 -- health to its negative (as the kill aura does) and presses M1. When the boss dies the game sends you back, and the
 -- hub queued for that teleport opens normally and carries on with the next mentor task.
 local mentorAutoFile = "QustahShindoMentor.on"
-if workspace:FindFirstChild("bossbattle") and isfile and isfile(mentorAutoFile) then
+local canReadMentor, autoMentor = false, false
+if type(isfile) == "function" then canReadMentor, autoMentor = pcall(isfile, mentorAutoFile) end
+if workspace:FindFirstChild("bossbattle") and canReadMentor and autoMentor then
 	local player = game:GetService("Players").LocalPlayer
 	local queueFn = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
-	if queueFn then pcall(queueFn, ("loadstring(game:HttpGet(%q, true))()"):format(rawLink)) end
+	if queueFn then pcall(queueFn, reloadSource()) end
 	pcall(function()
 		game:GetService("StarterGui"):SetCore("SendNotification", { Title = "Qustāh", Text = "Mentor boss: farming, the menu opens back on the map", Duration = 6 })
 	end)
@@ -34,7 +50,8 @@ if workspace:FindFirstChild("bossbattle") and isfile and isfile(mentorAutoFile) 
 			end
 		end
 	end
-	env.QustahMentorBoss = game:GetService("RunService").Heartbeat:Connect(function()
+	local connection
+	connection = game:GetService("RunService").Heartbeat:Connect(function()
 		local char = player.Character
 		local root = char and char:FindFirstChild("HumanoidRootPart")
 		local target = root and bossTarget()
@@ -42,17 +59,22 @@ if workspace:FindFirstChild("bossbattle") and isfile and isfile(mentorAutoFile) 
 		local anti = target:FindFirstChild("antiexploit")
 		if anti then pcall(function() anti:Destroy() end) end
 		root.CFrame = target.HumanoidRootPart.CFrame * CFrame.new(0, 7, 0.3)
-		workspace.CurrentCamera.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position, target.HumanoidRootPart.Position)
+		local camera = workspace.CurrentCamera
+		if camera and (camera.CFrame.Position - target.HumanoidRootPart.Position).Magnitude > 0.001 then
+			camera.CFrame = CFrame.new(camera.CFrame.Position, target.HumanoidRootPart.Position)
+		end
 		pcall(function() target.Humanoid.Health = -target.Humanoid.Health end)
 		local update = char:FindFirstChild("combat") and char.combat:FindFirstChild("update")
 		if update then update:FireServer("mouse1", true) end
 	end)
+	env.QustahMentorBoss = connection
+	env.QustahMentorBossStop = function()
+		connection:Disconnect()
+		if env.QustahMentorBoss == connection then env.QustahMentorBoss, env.QustahMentorBossStop = nil, nil end
+	end
 	return
 end
 
-if env.QustahShindoCore and env.QustahShindoCore.Unload then
-	pcall(env.QustahShindoCore.Unload)
-end
 local Lib = loadstring(game:HttpGet("https://raw.githubusercontent.com/79650/gwanjkcdsjawbdnjascdas-ui-lib/refs/heads/main/qustah-ui-lib/dist/qustah-ui-lib.lua"))()
 
 local Players = game:GetService("Players")
@@ -104,7 +126,7 @@ end
 local function queueHub()                                       -- re-open the hub after a teleport
 	if not queue or not (isfile and writefile and delfile) then return end
 	if not queuePermission(hubStopFile, true) or hubQueued then return end
-	local code = ("loadstring(game:HttpGet(%q, true))()"):format(rawLink)
+	local code = reloadSource()
 	local ok, result = pcall(queue, guardQueue(hubStopFile, code))
 	hubQueued = ok and result ~= false
 end
@@ -432,7 +454,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.97",
+	Version = "V1.98",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -765,16 +787,8 @@ local function installNamecallHook()
 end
 
 ----- ESP -----
-local esp = { Entries = {}, Frame = 0 }
+local esp = { Frame = 0 }
 
-local function entry(plr)
-    local e = esp.Entries[plr]
-    if not e then
-        e = { Obj = {}, Stamp = {}, Vis = {} }
-        esp.Entries[plr] = e
-    end
-    return e
-end
 local function use(e, key, kind)                                 -- objects are created on first use
     local o = e.Obj[key]
     if not o then
@@ -801,29 +815,9 @@ local function hideUnused(e, all)
     end
 end
 local function removeEntry(plr)
-    local e = esp.Entries[plr]
-    if not e then return end
-    for _, o in pairs(e.Obj) do Render.remove(o) end
-    esp.Entries[plr] = nil
     if esp.DropPanel then esp.DropPanel(plr) end
     VisCache[plr] = nil
     RandomPick[plr] = nil
-end
-
-local function drawLine(e, key, a, b, color, thick, alpha)
-    if settings.Outline then
-        local o = use(e, key .. "_o", "Line")
-        if o then o.From, o.To, o.Color, o.Thickness, o.Transparency, o.ZIndex, o.Visible = a, b, black, thick + 2, alpha, 1, true end
-    end
-    local l = use(e, key, "Line")
-    if l then l.From, l.To, l.Color, l.Thickness, l.Transparency, l.ZIndex, l.Visible = a, b, color, thick, alpha, 2, true end
-end
-local function drawText(e, key, text, pos, color, size, alpha, center)
-    local t = use(e, key, "Text")
-    if not t then return nil end
-    t.Text, t.Position, t.Color, t.Size, t.Transparency, t.Center, t.Outline, t.ZIndex, t.Visible =
-        text, pos, color, size, alpha, center, true, 3, true
-    return t
 end
 
 ----- ESP (Qustah layout) -----
@@ -1017,23 +1011,43 @@ end
 -- clipped by the fill, and a rotated gradient barely tilts on an 8 px tall bar). The holder is as wide as the bar, so
 -- the stripes keep their place while the fill shrinks; it is filled the first time Stripes is chosen.
 function esp.Stripes(fill, width)
-    local holder = esp.New("Frame", fill, { Name = "Stripes", Size = UDim2.new(0, width, 1, 0), BackgroundTransparency = 1,
+    local holder = esp.New("Frame", fill, { Name = "Stripes", Size = UDim2.new(0, width, 1, 0), BackgroundTransparency = 1, ClipsDescendants = true,
         BorderSizePixel = 0, ZIndex = 2, Visible = false })
     holder:SetAttribute("Base", 1)
     holder:SetAttribute("Width", width)
     return holder
 end
+function esp.StripeSequence(step)
+    esp.StripeSequences = esp.StripeSequences or {}
+    if esp.StripeSequences[step] then return esp.StripeSequences[step] end
+    local phase = 3 - step
+    local function marked(x) return (x - phase) % 6 < 3 end
+    local function point(x, on) return NumberSequenceKeypoint.new(x / 24, on and 0 or 1) end
+    local points = { point(0, marked(0)) }
+    for x = 1, 24 do
+        if marked(x - 1) ~= marked(x) then
+            points[#points + 1] = point(x - 0.02, marked(x - 1))
+            points[#points + 1] = point(x, marked(x))
+        end
+    end
+    if points[#points].Time < 1 then points[#points + 1] = point(24, marked(24)) end
+    local sequence = NumberSequence.new(points)
+    esp.StripeSequences[step] = sequence
+    return sequence
+end
 function esp.ShowStripes(holder, on, opacity)
     if on and not holder:GetAttribute("Built") then
-        holder:SetAttribute("Built", true)
-        for x = -6, holder:GetAttribute("Width"), 6 do
-            for step = 0, 3 do
-                local line = esp.New("Frame", holder, { Position = UDim2.fromOffset(x + 3 - step, step * 2), Size = UDim2.fromOffset(3, 2),
+        for step = 0, 3 do
+            local sequence = esp.StripeSequence(step)
+            for x = 0, holder:GetAttribute("Width") - 1, 24 do
+                local line = esp.New("Frame", holder, { Position = UDim2.fromOffset(x, step * 2), Size = UDim2.fromOffset(24, 2),
                     BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, ZIndex = 2 })
                 line:SetAttribute("Base", 0.7)
+                esp.New("UIGradient", line, { Transparency = sequence })
                 esp.Fade(line, opacity)
             end
         end
+        holder:SetAttribute("Built", true)
     end
     esp.SetIf(holder, "Visible", on)
 end
@@ -1071,10 +1085,11 @@ function esp.UpdatePanel(panel, info)
     end
     esp.SetIf(panel.health, "Text", healthText)
     -- mode: the bar (relative to the highest value seen when the game gives no maximum) and "MD 50 / 100"
-    esp.SetIf(panel.modeBar, "Visible", settings.ModeBar)
-    esp.SetIf(panel.modeLabel, "Visible", settings.ModeBar and settings.ModeText)
-    if settings.ModeBar then
-        local mode = info.mode or 0
+    local hasMode = settings.ModeBar and info.mode ~= nil
+    esp.SetIf(panel.modeBar, "Visible", hasMode)
+    esp.SetIf(panel.modeLabel, "Visible", hasMode and settings.ModeText)
+    if hasMode then
+        local mode = info.mode
         panel.peak = math.max(panel.peak, mode)
         local ratio = clamp(mode / (info.modeCap or panel.peak), 0, 1)
         local color = modeColorFor(ratio)
@@ -1121,13 +1136,12 @@ function esp.DropPanel(plr)
     local item = esp.Panels[plr]
     if not item then return end
     pcall(function() item.gui:Destroy() end)
-    pcall(function() item.highlight:Destroy() end)
+    if item.highlight then item.highlight:Destroy() end
     esp.Panels[plr] = nil
 end
 function esp.PanelFor(plr, char, head)
     local item = esp.Panels[plr]
-    if item and (item.char ~= char or item.head ~= head or item.panel.segments ~= clamp(math.floor(settings.HealthSegments + 0.5), 1, 10)
-        or item.panel.modeSegments ~= clamp(math.floor(settings.ModeSegments + 0.5), 1, 10) or not item.gui.Parent) then
+    if item and (item.char ~= char or item.head ~= head or not item.gui.Parent) then
         esp.DropPanel(plr)
         item = nil
     end
@@ -1135,20 +1149,24 @@ function esp.PanelFor(plr, char, head)
     local root = esp.Root()
     local gui = esp.New("BillboardGui", root, { Name = plr.Name, Adornee = head, Size = UDim2.fromOffset(300, 78), StudsOffset = Vector3.new(0, 3, 0),
         AlwaysOnTop = true, MaxDistance = settings.ESP_MaxDist, Enabled = false, ResetOnSpawn = false })
-    local highlight = esp.New("Highlight", root, { Name = plr.Name, Adornee = char, FillColor = settings.ChamsColor, FillTransparency = 0.55,
-        OutlineColor = settings.ChamsOutline, OutlineTransparency = 0.1, DepthMode = Enum.HighlightDepthMode.AlwaysOnTop, Enabled = false })
-    item = { char = char, head = head, gui = gui, highlight = highlight, panel = esp.BuildPanel(gui), lastRefresh = 0 }
+    item = { char = char, head = head, gui = gui, lastRefresh = 0 }
     esp.Panels[plr] = item
     return item
 end
 function esp.HidePanel(item)
-    esp.SetIf(item.gui, "Enabled", false)
-    esp.SetIf(item.highlight, "Enabled", false)
+    if item.gui.Parent then esp.SetIf(item.gui, "Enabled", false) end
+    if item.highlight and item.highlight.Parent then esp.SetIf(item.highlight, "Enabled", false) end
 end
--- one pass over the players (run 25 times a second)
+-- ESP off (or no camera): the panels and highlights are removed, not kept hidden (Stripes alone are ~70 objects a
+-- panel); they are built again as players come into view
+function esp.DropAll()
+    for plr in pairs(esp.Panels) do esp.DropPanel(plr) end
+end
+esp.StyleKeys = { "Name", "User", "TextSize", "Distance", "HealthText", "HealthBar", "ModeBar", "ModeText",
+    "HealthPreset", "ModePreset", "HealthBarStyle", "ModeBarStyle", "HealthBarOpacity", "ModeBarOpacity" }
 function esp.UpdatePanels()
     local camera = Workspace.CurrentCamera
-    if not camera then return end
+    if not settings.ESP_Enabled or not camera then esp.DropAll() return end
     local camPos = camera.CFrame.Position
     local candidates = {}
     for _, plr in ipairs(Players:GetPlayers()) do
@@ -1157,68 +1175,96 @@ function esp.UpdatePanels()
             local head = char and char:FindFirstChild("Head")
             local root = char and char:FindFirstChild("HumanoidRootPart")
             local hum = char and char:FindFirstChildOfClass("Humanoid")
-            if not (settings.ESP_Enabled and head and root and hum) then
-                if esp.Panels[plr] then
-                    if not (head and root and hum) then esp.DropPanel(plr) else esp.HidePanel(esp.Panels[plr]) end
+            if head and head:IsA("BasePart") and root and root:IsA("BasePart") and hum then
+                local dist = (camPos - root.Position).Magnitude
+                local pinned = settings.Pins[plr.UserId] == true
+                if pinned or dist <= settings.ESP_MaxDist then
+                    candidates[#candidates + 1] = { plr = plr, char = char, head = head, hum = hum, dist = dist, pinned = pinned }
                 end
-            else
-                candidates[#candidates + 1] = { plr = plr, char = char, head = head, root = root, hum = hum, dist = (camPos - root.Position).Magnitude }
             end
         end
     end
-    -- (left players: Parent is nil; not compared with Players, a cloneref copy is never == the real service)
-    for plr in pairs(esp.Panels) do if plr.Parent == nil then esp.DropPanel(plr) end end
-    table.sort(candidates, function(a, b) return a.dist < b.dist end)
+    table.sort(candidates, function(a, b)
+        if a.dist == b.dist then return a.plr.UserId < b.plr.UserId end
+        return a.dist < b.dist
+    end)
     local limit = clamp(math.floor(settings.PlayerLimit or 30), 5, 30)
-    local now = os.clock()
+    local now, selected = os.clock(), {}
+    esp.Style = esp.Style or {}
+    for _, key in ipairs(esp.StyleKeys) do
+        if esp.Style[key] ~= settings[key] then
+            esp.Style[key] = settings[key]
+            esp.StyleRevision = (esp.StyleRevision or 0) + 1
+        end
+    end
     for index, c in ipairs(candidates) do
-        -- each player in its own pcall: a broken character hides only its own panel and is reported once
-        local ok, err = pcall(esp.RefreshPanel, c, index, limit, now, camera)
-        if not ok then
-            local item = esp.Panels[c.plr]
-            if item then esp.HidePanel(item) end
-            hubError("ESP", err)
+        if index <= limit or c.pinned then
+            selected[c.plr] = true
+            local ok, err = pcall(esp.RefreshPanel, c, now, camera)
+            if not ok then
+                local item = esp.Panels[c.plr]
+                if item then esp.HidePanel(item) end
+                hubError("ESP", err)
+            end
+        end
+    end
+    for plr, item in pairs(esp.Panels) do
+        if plr.Parent == nil or plr.Character ~= item.char or not item.head.Parent
+            or (not selected[plr] and now - (item.lastSelected or 0) > 2) then
+            esp.DropPanel(plr)
+        elseif not selected[plr] then
+            esp.HidePanel(item)
         end
     end
 end
-function esp.RefreshPanel(c, index, limit, now, camera)
-    local pinned = settings.Pins[c.plr.UserId] == true
+function esp.RefreshPanel(c, now, camera)
+    -- Test the same camera-relative offset used by BillboardGui. Only the panel's data is throttled.
+    local point, onScreen = camera:WorldToViewportPoint(c.head.Position + camera.CFrame.UpVector * 3)
+    local visible = onScreen and point.Z > 0
+    local chams = settings.Chams and (visible or not settings.OffscreenSleep)
+    if not visible and not chams then
+        local existing = esp.Panels[c.plr]
+        if existing then esp.HidePanel(existing) end
+        return
+    end
     local item = esp.PanelFor(c.plr, c.char, c.head)
-    if index > limit and not pinned then
-        esp.HidePanel(item)
-    else
-        local point, onScreen = camera:WorldToViewportPoint(c.head.Position + Vector3.new(0, 3, 0))
-        local inFront = onScreen and point.Z > 0
-        if settings.OffscreenSleep and not inFront then
-            esp.HidePanel(item)
-        elseif not (settings.DistanceThrottle and not pinned and c.dist > settings.ESP_MaxDist * 0.55 and now - item.lastRefresh < 0.45) then
-            item.lastRefresh = now
-            local inRange = pinned or c.dist <= settings.ESP_MaxDist
-            esp.SetIf(item.gui, "MaxDistance", pinned and 1e9 or settings.ESP_MaxDist)
-            local visible = inFront and inRange
-            esp.SetIf(item.gui, "Enabled", visible)
-            if visible then
-                local fake = c.char:FindFirstChild("fakehealth")
-                local mode, modeCap = esp.ModeInfo(c.char)
-                esp.UpdatePanel(item.panel, {
-                    display = c.plr.DisplayName, user = c.plr.Name,
-                    health = fake and fake:IsA("ValueBase") and tonumber(fake.Value) or nil, maxHealth = c.hum.MaxHealth,
-                    downed = c.char:FindFirstChild("stayonground") ~= nil,
-                    mode = mode, modeCap = modeCap, distance = c.dist, dodge = esp.DodgeCooldown(c.plr),
-                })
-            end
-            -- chams: the Highlight (Solid fills, Outline keeps only the edge; always on top, seen through walls)
-            local h = item.highlight
-            local chams = settings.Chams and inRange
-            esp.SetIf(h, "Enabled", chams)
-            if chams then
-                esp.SetIf(h, "FillColor", settings.ChamsColor)
-                esp.SetIf(h, "OutlineColor", settings.ChamsOutline)
-                esp.SetIf(h, "FillTransparency", settings.ChamsFill)
-                esp.SetIf(h, "OutlineTransparency", settings.ChamsOutlineAlpha)
-            end
+    item.lastSelected = now
+    local wasVisible = item.gui.Enabled
+    esp.SetIf(item.gui, "MaxDistance", c.pinned and 1e9 or settings.ESP_MaxDist)
+    esp.SetIf(item.gui, "Enabled", visible)
+    if chams and (not item.highlight or not item.highlight.Parent) then
+        item.highlight = esp.New("Highlight", esp.Root(), { Name = c.plr.Name, Adornee = c.char,
+            DepthMode = Enum.HighlightDepthMode.AlwaysOnTop, Enabled = false })
+    end
+    local h = item.highlight
+    if h and h.Parent then
+        esp.SetIf(h, "Enabled", chams)
+        if chams then
+            esp.SetIf(h, "FillColor", settings.ChamsColor)
+            esp.SetIf(h, "OutlineColor", settings.ChamsOutline)
+            esp.SetIf(h, "FillTransparency", settings.ChamsFill)
+            esp.SetIf(h, "OutlineTransparency", settings.ChamsOutlineAlpha)
         end
     end
+    if not visible then return end
+    local panel = item.panel
+    if not panel or panel.segments ~= clamp(math.floor(settings.HealthSegments + 0.5), 1, 10)
+        or panel.modeSegments ~= clamp(math.floor(settings.ModeSegments + 0.5), 1, 10) then
+        if item.content then item.content:Destroy() end
+        item.content = esp.New("Frame", item.gui, { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1 })
+        item.panel = esp.BuildPanel(item.content)
+        wasVisible = false
+    end
+    if wasVisible and settings.DistanceThrottle and not c.pinned and c.dist > settings.ESP_MaxDist * 0.55
+        and now - item.lastRefresh < 0.45 and item.styleRevision == esp.StyleRevision then return end
+    item.lastRefresh, item.styleRevision = now, esp.StyleRevision
+    local mode, modeCap = esp.ModeInfo(c.char)
+    esp.UpdatePanel(item.panel, {
+        display = c.plr.DisplayName, user = c.plr.Name,
+        health = healthValue(c.hum), maxHealth = c.hum.MaxHealth,
+        downed = c.char:FindFirstChild("stayonground") ~= nil,
+        mode = mode, modeCap = modeCap, distance = c.dist, dodge = esp.DodgeCooldown(c.plr),
+    })
 end
 
 function esp.DestroyPanels()
@@ -1550,7 +1596,6 @@ General:Toggle({ Title = "ESP enabled", Flag = "esp_enabled", Default = true, Bi
     Callback = function(on)
         settings.ESP_Enabled = on
         Window:SetModule("ESP", on and "On" or "Off", nil, { Icon = "eye", Tab = "Visuals" })
-        if on and not Render.Available then notify("ESP", "Your executor has no Drawing API, ESP can't draw", "triangle-alert", "warning") end
     end })
 General:Slider({ Title = "Range", Flag = "esp_maxdist", Min = 100, Max = 5000, Default = 2500, Step = 50, Suffix = " studs", Callback = set("ESP_MaxDist") })
 General:Slider({ Title = "Nearest players", Desc = "Only the closest ones are drawn", Flag = "esp_limit", Min = 5, Max = 30, Default = 30, Callback = set("PlayerLimit") })
@@ -1622,12 +1667,11 @@ do
         end
         local char = character()
         local hum = char and char:FindFirstChildOfClass("Humanoid")
-        local fake = char and char:FindFirstChild("fakehealth")
         local mode, modeCap
         if char then mode, modeCap = esp.ModeInfo(char) end
         esp.UpdatePanel(panel, {
             display = LocalPlayer.DisplayName, user = LocalPlayer.Name,
-            health = fake and fake:IsA("ValueBase") and tonumber(fake.Value) or nil, maxHealth = hum and hum.MaxHealth or 100,
+            health = hum and healthValue(hum) or nil, maxHealth = hum and hum.MaxHealth or 100,
             downed = char ~= nil and char:FindFirstChild("stayonground") ~= nil,
             mode = mode, modeCap = modeCap, distance = 42, dodge = esp.DodgeCooldown(LocalPlayer),
         })
@@ -1640,14 +1684,32 @@ do
         end
         return false
     end
-    -- refreshed ~15 times a second, only while on screen
     local last = 0
-    hubConnect(RunService.Heartbeat, function()
+    local function previewTick()
         local now = os.clock()
-        if now - last < 1 / 15 or not (holder and shown(holder)) then return end
+        if now - last < 1 / 15 then return end
         last = now
         drawPreview()
-    end)
+    end
+    if holder and Lib.Util.watchInView then
+        local connection
+        local function disconnect() if connection then connection:Disconnect() connection = nil end end
+        local stop = Lib.Util.watchInView(holder, function(visible)
+            disconnect()
+            if visible and hub.Running then
+                last = 0
+                connection = RunService.Heartbeat:Connect(function()
+                    if hub.Running then
+                        local ok, err = pcall(previewTick)
+                        if not ok then hubError("ESP preview", err) end
+                    end
+                end)
+            end
+        end)
+        hub.Cleanup[#hub.Cleanup + 1] = function() stop() disconnect() end
+    else
+        hubConnect(RunService.Heartbeat, function() if holder and shown(holder) then previewTick() end end)
+    end
 end
 
 do
@@ -1750,7 +1812,8 @@ do
         parts.label.Parent = frame
     end
     function drawSky()
-        if not parts.sky then return end
+        local visible = Lib.Util.inView or Lib.Util.shown
+        if not parts.sky or not visible(frame) then return end
         local hour = settings.CustomTime and settings.ClockTime or (tonumber(Lighting.ClockTime) or 12)
         local top, bottom = at(hour)
         parts.gradient.Color = ColorSequence.new(top, bottom)
@@ -1768,7 +1831,12 @@ end
 local function skySet(key) return function(v) settings[key] = v drawSky() end end
 SkyCard:Toggle({ Title = "Custom time", Flag = "w_customtime", Default = false, Callback = skySet("CustomTime"),
     Slider = { Flag = "w_clock", Min = 0, Max = 24, Step = 0.5, Default = 14, Suffix = " h", Callback = skySet("ClockTime") } })
-loop("Sky preview", 2, function() if not settings.CustomTime then drawSky() end end)   -- follows the game's hour while it is not set
+loop("Sky preview", 2, function() if not settings.CustomTime then drawSky() end end)
+if skyCanvas.Frame and Lib.Util.watchInView then
+    hub.Cleanup[#hub.Cleanup + 1] = Lib.Util.watchInView(skyCanvas.Frame, function(visible)
+        if visible and hub.Running then drawSky() end
+    end)
+end
 drawSky()
 
 SkyCard:Divider({ Title = "Ambient" })
@@ -2309,7 +2377,14 @@ srvBtns:Button({ Title = "Emptiest", Icon = "shuffle", Callback = function() srv
 srvBtns:Button({ Title = "Lowest ping", Icon = "wifi", Callback = function() srvSort = "Ping" drawServers() end })
 SrvCard:Button({ Title = "Random hop", Icon = "shuffle", Style = "Ghost", Cooldown = 5, Callback = function() serverHop("Random") end })
 if Server.FitHeight then Server:FitHeight(SrvCard, srvBox, { Min = 110, Fallback = 220 }) end
-task.delay(1, function() if Running then refreshServers() end end)
+if Lib.Util.watchInView then
+    local requested = false
+    hub.Cleanup[#hub.Cleanup + 1] = Lib.Util.watchInView(srvBox, function(visible)
+        if visible and Running and not requested then requested = true refreshServers() end
+    end)
+else
+    task.delay(1, function() if Running then refreshServers() end end)
+end
 
 -- the "Players" info the old code expected → now updates the "you are here" row in the list
 local playersInfo = { Set = function()
@@ -2353,7 +2428,7 @@ local playerTable = PlayersCard:Table({ Height = 150, Search = true,
     end })
 
 ----- Settings + startup -----
-Window:SetModule("ESP", "Off", nil, { Icon = "eye", Tab = "Visuals" })
+Window:SetModule("ESP", settings.ESP_Enabled and "On" or "Off", nil, { Icon = "eye", Tab = "Visuals" })
 Window:SetModule("Silent Aim", CanHook and "Off" or "Limited", not CanHook and "no hook" or nil, { Icon = "target", Tab = "Combat" })
 
 Window:OnKick(function()
@@ -2394,14 +2469,15 @@ connect(RunService.RenderStepped, function()
     if not Camera then
         Silent.Target = nil
         hideUnused(Global, true)
-        for _, e in pairs(esp.Entries) do e.chamsReady = false hideUnused(e, true) end
+        esp.DropAll()
         return
     end
     if not safe("Silent Aim", function() Silent.Target = findTarget() end) then Silent.Target = nil end
     if Render.Available then                                     -- no Drawing API: nothing can be drawn
         safe("FOV", updateGlobal)                                -- FOV circle and target line (Combat)
     end
-    safe("World", updateWorld)
+    if settings.CustomAmbient or settings.Fullbright or settings.NoShadows or settings.CustomTime or settings.NoFog
+        or next(WorldOriginal) or next(Atmospheres) then safe("World", updateWorld) end
     if Spectating then
         local _, hum = getCharacter(Spectating)
         if hum and Camera.CameraSubject ~= hum then Camera.CameraSubject = hum end
@@ -2409,8 +2485,10 @@ connect(RunService.RenderStepped, function()
     Render.flush()
 end)
 
-task.spawn(function()                                            -- player table, every 2 seconds
-    while Running do
+-- player table: refreshed every 2 seconds while it can be seen (scrolled out of the page or on another tab: skipped),
+-- and at once when it comes into view
+do
+    local function refreshPlayerTable()
         local rows = {}
         local _, _, myRoot = getCharacter(LocalPlayer)
         for _, plr in ipairs(Players:GetPlayers()) do
@@ -2424,9 +2502,20 @@ task.spawn(function()                                            -- player table
             playerTable:SetItems(rows)
             playersInfo:Set(#Players:GetPlayers() .. " / " .. Players.MaxPlayers)
         end)
-        task.wait(2)
     end
-end)
+    local row = playerTable.Row
+    local seen = Lib.Util.inView or Lib.Util.shown
+    local function visible() return not (row and seen) or seen(row) end
+    if row and Lib.Util.watchInView then
+        hub.Cleanup[#hub.Cleanup + 1] = Lib.Util.watchInView(row, function(shown) if shown and Running then refreshPlayerTable() end end)
+    end
+    task.spawn(function()
+        while Running do
+            if visible() then refreshPlayerTable() end
+            task.wait(2)
+        end
+    end)
+end
 
 ----- Unload -----
 env.QustahShindoCore = {
@@ -2435,7 +2524,6 @@ env.QustahShindoCore = {
         Running = false
         pcall(hubStop)                                           -- farm / spin / player loops and the platform
         for _, c in ipairs(Connections) do pcall(function() c:Disconnect() end) end
-        for plr in pairs(esp.Entries) do removeEntry(plr) end
         pcall(esp.DestroyPanels)
         for _, o in pairs(Global.Obj) do Render.remove(o) end
         stopNoClip()
@@ -2532,7 +2620,21 @@ do
 		local p1 = p and p:FindFirstChild("p1")
 		return p1 ~= nil and p1:FindFirstChild("inmission") ~= nil
 	end
-	local progressAt = os.clock()                               -- last progress (mob died / mission started)
+	local progressAt = os.clock()
+	local lastMission, lastAmount, cancelAt
+	local function checkStuck(mission)
+		local amount = mission and mission:FindFirstChild("amount")
+		local progress = amount and amount:IsA("ValueBase") and tonumber(amount.Value)
+		if progress and (not lastAmount or progress > lastAmount) then
+			lastAmount, progressAt, cancelAt = progress, os.clock(), nil
+		end
+		if farm.StuckAfter <= 0 or os.clock() - progressAt < farm.StuckAfter then return false end
+		if not cancelAt or os.clock() - cancelAt >= 5 then
+			cancelAt = os.clock()
+			if cancelMission() then notify("Auto farm", "Mission timed out; waiting for cancellation", "circle-x", "warning") end
+		end
+		return true
+	end
 	local function acceptFrom(list, pick, alive)
 		for _, g in ipairs(list) do
 			if not alive() or inMission() then return inMission() end
@@ -2570,12 +2672,14 @@ do
 		return list
 	end
 	local function killMissionMobs(flagFn)
+		local mission = currentMission()
 		local list = missionMobs()
 		if #list > 0 then leaveSafe() end
 		for _, v in ipairs(list) do
 			-- As in DogeHub: keep hitting until the mob's Humanoid is removed (it died on the server) or the mission ends.
 			-- Health is not checked: we set it to 0 locally so it always looks "dead", which made us leave before the boss was killed.
-			while flagFn() and inMission() and v.Parent and v:FindFirstChild("Humanoid") do
+			while flagFn() and inMission() and currentMission() == mission and v.Parent and v:FindFirstChild("Humanoid") do
+				if checkStuck(mission) then leaveSafe() return end
 				pcall(attackNPC, v)                                   -- keep the loop alive if the mob is removed mid-attack
 				task.wait(0.05)
 			end
@@ -2591,7 +2695,6 @@ do
 		end
 	end
 
-	local lastMission
 	local function farmAlive()
 		return hub.Running and (farm.Scroll or farm.Boss or farm.DailyBoss)
 	end
@@ -2618,7 +2721,7 @@ do
 		hub.FarmBusy = true
 		local ok, err = pcall(function()
 			local cur = currentMission()
-			if cur ~= lastMission then lastMission, progressAt = cur, os.clock() end
+			if cur ~= lastMission then lastMission, progressAt, lastAmount, cancelAt = cur, os.clock(), nil, nil end
 			if cur then
 				local _, objective = missionInfo(cur)
 				if objective and objective ~= "Mission" then          -- a mission type the farm cannot do
@@ -2627,13 +2730,7 @@ do
 					return
 				end
 			end
-			if inMission() and farm.StuckAfter > 0 and os.clock() - progressAt > farm.StuckAfter then   -- stuck
-				if cancelMission() then notify("Auto farm", farm.StuckAfter .. "s without progress, mission cancelled", "circle-x", "warning") end
-				progressAt = os.clock()
-				leaveSafe()
-				task.wait(1)
-				return
-			end
+			if inMission() and checkStuck(cur) then leaveSafe() return end
 			if inMission() then killMissionMobs(farmAlive) return end
 			bossGiver, bossKilled = nil, false                       -- mission finished
 			if farm.Boss and acceptFrom(bossGivers(), (farm.BossSpecific and #farm.BossSel > 0 and farm.BossSel) or "Random", function() return hub.Running and farm.Boss end) then
@@ -2967,54 +3064,83 @@ do
 	scheduleCard:Toggle({ Title = "Start at reset", Desc = "Begins the dailies right after the reset", Flag = "dl_start", Default = false, Callback = function(v) schedule.Start = v end })
 	scheduleCard:Toggle({ Title = "Claim when done", Desc = "Claims a finished daily and turns it off", Flag = "dl_claim", Default = true, Callback = function(v) schedule.Claim = v end })
 	scheduleCard:Toggle({ Title = "Notify when all done", Flag = "dl_notify", Default = false, Callback = function(v) schedule.Notify = v end })
+	-- Next reset: a countdown to 00:00 UTC (Roblox's day) until the game's own reset has been seen once; from then on
+	-- to that time of day (kept in a file, so it is known on the next run too)
 	local nextReset = scheduleCard:Info({ Title = "Next reset", Value = "-" })
+	local resetFile = "QustahShindoReset.txt"
+	local resetAt                                                -- seconds after 00:00 UTC, nil = not seen yet
+	pcall(function()
+		if isfile and readfile and isfile(resetFile) then resetAt = tonumber(readfile(resetFile)) end
+	end)
+	loop("Daily countdown", 1, function()
+		local target = resetAt or 0
+		local left = (target - os.time() % 86400) % 86400
+		if left == 0 then left = 86400 end
+		nextReset:Set(string.format("%02d:%02d:%02d", math.floor(left / 3600), math.floor(left % 3600 / 60), left % 60)
+			.. (resetAt and " · seen" or " · UTC"))
+	end)
 	-- daily quest type -> Auto daily toggle
 	local dailyFlags = { punch = "dl_m1", rush = "dl_rush", chakra = "dl_chi", treejump = "dl_tree", fightboss = "dl_boss" }
 	local dailyState = { dl_m1 = "PunchD", dl_rush = "Rush", dl_chi = "Chi", dl_tree = "TreeD", dl_boss = "DailyBoss" }   -- flag -> farm field
 	local lastAmount, allDoneSaid = {}, false
+	local claimAt = setmetatable({}, { __mode = "k" })
 	loop("Daily schedule", 2, function()
-		-- countdown to 00:00 UTC (Roblox's day; shown until the game's own reset is seen to differ)
-		local now = os.time()
-		local left = 86400 - now % 86400
-		nextReset:Set(string.format("%02d:%02d:%02d", math.floor(left / 3600), math.floor(left % 3600 / 60), left % 60))
 		local st = statz()
 		local m = st and st:FindFirstChild("mission")
 		if not m then return end
-		local reset, tracked, done = false, 0, 0
+		local reset, groups, now = false, {}, os.clock()
 		for i = 1, 14 do
 			local q = m:FindFirstChild("dailyquest" .. i)
-			local flag = q and dailyFlags[tostring(q.Value)]
+			local flag = q and q:IsA("ValueBase") and dailyFlags[tostring(q.Value)]
 			if flag then
 				local amount, maxAmount, claimed = q:FindFirstChild("amount"), q:FindFirstChild("maxamount"), q:FindFirstChild("claim")
-				local a, mx = tonumber(amount and amount.Value) or 0, tonumber(maxAmount and maxAmount.Value) or 0
-				if lastAmount[i] and a < lastAmount[i] then reset = true end
-				lastAmount[i] = a
-				local finished = mx > 0 and a >= mx
-				local running = farm[dailyState[flag]] == true
-				if running or finished then tracked += 1 end
-				if finished then
-					done += 1
-					if schedule.Claim then
-						if claimed and claimed.Value == false then fire("claim", q) end
-						if running then Window:SetFlag(flag, false) end
+				local a = amount and amount:IsA("ValueBase") and tonumber(amount.Value)
+				local mx = maxAmount and maxAmount:IsA("ValueBase") and tonumber(maxAmount.Value)
+				local previous = lastAmount[i]
+				if a ~= nil and mx and mx > 0 then
+					if previous and previous.flag == flag and a < previous.amount then reset = true end
+					lastAmount[i] = { flag = flag, amount = a }
+				end
+				local group = groups[flag]
+				if not group then group = { total = 0, done = 0 } groups[flag] = group end
+				group.total += 1
+				if a ~= nil and mx and mx > 0 and a >= mx then
+					group.done += 1
+					if schedule.Claim and claimed and claimed:IsA("BoolValue") and not claimed.Value
+						and now >= (claimAt[q] or 0) then
+						claimAt[q] = now + 6
+						fire("claim", q)
 					end
 				end
+			else
+				lastAmount[i] = nil
 			end
 		end
 		if reset then
 			allDoneSaid = false
+			table.clear(claimAt)
+			-- remember when the game reset (to the minute; the check runs every 2 s)
+			resetAt = math.floor(os.time() % 86400 / 60) * 60
+			pcall(function() if writefile then writefile(resetFile, tostring(resetAt)) end end)
 			if schedule.Start then
-				for i = 1, 14 do
-					local q = m:FindFirstChild("dailyquest" .. i)
-					local flag = q and dailyFlags[tostring(q.Value)]
-					if flag then Window:SetFlag(flag, true) end
+				for flag, group in pairs(groups) do
+					if group.done < group.total then Window:SetFlag(flag, true) end
 				end
-				notify("Daily", "New day: dailies started", "clock")
+				notify("Daily", "Game reset detected: dailies started", "clock")
 			end
+		end
+		local tracked, done = 0, 0
+		for flag, group in pairs(groups) do
+			local running = farm[dailyState[flag]] == true
+			if running or group.done == group.total then
+				tracked += group.total
+				done += group.done
+			end
+			if schedule.Claim and running and group.total == group.done then Window:SetFlag(flag, false) end
 		end
 		if schedule.Notify and not allDoneSaid and tracked > 0 and done >= tracked then
 			allDoneSaid = true
-			notify("Daily", "All dailies are done", "check")
+			notify("Daily", "Tracked dailies are done", "check")
 		end
 	end)
 
@@ -4043,8 +4169,8 @@ local function showBloodlineCodes()
 	local gui = mainGui()
 	if not gui then return notify("Code names", "Menu not found", "triangle-alert", "warning") end
 	local count = 0
-	for _, root in ipairs({ gui:FindFirstChild("Customization") and gui.Customization:FindFirstChild("Genkaibag"),
-		gui:FindFirstChild("ingame") and gui.ingame:FindFirstChild("Menu") }) do
+	for _, root in pairs({ customization = gui:FindFirstChild("Customization") and gui.Customization:FindFirstChild("Genkaibag"),
+		inGame = gui:FindFirstChild("ingame") and gui.ingame:FindFirstChild("Menu") }) do
 		local tab = root and (root:FindFirstChild("BossTab", true))
 		if tab then
 			for _, v in ipairs(tab:GetChildren()) do
