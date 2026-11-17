@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V1.92
+-- Qustāh · Shindo Life · V1.93
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -432,7 +432,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V1.92",
+	Version = "V1.93",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -520,6 +520,7 @@ local settings = {
     ESP_Enabled = false, ESP_MaxDist = 2500, PlayerLimit = 30, Pins = {},
     Box = false, BoxCorner = 30, BoxFill = false, BoxFillAlpha = 0.85, HealthBar = true, ModeBar = true, Outline = true,
     HealthPreset = "Classic", ModePreset = "Ocean", HealthBarStyle = "Smooth", ModeBarStyle = "Smooth",
+    HealthBarOpacity = 1, ModeBarOpacity = 1,
     Name = true, User = true, HealthText = true, Distance = true, TextSize = 14,
     HealthSegments = 5, ModeText = false, ModeSegments = 1,
     Chams = true, ChamsStyle = "Solid", ChamsFill = 0.55, ChamsOutlineAlpha = 0.1,
@@ -1050,6 +1051,17 @@ function esp.Gradient(colorAt, from, to)
 end
 -- the stripes: a white frame over a fill (as wide as the full slot, so the stripes keep their spacing while the
 -- fill shrinks; the fill clips it) whose transparency alternates every ~6 px, tilted by the gradient rotation
+-- bar opacity (Visuals › Style): the bar's back, outline, fill, dividers and stripes together; texts are not touched.
+-- Every frame in a bar is opaque at 100% except the back (5% see-through), so one value covers them all.
+function esp.BarOpacity(bar, opacity)
+    if bar:GetAttribute("Opacity") == opacity then return end
+    bar:SetAttribute("Opacity", opacity)
+    bar.BackgroundTransparency = 1 - opacity * 0.95
+    for _, d in ipairs(bar:GetDescendants()) do
+        if d:IsA("UIStroke") then d.Transparency = 1 - opacity
+        elseif d:IsA("Frame") then d.BackgroundTransparency = 1 - opacity end
+    end
+end
 function esp.Stripes(fill, width)
     local count = math.clamp(math.floor(width / 12 + 0.5), 1, 9)
     local points = {}
@@ -1070,6 +1082,8 @@ function esp.UpdatePanel(panel, info)
     esp.SetIf(panel.name, "TextSize", settings.TextSize)
     -- health: segments fill one after another; "1.2K / 2K", "… · Death" while downed
     esp.SetIf(panel.bar, "Visible", settings.HealthBar)
+    esp.BarOpacity(panel.bar, settings.HealthBarOpacity)
+    esp.BarOpacity(panel.modeBar, settings.ModeBarOpacity)
     esp.SetIf(panel.health, "Visible", settings.HealthText)
     local healthText
     if info.health == nil then
@@ -1786,10 +1800,12 @@ Chams:ColorPicker({ Title = "Outline color", Flag = "esp_chamsout", Default = bl
 -- bar colours: health on the left, mode on the right
 local HealthColors = StylePage:Card({ Title = "Health bar colors", Icon = "heart", Side = "Left" })
 HealthColors:Segment({ Title = "Bar style", Flag = "esp_hpstyle", Items = { "Smooth", "Stripes" }, Default = "Smooth", Callback = set("HealthBarStyle") })
+HealthColors:Slider({ Title = "Opacity", Flag = "esp_hpopacity", Min = 10, Max = 100, Default = 100, Suffix = "%", Callback = function(v) settings.HealthBarOpacity = v / 100 end })
 HealthColors:Swatches({ Title = "From empty to full", Flag = "esp_hpcolors", Default = "Classic", Columns = 2, Items = healthPresets,
     Callback = function(_, name) settings.HealthPreset = name end })
 local ModeColors = StylePage:Card({ Title = "Mode bar colors", Icon = "zap", Side = "Right" })
 ModeColors:Segment({ Title = "Bar style", Flag = "esp_mdstyle", Items = { "Smooth", "Stripes" }, Default = "Smooth", Callback = set("ModeBarStyle") })
+ModeColors:Slider({ Title = "Opacity", Flag = "esp_mdopacity", Min = 10, Max = 100, Default = 100, Suffix = "%", Callback = function(v) settings.ModeBarOpacity = v / 100 end })
 ModeColors:Swatches({ Title = "From empty to full", Flag = "esp_modecolors", Default = "Ocean", Columns = 2, Items = modePresets,
     Callback = function(_, name) settings.ModePreset = name end })
 end
