@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V2.03
+-- Qustāh · Shindo Life · V2.04
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -476,7 +476,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V2.03",
+	Version = "V2.04",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -1687,9 +1687,6 @@ local HealthCard = ElementTabs.Health
 HealthCard:Toggle({ Title = "Health bar", Desc = "Segmented health indicator", Flag = "esp_hbar", Default = true, Callback = set("HealthBar") })
 HealthCard:Toggle({ Title = "Health text", Desc = "Current / maximum health", Flag = "esp_hptext", Default = true, Callback = set("HealthText") })
 HealthCard:Slider({ Title = "Health bar segments", Flag = "esp_hpseg", Min = 1, Max = 10, Default = 5, DependsOn = { Flag = "esp_hbar", Reason = "" }, Callback = set("HealthSegments") })
--- quick colour row: the same presets as Visuals › Style (one row of gradient dots, the name on hover), kept in step with it
-esp.HealthDots = HealthCard:Swatches({ Title = "Colors", Style = "Dots", Items = healthPresets, Default = "Ice", DependsOn = { Flag = "esp_hbar", Reason = "" },
-    Callback = function(_, name) Window:SetFlag("esp_hpcolors", name) end })
 end
 
 ----- ESP live preview -----
@@ -1697,7 +1694,7 @@ end
 -- colour background; no character. Values are your real ones (Humanoid health, combat.mode, your dodge cooldown) and
 -- follow the settings at once. Drawn in the menu, so this part is GUI.
 local PreviewCard = EspPage:Card({ Title = "Preview", Icon = "scan-eye", Side = "Right" })
-local espCanvas = PreviewCard:Canvas({ Height = 120 })
+local espCanvas = PreviewCard:Canvas({ Height = 170 })
 do
     local holder = espCanvas.Frame
     if holder then
@@ -1726,6 +1723,119 @@ do
             glow.Parent = back
         end
     end
+    ----- Preview controls -----
+    -- Two capsules along the bottom of the preview (HP, MD): the six colour presets as gradient dots, a Smooth / Stripes
+    -- switch and the bar opacity (scroll on it, or click for 100 / 75 / 50 / 25 %). They set the same flags as
+    -- Visuals › Style, so both stay in step; refreshControls() follows the settings when they change elsewhere.
+    local refreshControls = function() end
+    if holder then
+        local controls = Instance.new("Frame")
+        controls.Name, controls.BackgroundTransparency, controls.ZIndex = "Controls", 1, 8
+        controls.AnchorPoint, controls.Position, controls.Size = Vector2.new(0.5, 1), UDim2.new(0.5, 0, 1, -7), UDim2.fromOffset(240, 48)
+        controls.Parent = holder
+        local list = Instance.new("UIListLayout")
+        list.Padding, list.HorizontalAlignment, list.SortOrder = UDim.new(0, 4), Enum.HorizontalAlignment.Center, Enum.SortOrder.LayoutOrder
+        list.Parent = controls
+        local function make(class, parent, props)
+            local object = Instance.new(class)
+            for key, value in pairs(props) do object[key] = value end
+            object.Parent = parent
+            return object
+        end
+        local function round(object, radius) make("UICorner", object, { CornerRadius = UDim.new(0, radius) }) end
+        local function capsule(order, label, presets, keys)
+            local frame = make("Frame", controls, { Name = label, LayoutOrder = order, AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 22),
+                BackgroundColor3 = Color3.fromRGB(11, 12, 16), BackgroundTransparency = 0.22, BorderSizePixel = 0, ZIndex = 8 })
+            round(frame, 11)
+            make("UIStroke", frame, { Color = Color3.new(1, 1, 1), Transparency = 0.92, Thickness = 1 })
+            make("UIPadding", frame, { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 7) })
+            make("UIListLayout", frame, { FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center,
+                Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder })
+            make("TextLabel", frame, { LayoutOrder = 1, Size = UDim2.fromOffset(16, 14), BackgroundTransparency = 1, Font = Enum.Font.GothamBold, TextSize = 9,
+                TextColor3 = Color3.fromRGB(154, 158, 168), Text = label, ZIndex = 9 })
+            -- colours
+            local rings = {}
+            local dots = make("Frame", frame, { LayoutOrder = 2, AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 16), BackgroundTransparency = 1 })
+            make("UIListLayout", dots, { FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 2) })
+            for index, preset in ipairs(presets) do
+                local name = preset[1]
+                local button = make("TextButton", dots, { Name = name, LayoutOrder = index, Size = UDim2.fromOffset(15, 15), BackgroundTransparency = 1, Text = "",
+                    AutoButtonColor = false, ZIndex = 9 })
+                local ring = make("Frame", button, { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 9 })
+                round(ring, 8)
+                rings[name] = make("UIStroke", ring, { Color = Color3.fromRGB(238, 240, 244), Thickness = 1.5, Transparency = 1 })
+                local dot = make("Frame", button, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(9, 9),
+                    BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, ZIndex = 10 })
+                round(dot, 5)
+                local points = {}
+                for i = 2, #preset do points[#points + 1] = ColorSequenceKeypoint.new((i - 2) / (#preset - 2), preset[i]) end
+                make("UIGradient", dot, { Color = ColorSequence.new(points), Rotation = 35 })
+                button.Activated:Connect(function() Window:SetFlag(keys.colors, name) end)
+            end
+            -- Smooth / Stripes: a plain bar and a striped bar
+            local switch = make("Frame", frame, { LayoutOrder = 3, Size = UDim2.fromOffset(43, 17), BackgroundColor3 = Color3.fromRGB(11, 12, 16), BorderSizePixel = 0, ZIndex = 9 })
+            round(switch, 8)
+            local options = {}
+            for index, style in ipairs({ "Smooth", "Stripes" }) do
+                local button = make("TextButton", switch, { Name = style, Position = UDim2.fromOffset(1 + (index - 1) * 21, 1), Size = UDim2.fromOffset(20, 15),
+                    BackgroundColor3 = Color3.fromRGB(42, 44, 52), BackgroundTransparency = 1, BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 9 })
+                round(button, 7)
+                local icon = make("Frame", button, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(11, 5),
+                    BackgroundColor3 = Color3.fromRGB(207, 211, 220), BorderSizePixel = 0, ClipsDescendants = true, ZIndex = 10 })
+                round(icon, 2)
+                if style == "Stripes" then
+                    icon.BackgroundColor3 = Color3.fromRGB(92, 97, 108)
+                    for i = 0, 3 do
+                        make("Frame", icon, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(i * 4, 2.5), Size = UDim2.fromOffset(2, 10), Rotation = 35,
+                            BackgroundColor3 = Color3.fromRGB(207, 211, 220), BorderSizePixel = 0, ZIndex = 11 })
+                    end
+                end
+                options[style] = { button = button, icon = icon }
+                button.Activated:Connect(function() Window:SetFlag(keys.style, style) end)
+            end
+            -- opacity: scroll to change by 5 %, click for the next of 100 / 75 / 50 / 25 %
+            local opacity = make("TextButton", frame, { LayoutOrder = 4, Size = UDim2.fromOffset(28, 14), BackgroundTransparency = 1, Font = Enum.Font.GothamMedium,
+                TextSize = 9, TextColor3 = Color3.fromRGB(154, 158, 168), Text = "100%", AutoButtonColor = false, ZIndex = 9 })
+            local function setOpacity(value) Window:SetFlag(keys.opacity, clamp(math.floor(value + 0.5), 10, 100)) end
+            opacity.Activated:Connect(function()
+                local now = math.floor((settings[keys.opacitySetting] or 1) * 100 + 0.5)
+                local steps = { 100, 75, 50, 25 }
+                local nextValue = steps[1]
+                for i, step in ipairs(steps) do if now >= step - 2 then nextValue = steps[i + 1] or steps[1] break end end
+                setOpacity(nextValue)
+            end)
+            opacity.InputChanged:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseWheel then
+                    setOpacity((settings[keys.opacitySetting] or 1) * 100 + (input.Position.Z > 0 and 5 or -5))
+                end
+            end)
+            return function()
+                local preset, style = settings[keys.presetSetting], settings[keys.styleSetting]
+                for name, ring in pairs(rings) do ring.Transparency = name == preset and 0 or 1 end
+                for name, option in pairs(options) do
+                    local on = name == style
+                    option.button.BackgroundTransparency = on and 0 or 1
+                    option.icon.BackgroundTransparency = on and 0 or 0.55
+                    for _, stripe in ipairs(option.icon:GetChildren()) do stripe.BackgroundTransparency = on and 0 or 0.55 end
+                end
+                opacity.Text = math.floor((settings[keys.opacitySetting] or 1) * 100 + 0.5) .. "%"
+            end
+        end
+        local refreshHealth = capsule(1, "HP", healthPresets, { colors = "esp_hpcolors", style = "esp_hpstyle", opacity = "esp_hpopacity",
+            presetSetting = "HealthPreset", styleSetting = "HealthBarStyle", opacitySetting = "HealthBarOpacity" })
+        local refreshMode = capsule(2, "MD", modePresets, { colors = "esp_modecolors", style = "esp_mdstyle", opacity = "esp_mdopacity",
+            presetSetting = "ModePreset", styleSetting = "ModeBarStyle", opacitySetting = "ModeBarOpacity" })
+        local shownKey
+        refreshControls = function()
+            local key = table.concat({ settings.HealthPreset, settings.HealthBarStyle, settings.HealthBarOpacity,
+                settings.ModePreset, settings.ModeBarStyle, settings.ModeBarOpacity }, "|")
+            if key == shownKey then return end
+            shownKey = key
+            refreshHealth()
+            refreshMode()
+        end
+    end
+
     local box, panel
     local function drawPreview()
         if not holder then return end
@@ -1737,7 +1847,7 @@ do
         if not box then
             box = Instance.new("Frame")
             box.Name, box.BackgroundTransparency, box.Size, box.ZIndex = "Panel", 1, UDim2.fromOffset(300, 78), 5
-            box.AnchorPoint, box.Position = Vector2.new(0.5, 0.5), UDim2.new(0.5, 0, 0.5, 4)
+            box.AnchorPoint, box.Position = Vector2.new(0.5, 0), UDim2.new(0.5, 0, 0, 12)   -- the top part; the controls are below
             box.Parent = holder
             panel = esp.BuildPanel(box)
         end
@@ -1766,6 +1876,7 @@ do
         if now - last < 1 / 15 then return end
         last = now
         drawPreview()
+        refreshControls()
     end
     if holder and Lib.Util.watchInView then
         local connection
@@ -1793,8 +1904,6 @@ local ModeCard = ElementTabs.Mode
 ModeCard:Toggle({ Title = "Mode bar", Desc = "Shows player mode HP", Flag = "esp_mbar", Default = true, Callback = set("ModeBar") })
 ModeCard:Toggle({ Title = "Mode text", Desc = "Current mode amount", Flag = "esp_mtext", Default = false, DependsOn = { Flag = "esp_mbar", Reason = "" }, Callback = set("ModeText") })
 ModeCard:Slider({ Title = "Mode bar segments", Flag = "esp_mseg", Min = 1, Max = 10, Default = 1, DependsOn = { Flag = "esp_mbar", Reason = "" }, Callback = set("ModeSegments") })
-esp.ModeDots = ModeCard:Swatches({ Title = "Colors", Style = "Dots", Items = modePresets, Default = "Aurora", DependsOn = { Flag = "esp_mbar", Reason = "" },
-    Callback = function(_, name) Window:SetFlag("esp_modecolors", name) end })
 
 
 -- Target Pins: pinned players ignore the range and the nearest-players limit
@@ -1825,18 +1934,12 @@ local HealthColors = ColorTabs.Health
 HealthColors:Segment({ Title = "Bar style", Flag = "esp_hpstyle", Items = { "Smooth", "Stripes" }, Default = "Smooth", Callback = set("HealthBarStyle") })
 HealthColors:Slider({ Title = "Opacity", Flag = "esp_hpopacity", Min = 10, Max = 100, Default = 100, Suffix = "%", Callback = function(v) settings.HealthBarOpacity = v / 100 end })
 HealthColors:Swatches({ Title = "From empty to full", Flag = "esp_hpcolors", Default = "Ice", Columns = 2, Items = healthPresets,
-    Callback = function(_, name)
-        settings.HealthPreset = name
-        if esp.HealthDots then esp.HealthDots:Set(name, true) end         -- the colour row under Elements › Health
-    end })
+    Callback = function(_, name) settings.HealthPreset = name end })
 local ModeColors = ColorTabs.Mode
 ModeColors:Segment({ Title = "Bar style", Flag = "esp_mdstyle", Items = { "Smooth", "Stripes" }, Default = "Stripes", Callback = set("ModeBarStyle") })
 ModeColors:Slider({ Title = "Opacity", Flag = "esp_mdopacity", Min = 10, Max = 100, Default = 100, Suffix = "%", Callback = function(v) settings.ModeBarOpacity = v / 100 end })
 ModeColors:Swatches({ Title = "From empty to full", Flag = "esp_modecolors", Default = "Aurora", Columns = 2, Items = modePresets,
-    Callback = function(_, name)
-        settings.ModePreset = name
-        if esp.ModeDots then esp.ModeDots:Set(name, true) end             -- the colour row under Elements › Mode
-    end })
+    Callback = function(_, name) settings.ModePreset = name end })
 end
 
 ----- World -----
