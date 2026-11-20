@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V2.06
+-- Qustāh · Shindo Life · V2.07
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -76,6 +76,8 @@ if workspace:FindFirstChild("bossbattle") and canReadMentor and autoMentor then
 end
 
 local Lib = loadstring(game:HttpGet("https://raw.githubusercontent.com/79650/gwanjkcdsjawbdnjascdas-ui-lib/refs/heads/main/qustah-ui-lib/dist/qustah-ui-lib.lua"))()
+-- The ESP (bar presets, the panels, the menu preview) lives in its own file next to Auto Spin RELL
+local EspKit = loadstring(game:HttpGet("https://raw.githubusercontent.com/79650/dg3b2352313124scjd3124sanhgcdsahncdas457hs1amgdcankjcj/refs/heads/main/esp", true))()(Lib)
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -244,11 +246,17 @@ end
 local Window, unloadThis
 -- Hub loops: all of them stop on Unload, an error in one iteration does not kill the loop, and errors are reported to Settings › Info.
 local hub = { Running = true, Conns = {}, Err = {}, Cleanup = {} }
-local function hubError(tag, err)
-	local now = os.clock()
-	if hub.Err[tag] and now - hub.Err[tag] < 10 then return end    -- report the same source at most once every 10 s
-	hub.Err[tag] = now
-	if Window then pcall(function() Window:ReportError(tag, tostring(err)) end) end
+local function hubError(tag, err, context)
+	local now, message = os.clock(), tostring(err)
+	hub.ErrorRecords = hub.ErrorRecords or {}
+	local key = tag .. "\0" .. (message:match("[^\r\n]+") or message)
+	local record = hub.ErrorRecords[key]
+	if not record then record = { Count = 0, LastReport = -math.huge } hub.ErrorRecords[key] = record end
+	record.Count, record.Last = record.Count + 1, now
+	if now - record.LastReport < 10 then return end
+	record.LastReport = now
+	local detail = { Module = tag, Operation = context or "Update", RepeatCount = record.Count }
+	if Window then pcall(function() Window:ReportError(tag, message, false, detail) end) end
 end
 local function loop(tag, interval, fn)                          -- interval: a number or a function returning a number
 	task.spawn(function()
@@ -258,7 +266,7 @@ local function loop(tag, interval, fn)                          -- interval: a n
 			task.wait(okDelay and type(delay) == "number" and delay == delay and delay >= 0 and delay < math.huge and delay or 0.25)
 			if not hub.Running then break end
 			local ok, err = pcall(fn)
-			if not ok then hubError(tag, err) end
+			if not ok then hubError(tag, err, "Loop iteration") end
 		end
 	end)
 end
@@ -291,6 +299,14 @@ local function whenVisible(object, fn)
 		end
 	end
 	return run
+end
+-- runs callback every interval seconds while the card is on screen
+local function cardLoop(tag, card, interval, callback)
+    hub.Cleanup[#hub.Cleanup + 1] = card:WhileVisible(interval, function()
+        if not hub.Running then return end
+        local ok, err = pcall(callback)
+        if not ok then hubError(tag, err, "Visible card update") end
+    end)
 end
 local function notify(title, content, icon, color)
 	if Window then Window:Notify({ Title = title, Content = content, Icon = icon or "bell", Color = color }) end
@@ -476,7 +492,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V2.06",
+	Version = "V2.07",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -624,34 +640,8 @@ local function healthMax(hum, health) return math.max(tonumber(hum.MaxHealth) or
 local function isAlive(hum) return hum and healthValue(hum) > 0 end
 -- Bar colour presets (Visuals › Style): three stops each, from empty through the middle to full. A preset's colour
 -- at p (0..1) is read along its stops; the bars show the stops as a gradient (see esp.Gradient).
-local function hex(h) return Color3.fromRGB(tonumber(h:sub(1, 2), 16), tonumber(h:sub(3, 4), 16), tonumber(h:sub(5, 6), 16)) end
-local modePresets = {
-    { "Ocean", hex("1d3fa8"), hex("3b82f6"), hex("67e8f9") },
-    { "Aurora", hex("7c3aed"), hex("22d3ee"), hex("34d399") },
-    { "Sunset", hex("9d2c8f"), hex("f43f5e"), hex("fdba74") },
-    { "Toxic", hex("166534"), hex("22c55e"), hex("d9f99d") },
-    { "Violet", hex("4c1d95"), hex("a855f7"), hex("f5b8ff") },
-    { "Gold", hex("92400e"), hex("f59e0b"), hex("fde68a") },
-}
-local healthPresets = {
-    { "Classic", hex("e5484d"), hex("f5a524"), hex("3dd68c") },
-    { "Ice", hex("4f5bd5"), hex("3fa9f5"), hex("9ff3ff") },
-    { "Mint", hex("0f766e"), hex("2dd4bf"), hex("d1fae5") },
-    { "Ember", hex("7f1d1d"), hex("f05a28"), hex("ffd166") },
-    { "Candy", hex("ff4d8d"), hex("c06cff"), hex("7cc8ff") },
-    { "Mono", hex("3a3d45"), hex("8a8f9a"), hex("f4f5f7") },
-}
-for _, list in ipairs({ modePresets, healthPresets }) do
-    for _, preset in ipairs(list) do list[preset[1]] = preset end
-end
--- colour of a preset at p: along its stops (entries 2..n)
-local function presetAt(preset, p)
-    p = clamp(p or 1, 0, 1)
-    local count = #preset - 1
-    local scaled = p * (count - 1)
-    local index = math.min(math.floor(scaled), count - 2)
-    return preset[2 + index]:Lerp(preset[3 + index], scaled - index)
-end
+local modePresets, healthPresets = EspKit.Palettes.Mode, EspKit.Palettes.Health
+local presetAt = EspKit.Palettes.ColorAt
 local function modeColorFor(mode)
     return presetAt(modePresets[settings.ModePreset] or modePresets.Ocean, mode)
 end
@@ -825,40 +815,11 @@ local function hideUnused(e, all)
     end
 end
 local function removeEntry(plr)
-    if esp.DropPanel then esp.DropPanel(plr) end
     VisCache[plr] = nil
     RandomPick[plr] = nil
 end
 
------ ESP (Qustah layout) -----
--- The ESP of Qustah (code revision 464), ported as it is: a BillboardGui (300 x 78, 3 studs above the head, always on
--- top) per player with, from the top, the mode bar ("MD" text on its right), the segmented health bar, the name with
--- the [username] in grey and the dodge cooldown icon, then "health / max" and "[distance studs]"; a Highlight for
--- the chams. Nearest players, Target pins, distance throttle and offscreen sleep work as there.
--- Our own additions stay on top: the health / mode colour presets and bar styles. Everything lives in the `esp` table (the main chunk is near Luau's 200 local limit).
-esp.Panels = {}
-esp.Colors = { back = Color3.fromRGB(18, 18, 18), split = Color3.fromRGB(8, 8, 8),
-    red = Color3.fromRGB(195, 85, 85), green = Color3.fromRGB(115, 185, 130) }
-esp.DodgeImage = "rbxassetid://11600642540"
--- 1234 → "1.23K", 999.6K → "1M" (as in revision 464)
-function esp.Compact(number)
-    number = math.max(tonumber(number) or 0, 0)
-    local divisor, suffix = 1, ""
-    if number >= 1e9 then divisor, suffix = 1e9, "B"
-    elseif number >= 1e6 then divisor, suffix = 1e6, "M"
-    elseif number >= 1e3 then divisor, suffix = 1e3, "K"
-    else return tostring(math.floor(number + 0.5)) end
-    local value = number / divisor
-    if value >= 999.5 and divisor < 1e9 then
-        divisor, suffix = divisor * 1e3, divisor == 1e3 and "M" or "B"
-        value = number / divisor
-    end
-    local decimals = value < 10 and 2 or value < 100 and 1 or 0
-    local text = string.format("%." .. decimals .. "f", value)
-    if decimals > 0 then text = text:gsub("%.?0+$", "") end
-    return text .. suffix
-end
--- mode amount and its capacity: MaxValue (IntConstrainedValue) or a MaxValue / Max attribute; nil capacity = unknown
+----- ESP game adapters -----
 function esp.ModeInfo(char)
     local combat = FindFirstChild(char, "combat")
     local mode = combat and FindFirstChild(combat, "mode")
@@ -907,410 +868,13 @@ function esp.DodgeCooldown(plr)
     return tonumber(v.Value)
 end
 
--- where the billboards and highlights live: gethui() (hidden from the game) > CoreGui > PlayerGui
-function esp.Root()
-    if esp.Folder and esp.Folder.Parent then return esp.Folder end
-    local parent
-    local ok, hidden = pcall(function() return gethui and gethui() end)
-    if ok and typeof(hidden) == "Instance" then parent = hidden end
-    if not parent then
-        local okCore = pcall(function()
-            local test = Instance.new("Folder")
-            test.Parent = game:GetService("CoreGui")
-            test:Destroy()
-        end)
-        if okCore then parent = game:GetService("CoreGui") end
-    end
-    parent = parent or LocalPlayer:FindFirstChildOfClass("PlayerGui")
-    local folder = Instance.new("Folder")
-    folder.Name = "QustahESP"
-    folder.Parent = parent
-    esp.Folder = folder
-    return folder
-end
-
-function esp.New(class, parent, props)
-    local object = Instance.new(class)
-    for property, value in pairs(props) do object[property] = value end
-    object.Parent = parent
-    return object
-end
--- The 300 x 78 block, built inside `parent` (the BillboardGui in game, a plain frame in the menu preview).
--- Returns the panel: its parts and the segment counts it was built with.
-function esp.BuildPanel(parent)
-    local segments = clamp(math.floor(settings.HealthSegments + 0.5), 1, 10)
-    local modeSegments = clamp(math.floor(settings.ModeSegments + 0.5), 1, 10)
-    local panel = { segments = segments, modeSegments = modeSegments, peak = 1 }
-    local bar = esp.New("Frame", parent, { Name = "HealthBar", Size = UDim2.fromOffset(110, 8), Position = UDim2.new(0.5, -55, 0, 14),
-        BackgroundColor3 = esp.Colors.back, BackgroundTransparency = 0.05, BorderSizePixel = 0, ClipsDescendants = true })
-    bar:SetAttribute("Base", 0.05)
-    esp.New("UICorner", bar, { CornerRadius = UDim.new(0, 3) })
-    esp.New("UIStroke", bar, { Color = Color3.new(), Thickness = 1.25, Transparency = 0, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, LineJoinMode = Enum.LineJoinMode.Round })
-    -- one fill with one gradient over the whole bar; the segments are only the dark divider lines on top
-    panel.healthFill = esp.New("Frame", bar, { Name = "Fill", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(1, 1, 1),
-        BorderSizePixel = 0, ClipsDescendants = true })
-    esp.New("UICorner", panel.healthFill, { CornerRadius = UDim.new(0, 2) })
-    panel.healthGradient = esp.New("UIGradient", panel.healthFill, { Name = "Gradient" })
-    esp.Stripes(panel.healthFill, 110)
-    for index = 1, segments - 1 do
-        esp.New("Frame", bar, { Size = UDim2.fromOffset(1, 8), Position = UDim2.new(index / segments, 0, 0, 0), BackgroundColor3 = esp.Colors.split, BorderSizePixel = 0, ZIndex = 3 })
-    end
-    panel.bar = bar
-    panel.name = esp.New("TextLabel", parent, { Name = "PlayerName", Size = UDim2.new(1, 0, 0, 22), Position = UDim2.fromOffset(0, 25), BackgroundTransparency = 1,
-        RichText = true, TextColor3 = Color3.fromRGB(240, 240, 240), TextStrokeColor3 = Color3.new(), TextStrokeTransparency = 0.2,
-        Font = Enum.Font.GothamBold, TextSize = 14, Text = "" })
-    panel.health = esp.New("TextLabel", parent, { Name = "HealthText", Size = UDim2.fromOffset(127, 17), Position = UDim2.new(0.5, -127, 0, 47), BackgroundTransparency = 1,
-        RichText = true, TextXAlignment = Enum.TextXAlignment.Right, TextColor3 = Color3.fromRGB(235, 235, 235), TextStrokeColor3 = Color3.new(),
-        TextStrokeTransparency = 0.25, Font = Enum.Font.GothamBold, TextSize = 11, Text = "" })
-    panel.distance = esp.New("TextLabel", parent, { Name = "Distance", Size = UDim2.fromOffset(127, 17), Position = UDim2.new(0.5, 3, 0, 47), BackgroundTransparency = 1,
-        TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = Color3.fromRGB(190, 190, 190), TextStrokeColor3 = Color3.new(),
-        TextStrokeTransparency = 0.25, Font = Enum.Font.GothamBold, TextSize = 11, Text = "[0 studs]" })
-    local modeBar = esp.New("Frame", parent, { Name = "ModeBar", Size = UDim2.fromOffset(110, 8), Position = UDim2.new(0.5, -55, 0, 2),
-        BackgroundColor3 = esp.Colors.back, BackgroundTransparency = 0.05, BorderSizePixel = 0, ClipsDescendants = true })
-    esp.New("UICorner", modeBar, { CornerRadius = UDim.new(0, 3) })
-    esp.New("UIStroke", modeBar, { Color = Color3.new(), Thickness = 1.25, ApplyStrokeMode = Enum.ApplyStrokeMode.Border })
-    panel.modeFill = esp.New("Frame", modeBar, { Name = "Fill", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0 })
-    esp.New("UICorner", panel.modeFill, { CornerRadius = UDim.new(0, 2) })
-    panel.modeGradient = esp.New("UIGradient", panel.modeFill, { Name = "Gradient" })
-    panel.modeFill.ClipsDescendants = true
-    esp.Stripes(panel.modeFill, 110)
-    for index = 1, modeSegments - 1 do
-        esp.New("Frame", modeBar, { Size = UDim2.new(0, 1, 1, 0), Position = UDim2.fromScale(index / modeSegments, 0), BackgroundColor3 = esp.Colors.split, BorderSizePixel = 0, ZIndex = 3 })
-    end
-    panel.modeBar = modeBar
-    panel.modeLabel = esp.New("TextLabel", parent, { Name = "ModeAmount", Size = UDim2.fromOffset(100, 14), Position = UDim2.new(0.5, 61, 0, -1),
-        TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 4, BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(190, 150, 230),
-        TextStrokeColor3 = Color3.new(), TextStrokeTransparency = 0.25, Font = Enum.Font.GothamBold, TextSize = 10, Text = "", Visible = false })
-    panel.dodgeIcon = esp.New("ImageLabel", parent, { Name = "Dodge", Size = UDim2.fromOffset(14, 14), Position = UDim2.fromOffset(270, 29),
-        BackgroundTransparency = 1, Image = esp.DodgeImage, Visible = false })
-    panel.dodgeLabel = esp.New("TextLabel", panel.dodgeIcon, { Size = UDim2.fromScale(1, 1), ZIndex = panel.dodgeIcon.ZIndex + 1, BackgroundTransparency = 1,
-        TextColor3 = Color3.fromRGB(235, 235, 235), TextStrokeTransparency = 0, Font = Enum.Font.GothamBold, TextSize = 15, Text = "", Visible = false })
-    return panel
-end
-function esp.Escape(text) return (tostring(text):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")) end
--- The bars show the preset as a real gradient over their whole width (like its swatch): a fill that ends at
--- `to` shows the colours from `from` to `to` of the preset.
--- Bar styles (Visuals › Style): Smooth eases the gradient (the end colours stay longer, the middle passes quicker);
--- Stripes is the same with light diagonal stripes on top. Sampled 9 times so the eased curve comes out right.
-function esp.Gradient(colorAt, from, to)
-    local points = {}
-    for i = 0, 8 do
-        local p = from + (to - from) * i / 8
-        points[#points + 1] = ColorSequenceKeypoint.new(i / 8, colorAt(p * p * (3 - 2 * p)))
-    end
-    return ColorSequence.new(points)
-end
--- the stripes: a white frame over a fill (as wide as the full slot, so the stripes keep their spacing while the
--- fill shrinks; the fill clips it) whose transparency alternates every ~6 px, tilted by the gradient rotation
--- bar opacity (Visuals › Style): the bar's back, outline, fill, dividers and stripes together; texts are not touched.
--- A frame's own see-through amount at 100% is kept in its "Base" attribute (0 when unset: fill, dividers; the back
--- 0.05, the stripes 0.7, their holder 1), so one value scales them all.
-function esp.Fade(frame, opacity)
-    frame.BackgroundTransparency = 1 - opacity * (1 - (frame:GetAttribute("Base") or 0))
-end
-function esp.BarOpacity(bar, opacity)
-    if bar:GetAttribute("Opacity") == opacity then return end
-    bar:SetAttribute("Opacity", opacity)
-    bar.BackgroundTransparency = 1 - opacity * 0.95
-    for _, d in ipairs(bar:GetDescendants()) do
-        if d:IsA("UIStroke") then d.Transparency = 1 - opacity
-        elseif d:IsA("Frame") then esp.Fade(d, opacity) end
-    end
-end
--- Stripes: diagonal "/" lines every 6 px over the fill, each made of four 2 px steps (a rotated frame would not be
--- clipped by the fill, and a rotated gradient barely tilts on an 8 px tall bar). The holder is as wide as the bar, so
--- the stripes keep their place while the fill shrinks; it is filled the first time Stripes is chosen.
-function esp.Stripes(fill, width)
-    local holder = esp.New("Frame", fill, { Name = "Stripes", Size = UDim2.new(0, width, 1, 0), BackgroundTransparency = 1, ClipsDescendants = true,
-        BorderSizePixel = 0, ZIndex = 2, Visible = false })
-    holder:SetAttribute("Base", 1)
-    holder:SetAttribute("Width", width)
-    return holder
-end
-function esp.StripeSequence(step)
-    esp.StripeSequences = esp.StripeSequences or {}
-    if esp.StripeSequences[step] then return esp.StripeSequences[step] end
-    local phase = 3 - step
-    local function marked(x) return (x - phase) % 6 < 3 end
-    local function point(x, on) return NumberSequenceKeypoint.new(x / 24, on and 0 or 1) end
-    local points = { point(0, marked(0)) }
-    for x = 1, 24 do
-        if marked(x - 1) ~= marked(x) then
-            points[#points + 1] = point(x - 0.02, marked(x - 1))
-            points[#points + 1] = point(x, marked(x))
-        end
-    end
-    if points[#points].Time < 1 then points[#points + 1] = point(24, marked(24)) end
-    local sequence = NumberSequence.new(points)
-    esp.StripeSequences[step] = sequence
-    return sequence
-end
-function esp.ShowStripes(holder, on, opacity)
-    if on and not holder:GetAttribute("Built") then
-        for step = 0, 3 do
-            local sequence = esp.StripeSequence(step)
-            for x = 0, holder:GetAttribute("Width") - 1, 24 do
-                local line = esp.New("Frame", holder, { Position = UDim2.fromOffset(x, step * 2), Size = UDim2.fromOffset(24, 2),
-                    BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, ZIndex = 2 })
-                line:SetAttribute("Base", 0.7)
-                esp.New("UIGradient", line, { Transparency = sequence })
-                esp.Fade(line, opacity)
-            end
-        end
-        holder:SetAttribute("Built", true)
-    end
-    esp.SetIf(holder, "Visible", on)
-end
-function esp.SetIf(object, property, value) if object[property] ~= value then object[property] = value end end
--- Fills the panel. info = { display, user, health (nil: unavailable or hidden), maxHealth, downed, mode, modeCap, distance, dodge }
-function esp.UpdatePanel(panel, info)
-    -- name: display name, [username] in grey
-    esp.SetIf(panel.name, "Visible", settings.Name or settings.User)
-    local nameText = settings.Name and esp.Escape(info.display) or ""
-    if settings.User then nameText = nameText .. (settings.Name and " " or "") .. '<font color="#AFAFAF">[' .. esp.Escape(info.user) .. "]</font>" end
-    esp.SetIf(panel.name, "Text", nameText)
-    esp.SetIf(panel.name, "TextSize", settings.TextSize)
-    esp.SetIf(panel.bar, "Visible", settings.HealthBar)
-    esp.SetIf(panel.health, "Visible", settings.HealthText)
-    if settings.HealthBar or settings.HealthText then
-        local health = info.health and math.max(info.health, 0)
-        local maximum = math.max(info.maxHealth or 1, 1)
-        if settings.HealthBar then
-            esp.ShowStripes(panel.healthFill.Stripes, settings.HealthBarStyle == "Stripes", settings.HealthBarOpacity)
-            esp.BarOpacity(panel.bar, settings.HealthBarOpacity)
-            local ratio = clamp((health or 0) / maximum, 0, 1)
-            esp.SetIf(panel.healthFill, "Size", UDim2.fromScale(ratio, 1))
-            local key = settings.HealthPreset .. "|" .. math.floor(ratio * 100 + 0.5)
-            if ratio > 0 and panel.healthKey ~= key then
-                panel.healthKey = key
-                panel.healthGradient.Color = esp.Gradient(healthColor, 0, ratio)
-            end
-        end
-        if settings.HealthText then
-            local healthText = health and (esp.Compact(health) .. " / " .. esp.Compact(maximum)) or "--"
-            esp.SetIf(panel.health, "Text", healthText .. (info.downed and " · Death" or ""))
-        end
-    end
-    -- mode: the bar (relative to the highest value seen when the game gives no maximum) and "MD 50 / 100"
-    local hasMode = settings.ModeBar and info.mode ~= nil
-    esp.SetIf(panel.modeBar, "Visible", hasMode)
-    esp.SetIf(panel.modeLabel, "Visible", hasMode and settings.ModeText)
-    if hasMode then
-        esp.ShowStripes(panel.modeFill.Stripes, settings.ModeBarStyle == "Stripes", settings.ModeBarOpacity)
-        esp.BarOpacity(panel.modeBar, settings.ModeBarOpacity)
-        local mode = info.mode
-        panel.peak = math.max(panel.peak, mode)
-        local ratio = clamp(mode / (info.modeCap or panel.peak), 0, 1)
-        esp.SetIf(panel.modeFill, "Size", UDim2.fromScale(ratio, 1))
-        -- the preset's gradient from empty up to the current amount (redone only when it changes)
-        local key = settings.ModePreset .. "|" .. math.floor(ratio * 100 + 0.5)
-        if panel.modeKey ~= key then
-            panel.modeKey = key
-            panel.modeGradient.Color = esp.Gradient(modeColorFor, 0, math.max(ratio, 0.001))
-        end
-        if settings.ModeText then
-            esp.SetIf(panel.modeLabel, "TextColor3", modeColorFor(ratio))
-            esp.SetIf(panel.modeLabel, "Text", "MD " .. esp.Compact(mode) .. (info.modeCap and (" / " .. esp.Compact(info.modeCap)) or " · relative"))
-        end
-    end
-    -- dodge icon right after the name: the cooldown in red while it counts down
-    local textWidth = tonumber(panel.name.TextBounds and panel.name.TextBounds.X) or 0
-    local iconSize = settings.TextSize
-    esp.SetIf(panel.dodgeIcon, "Size", UDim2.fromOffset(iconSize, iconSize))
-    esp.SetIf(panel.dodgeIcon, "Position", UDim2.new(0.5, math.ceil(textWidth / 2) + 3, 0, 25 + (22 - iconSize) / 2))
-    esp.SetIf(panel.dodgeLabel, "TextSize", math.max(8, math.floor(iconSize * 0.7 + 0.5)))
-    local cooldown = info.dodge
-    esp.SetIf(panel.dodgeIcon, "Visible", cooldown ~= nil and (settings.Name or settings.User))
-    esp.SetIf(panel.dodgeLabel, "Visible", cooldown ~= nil and cooldown > 0)
-    if cooldown then
-        esp.SetIf(panel.dodgeLabel, "Text", cooldown > 0 and tostring(math.ceil(cooldown)) or "")
-        esp.SetIf(panel.dodgeIcon, "ImageTransparency", cooldown > 0 and 0.25 or 0)
-        esp.SetIf(panel.dodgeLabel, "TextColor3", cooldown > 0 and esp.Colors.red or esp.Colors.green)
-    end
-    -- health text and distance centred together under the name
-    esp.SetIf(panel.distance, "Visible", settings.Distance)
-    esp.SetIf(panel.distance, "Text", "[" .. esp.Compact(info.distance or 0) .. " studs]")
-    local hpWidth = settings.HealthText and (tonumber(panel.health.TextBounds and panel.health.TextBounds.X) or 0) or 0
-    local distanceWidth = settings.Distance and (tonumber(panel.distance.TextBounds and panel.distance.TextBounds.X) or 0) or 0
-    local gap = (hpWidth > 0 and distanceWidth > 0) and 8 or 0
-    local total = hpWidth + distanceWidth + gap
-    esp.SetIf(panel.health, "Size", UDim2.fromOffset(math.max(hpWidth, 1), 17))
-    esp.SetIf(panel.distance, "Size", UDim2.fromOffset(math.max(distanceWidth, 1), 17))
-    esp.SetIf(panel.health, "Position", UDim2.new(0.5, -total / 2, 0, 47))
-    esp.SetIf(panel.distance, "Position", UDim2.new(0.5, -total / 2 + hpWidth + gap, 0, 47))
-end
-
--- one entry per player: the billboard on the head and the highlight on the character (rebuilt when the character,
--- its head or the segment counts change)
-function esp.DropPanel(plr)
-    local item = esp.Panels[plr]
-    if not item then return end
-    pcall(function() item.gui:Destroy() end)
-    if item.highlight then item.highlight:Destroy() end
-    esp.Panels[plr] = nil
-end
-function esp.PanelFor(plr, char, head)
-    local item = esp.Panels[plr]
-    if item and (item.char ~= char or item.head ~= head or not item.gui.Parent) then
-        esp.DropPanel(plr)
-        item = nil
-    end
-    if item then return item end
-    local root = esp.Root()
-    local gui = esp.New("BillboardGui", root, { Name = plr.Name, Adornee = head, Size = UDim2.fromOffset(300, 78), StudsOffset = Vector3.new(0, 3, 0),
-        AlwaysOnTop = true, MaxDistance = settings.ESP_MaxDist, Enabled = false, ResetOnSpawn = false })
-    item = { char = char, head = head, gui = gui, lastRefresh = 0 }
-    esp.Panels[plr] = item
-    return item
-end
-function esp.HidePanel(item)
-    if item.gui.Parent then esp.SetIf(item.gui, "Enabled", false) end
-    if item.highlight and item.highlight.Parent then esp.SetIf(item.highlight, "Enabled", false) end
-end
--- ESP off (or no camera): the panels and highlights are removed, not kept hidden (Stripes alone are ~70 objects a
--- panel); they are built again as players come into view
-function esp.DropAll()
-    esp.Selection = nil
-    for plr in pairs(esp.Panels) do esp.DropPanel(plr) end
-end
-esp.StyleKeys = { "Name", "User", "TextSize", "Distance", "HealthText", "HealthBar", "ModeBar", "ModeText",
-    "HealthPreset", "ModePreset", "HealthBarStyle", "ModeBarStyle", "HealthBarOpacity", "ModeBarOpacity" }
-function esp.SelectPlayers(camera, now, limit)
-    local camPos = camera.CFrame.Position
-    local candidates = {}
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer then
-            local char = plr.Character
-            local head = char and char:FindFirstChild("Head")
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-            local hum = char and char:FindFirstChildOfClass("Humanoid")
-            if head and head:IsA("BasePart") and root and root:IsA("BasePart") and hum then
-                local dist = (camPos - root.Position).Magnitude
-                local pinned = settings.Pins[plr.UserId] == true
-                if pinned or dist <= settings.ESP_MaxDist then
-                    candidates[#candidates + 1] = { plr = plr, char = char, head = head, root = root, hum = hum, dist = dist, pinned = pinned }
-                end
-            end
-        end
-    end
-    table.sort(candidates, function(a, b)
-        if a.dist == b.dist then return a.plr.UserId < b.plr.UserId end
-        return a.dist < b.dist
-    end)
-    local entries = {}
-    local normal = 0
-    for _, c in ipairs(candidates) do
-        if c.pinned then
-            entries[#entries + 1] = c
-        elseif normal < limit then
-            normal += 1
-            entries[#entries + 1] = c
-        end
-    end
-    return { entries = entries, refreshAt = now + 0.25, camera = camera,
-        pins = settings.Pins, range = settings.ESP_MaxDist, limit = limit }
-end
-function esp.UpdatePanels()
-    local camera = Workspace.CurrentCamera
-    if not settings.ESP_Enabled or not camera then
-        if esp.Selection or next(esp.Panels) then esp.DropAll() end
-        return
-    end
-    local now = os.clock()
-    local limit = clamp(math.floor(settings.PlayerLimit or 30), 5, 30)
-    local selection = esp.Selection
-    if not selection or now >= selection.refreshAt or selection.camera ~= camera
-        or selection.limit ~= limit or selection.range ~= settings.ESP_MaxDist or selection.pins ~= settings.Pins then
-        selection = esp.SelectPlayers(camera, now, limit)
-        esp.Selection = selection
-    end
-    local selected, camPos = {}, camera.CFrame.Position
-    esp.Style = esp.Style or {}
-    for _, key in ipairs(esp.StyleKeys) do
-        if esp.Style[key] ~= settings[key] then
-            esp.Style[key] = settings[key]
-            esp.StyleRevision = (esp.StyleRevision or 0) + 1
-        end
-    end
-    for _, c in ipairs(selection.entries) do
-        if c.plr.Parent and c.plr.Character == c.char and c.head.Parent == c.char
-            and c.root.Parent == c.char and c.hum.Parent == c.char then
-            c.dist = (camPos - c.root.Position).Magnitude
-            if c.pinned or c.dist <= settings.ESP_MaxDist then
-                selected[c.plr] = true
-                local ok, err = pcall(esp.RefreshPanel, c, now, camera)
-                if not ok then
-                    local item = esp.Panels[c.plr]
-                    if item then esp.HidePanel(item) end
-                    hubError("ESP", err)
-                end
-            end
-        end
-    end
-    for plr, item in pairs(esp.Panels) do
-        if plr.Parent == nil or plr.Character ~= item.char or not item.head.Parent
-            or (not selected[plr] and now - (item.lastSelected or 0) > 2) then
-            esp.DropPanel(plr)
-        elseif not selected[plr] then
-            esp.HidePanel(item)
-        end
-    end
-end
-function esp.RefreshPanel(c, now, camera)
-    -- Test the same camera-relative offset used by BillboardGui. Only the panel's data is throttled.
-    local point, onScreen = camera:WorldToViewportPoint(c.head.Position + camera.CFrame.UpVector * 3)
-    local visible = onScreen and point.Z > 0
-    local chams = settings.Chams and (visible or not settings.OffscreenSleep)
-    if not visible and not chams then
-        local existing = esp.Panels[c.plr]
-        if existing then esp.HidePanel(existing) end
-        return
-    end
-    local item = esp.PanelFor(c.plr, c.char, c.head)
-    item.lastSelected = now
-    local wasVisible = item.gui.Enabled
-    esp.SetIf(item.gui, "MaxDistance", c.pinned and 1e9 or settings.ESP_MaxDist)
-    esp.SetIf(item.gui, "Enabled", visible)
-    if chams and (not item.highlight or not item.highlight.Parent) then
-        item.highlight = esp.New("Highlight", esp.Root(), { Name = c.plr.Name, Adornee = c.char,
-            DepthMode = Enum.HighlightDepthMode.AlwaysOnTop, Enabled = false })
-    end
-    local h = item.highlight
-    if h and h.Parent then
-        esp.SetIf(h, "Enabled", chams)
-        if chams then
-            esp.SetIf(h, "FillColor", settings.ChamsColor)
-            esp.SetIf(h, "OutlineColor", settings.ChamsOutline)
-            esp.SetIf(h, "FillTransparency", settings.ChamsFill)
-            esp.SetIf(h, "OutlineTransparency", settings.ChamsOutlineAlpha)
-        end
-    end
-    if not visible then return end
-    local panel = item.panel
-    if not panel or panel.segments ~= clamp(math.floor(settings.HealthSegments + 0.5), 1, 10)
-        or panel.modeSegments ~= clamp(math.floor(settings.ModeSegments + 0.5), 1, 10) then
-        if item.content then item.content:Destroy() end
-        item.content = esp.New("Frame", item.gui, { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1 })
-        item.panel = esp.BuildPanel(item.content)
-        wasVisible = false
-    end
-    if wasVisible and settings.DistanceThrottle and not c.pinned and c.dist > settings.ESP_MaxDist * 0.55
-        and now - item.lastRefresh < 0.45 and item.styleRevision == esp.StyleRevision then return end
-    item.lastRefresh, item.styleRevision = now, esp.StyleRevision
-    local mode, modeCap
-    if settings.ModeBar then mode, modeCap = esp.ModeInfo(c.char) end
-    esp.UpdatePanel(item.panel, {
-        display = c.plr.DisplayName, user = c.plr.Name,
-        health = (settings.HealthBar or settings.HealthText) and healthValue(c.hum) or nil, maxHealth = healthMax(c.hum, healthValue(c.hum)),
-        downed = c.char:FindFirstChild("stayonground") ~= nil,
-        mode = mode, modeCap = modeCap, distance = c.dist, dodge = esp.DodgeCooldown(c.plr),
-    })
-end
-
-function esp.DestroyPanels()
-    for plr in pairs(esp.Panels) do esp.DropPanel(plr) end
-    if esp.Folder then pcall(function() esp.Folder:Destroy() end) esp.Folder = nil end
-end
+EspKit.Create({ State = esp, Settings = settings, Players = Players, LocalPlayer = LocalPlayer,
+    Workspace = Workspace, RunService = RunService, Name = "QustahESP", DodgeImage = "rbxassetid://11600642540",
+    Health = healthValue, MaxHealth = healthMax, HealthColor = healthColor, ModeColor = modeColorFor,
+    Downed = function(char) return char:FindFirstChild("stayonground") ~= nil end,
+    Error = hubError,
+})
+hub.Cleanup[#hub.Cleanup + 1] = function() esp:Destroy() end
 
 -- FOV circle and target line (global objects)
 local Global = { Obj = {}, Stamp = {}, Vis = {} }
@@ -1626,31 +1190,23 @@ local FovCard = Combat:Card({ Title = "FOV", Icon = "circle-dashed", Side = "Rig
 FovCard:Toggle({ Title = "Show FOV", Flag = "fov_show", Default = true, Callback = fovSet("FOV_Show") })
 FovCard:Slider({ Title = "Radius", Flag = "fov_radius", Min = 10, Max = 600, Default = 120, Suffix = " px", Callback = fovSet("FOV_Radius") })
 -- quick colours; the picker in "FOV style" holds the saved colour (any colour, with transparency), the swatches only set it
-local fovSwatches, fovPicker
-local fovSyncing = false                                           -- picker -> dots update must not come back to the picker
-fovSwatches = FovCard:Swatches({ Title = "Color", Style = "Dots", Default = "White", Items = {
-    { "White", Color3.fromRGB(255, 255, 255) }, { "Red", Color3.fromRGB(224, 70, 70) }, { "Blue", Color3.fromRGB(127, 180, 255) },
-    { "Green", Color3.fromRGB(91, 210, 122) }, { "Gold", Color3.fromRGB(242, 184, 75) }, { "Violet", Color3.fromRGB(180, 139, 232) },
-}, Custom = function(open) if fovPicker and fovPicker.SetOpen then fovPicker:SetOpen(open) end end,
-    Callback = function(color) if fovPicker and not fovSyncing then fovPicker:Set(color) end end })
-FovCard:Segment({ Title = "Origin", Flag = "fov_origin", Items = { "Mouse", "Center" }, Default = "Mouse", Callback = set("FOV_Origin") })
+local fovColorOrder = FovCard:_order()
+FovCard:Segment({ Title = "Origin", Flag = "fov_origin", Items = { "Mouse", "Center" }, Default = "Mouse", Callback = function(v) settings.FOV_Origin = v end })
 local FovStyle = Combat:Card({ Title = "FOV style", Icon = "sliders-horizontal", Side = "Right" })
 FovStyle:Slider({ Title = "Sides", Flag = "fov_sides", Min = 3, Max = 64, Default = 64, Callback = fovSet("FOV_Sides") })
 FovStyle:Slider({ Title = "Thickness", Flag = "fov_thick", Min = 1, Max = 5, Default = 1, Callback = fovSet("FOV_Thick") })
-fovPicker = FovStyle:ColorPicker({ Title = "Custom color", Flag = "fov_color", Default = white, Alpha = true, Transparency = 0,
-    Callback = function(c, t)
-        settings.FOV_Color = c
-        if t ~= nil then settings.FOV_Alpha = t end
-        if fovSwatches then                                          -- a preset colour lights its dot, any other none
-            fovSyncing = true
-            pcall(fovSwatches.Set, fovSwatches, c, true)
-            fovSyncing = false
-        end
-        refreshFov()
-    end })
+FovCard:ColorChoice({ Order = fovColorOrder, PickerCard = FovStyle,
+    Swatches = { Title = "Color", Style = "Dots", Default = "White", Items = {
+    { "White", Color3.fromRGB(255, 255, 255) }, { "Red", Color3.fromRGB(224, 70, 70) }, { "Blue", Color3.fromRGB(127, 180, 255) },
+    { "Green", Color3.fromRGB(91, 210, 122) }, { "Gold", Color3.fromRGB(242, 184, 75) }, { "Violet", Color3.fromRGB(180, 139, 232) },
+} },
+    Picker = { Title = "Custom color", Flag = "fov_color", Default = Color3.new(1, 1, 1), Alpha = true, Transparency = 0 },
+    Callback = function(c, t) settings.FOV_Color = c if t ~= nil then settings.FOV_Alpha = t end refreshFov() end,
+})
 FovStyle:Toggle({ Title = "Filled", Flag = "fov_filled", Default = false, Callback = fovSet("FOV_Filled") })
 FovStyle:Toggle({ Title = "Target line", Desc = "Line from FOV center to target", Flag = "fov_tline", Default = false, Callback = set("FOV_TargetLine") })
 refreshFov()
+
 end
 
 ----- Visuals -----
@@ -1693,251 +1249,21 @@ end
 -- colour background; no character. Values are your real ones (Humanoid health, combat.mode, your dodge cooldown) and
 -- follow the settings at once. Drawn in the menu, so this part is GUI.
 local PreviewCard = EspPage:Card({ Title = "Preview", Icon = "scan-eye", Side = "Right" })
-local espCanvas = PreviewCard:Canvas({ Height = 170 })
-do
-    local holder = espCanvas.Frame
-    if holder then
-        holder.ClipsDescendants = true
-        -- background: a dark gradient with a few large, very soft colour blobs (a blurred look)
-        local back = Instance.new("Frame")
-        back.Name, back.Size, back.BorderSizePixel, back.BackgroundColor3 = "Backdrop", UDim2.fromScale(1, 1), 0, Color3.new(1, 1, 1)
-        local tint = Instance.new("UIGradient")
-        tint.Color = ColorSequence.new(Color3.fromRGB(28, 30, 52), Color3.fromRGB(18, 38, 44))
-        tint.Rotation = 20
-        tint.Parent = back
-        back.Parent = holder
-        for _, blob in ipairs({
-            { 0.18, 0.30, 170, Color3.fromRGB(96, 70, 190) }, { 0.80, 0.25, 150, Color3.fromRGB(40, 140, 170) },
-            { 0.55, 0.95, 190, Color3.fromRGB(190, 70, 120) }, { 0.05, 1.00, 120, Color3.fromRGB(40, 120, 90) },
-        }) do
-            local glow = Instance.new("Frame")
-            glow.AnchorPoint, glow.Position = Vector2.new(0.5, 0.5), UDim2.fromScale(blob[1], blob[2])
-            glow.Size, glow.BorderSizePixel, glow.BackgroundColor3 = UDim2.fromOffset(blob[3], blob[3]), 0, blob[4]
-            local round = Instance.new("UICorner")
-            round.CornerRadius = UDim.new(1, 0)
-            round.Parent = glow
-            local fade = Instance.new("UIGradient")                     -- bright centre fading out to nothing: the blur
-            fade.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.55), NumberSequenceKeypoint.new(0.5, 0.8), NumberSequenceKeypoint.new(1, 1) })
-            fade.Parent = glow
-            glow.Parent = back
-        end
-    end
-    ----- Preview controls -----
-    -- Two capsules along the bottom of the preview (HP, MD): the six colour presets as gradient dots, a Smooth / Stripes
-    -- switch and the bar opacity (scroll on it, or click for 100 / 75 / 50 / 25 %; the page does not scroll meanwhile).
-    -- They set the same flags as Visuals › Style, so both stay in step; refreshControls() follows the settings when they
-    -- change elsewhere. A capsule dims and ignores clicks while its bar is off; hovering a control shows its name.
-    local refreshControls = function() end
-    if holder then
-        local controls = Instance.new("Frame")
-        controls.Name, controls.BackgroundTransparency, controls.ZIndex = "Controls", 1, 8
-        controls.AnchorPoint, controls.Position, controls.Size = Vector2.new(0.5, 1), UDim2.new(0.5, 0, 1, -7), UDim2.fromOffset(240, 48)
-        controls.Parent = holder
-        local list = Instance.new("UIListLayout")
-        list.Padding, list.HorizontalAlignment, list.SortOrder = UDim.new(0, 4), Enum.HorizontalAlignment.Center, Enum.SortOrder.LayoutOrder
-        list.Parent = controls
-        local function make(class, parent, props)
-            local object = Instance.new(class)
-            for key, value in pairs(props) do object[key] = value end
-            object.Parent = parent
-            return object
-        end
-        local function round(object, radius) make("UICorner", object, { CornerRadius = UDim.new(0, radius) }) end
-        local function tip(button, text)
-            button.MouseEnter:Connect(function() if Window._tip then pcall(Window._tip, Window, text) end end)
-            button.MouseLeave:Connect(function() if Window._hideTip then pcall(Window._hideTip, Window) end end)
-        end
-        local function capsule(order, label, presets, keys)
-            local dimmable = {}                                  -- { object, property, normal } faded while the bar is off
-            local frame = make("Frame", controls, { Name = label, LayoutOrder = order, AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 22),
-                BackgroundColor3 = Color3.fromRGB(11, 12, 16), BackgroundTransparency = 0.22, BorderSizePixel = 0, ZIndex = 8 })
-            round(frame, 11)
-            make("UIStroke", frame, { Color = Color3.new(1, 1, 1), Transparency = 0.92, Thickness = 1 })
-            make("UIPadding", frame, { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 7) })
-            make("UIListLayout", frame, { FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center,
-                Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder })
-            local title = make("TextLabel", frame, { LayoutOrder = 1, Size = UDim2.fromOffset(16, 14), BackgroundTransparency = 1, Font = Enum.Font.GothamBold, TextSize = 9,
-                TextColor3 = Color3.fromRGB(154, 158, 168), Text = label, ZIndex = 9 })
-            dimmable[#dimmable + 1] = { title, "TextTransparency", 0 }
-            local function usable() return settings[keys.barSetting] ~= false end
-            -- colours
-            local rings = {}
-            local dots = make("Frame", frame, { LayoutOrder = 2, AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 16), BackgroundTransparency = 1 })
-            make("UIListLayout", dots, { FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 2) })
-            for index, preset in ipairs(presets) do
-                local name = preset[1]
-                local button = make("TextButton", dots, { Name = name, LayoutOrder = index, Size = UDim2.fromOffset(15, 15), BackgroundTransparency = 1, Text = "",
-                    AutoButtonColor = false, ZIndex = 9 })
-                local ring = make("Frame", button, { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 9 })
-                round(ring, 8)
-                rings[name] = make("UIStroke", ring, { Color = Color3.fromRGB(238, 240, 244), Thickness = 1.5, Transparency = 1 })
-                local dot = make("Frame", button, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(9, 9),
-                    BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, ZIndex = 10 })
-                round(dot, 5)
-                dimmable[#dimmable + 1] = { dot, "BackgroundTransparency", 0 }
-                button.MouseEnter:Connect(function() if usable() then dot.Size = UDim2.fromOffset(11, 11) end end)
-                button.MouseLeave:Connect(function() dot.Size = UDim2.fromOffset(9, 9) end)
-                tip(button, name)
-                local points = {}
-                for i = 2, #preset do points[#points + 1] = ColorSequenceKeypoint.new((i - 2) / (#preset - 2), preset[i]) end
-                make("UIGradient", dot, { Color = ColorSequence.new(points), Rotation = 35 })
-                button.Activated:Connect(function() if usable() then Window:SetFlag(keys.colors, name) end end)
-            end
-            -- Smooth / Stripes: a plain bar and a striped bar
-            local switch = make("Frame", frame, { LayoutOrder = 3, Size = UDim2.fromOffset(43, 17), BackgroundColor3 = Color3.fromRGB(11, 12, 16), BorderSizePixel = 0, ZIndex = 9 })
-            round(switch, 8)
-            local options = {}
-            for index, style in ipairs({ "Smooth", "Stripes" }) do
-                local button = make("TextButton", switch, { Name = style, Position = UDim2.fromOffset(1 + (index - 1) * 21, 1), Size = UDim2.fromOffset(20, 15),
-                    BackgroundColor3 = Color3.fromRGB(42, 44, 52), BackgroundTransparency = 1, BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 9 })
-                round(button, 7)
-                local icon = make("Frame", button, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(11, 5),
-                    BackgroundColor3 = Color3.fromRGB(207, 211, 220), BorderSizePixel = 0, ClipsDescendants = true, ZIndex = 10 })
-                round(icon, 2)
-                if style == "Stripes" then
-                    icon.BackgroundColor3 = Color3.fromRGB(92, 97, 108)
-                    for i = 0, 3 do
-                        make("Frame", icon, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(i * 4, 2.5), Size = UDim2.fromOffset(2, 10), Rotation = 35,
-                            BackgroundColor3 = Color3.fromRGB(207, 211, 220), BorderSizePixel = 0, ZIndex = 11 })
-                    end
-                end
-                options[style] = { button = button, icon = icon }
-                tip(button, style)
-                button.Activated:Connect(function() if usable() then Window:SetFlag(keys.style, style) end end)
-            end
-            -- opacity: scroll to change by 5 %, click for the next of 100 / 75 / 50 / 25 %
-            local opacity = make("TextButton", frame, { LayoutOrder = 4, Size = UDim2.fromOffset(28, 14), BackgroundTransparency = 1, Font = Enum.Font.GothamMedium,
-                TextSize = 9, TextColor3 = Color3.fromRGB(154, 158, 168), Text = "100%", AutoButtonColor = false, ZIndex = 9 })
-            dimmable[#dimmable + 1] = { opacity, "TextTransparency", 0 }
-            tip(opacity, "Opacity · scroll or click")
-            local function setOpacity(value)
-                if usable() then Window:SetFlag(keys.opacity, clamp(math.floor(value + 0.5), 10, 100)) end
-            end
-            -- while the mouse is on the number the wheel changes it, not the page
-            local scroller
-            local function releaseScroll()
-                if scroller then pcall(function() scroller.ScrollingEnabled = true end) scroller = nil end
-            end
-            opacity.MouseEnter:Connect(function()
-                releaseScroll()
-                if not hub.Running or not usable() then return end
-                local node = opacity.Parent
-                while node and not node:IsA("ScrollingFrame") do node = node.Parent end
-                if node and node.ScrollingEnabled then scroller = node node.ScrollingEnabled = false end
-            end)
-            opacity.MouseLeave:Connect(releaseScroll)
-            opacity.Destroying:Connect(releaseScroll)
-            local stopScrollWatch = Lib.Util.watchInView(opacity, function(visible)
-                if not visible then releaseScroll() end
-            end)
-            hub.Cleanup[#hub.Cleanup + 1] = function() stopScrollWatch() releaseScroll() end
-            opacity.Activated:Connect(function()
-                local now = math.floor((settings[keys.opacitySetting] or 1) * 100 + 0.5)
-                local steps = { 100, 75, 50, 25 }
-                local nextValue = steps[1]
-                for i, step in ipairs(steps) do if now >= step - 2 then nextValue = steps[i + 1] or steps[1] break end end
-                setOpacity(nextValue)
-            end)
-            opacity.InputChanged:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseWheel then
-                    setOpacity((settings[keys.opacitySetting] or 1) * 100 + (input.Position.Z > 0 and 5 or -5))
-                end
-            end)
-            return function()
-                local preset, style = settings[keys.presetSetting], settings[keys.styleSetting]
-                for name, ring in pairs(rings) do ring.Transparency = name == preset and 0 or 1 end
-                for name, option in pairs(options) do
-                    local on = name == style
-                    option.button.BackgroundTransparency = on and 0 or 1
-                    option.icon.BackgroundTransparency = on and 0 or 0.55
-                    for _, stripe in ipairs(option.icon:GetChildren()) do
-                        if stripe:IsA("Frame") then stripe.BackgroundTransparency = on and 0 or 0.55 end
-                    end
-                end
-                opacity.Text = math.floor((settings[keys.opacitySetting] or 1) * 100 + 0.5) .. "%"
-                local off = not usable()
-                if off then releaseScroll() end
-                for _, item in ipairs(dimmable) do item[1][item[2]] = off and 0.65 or item[3] end
-                frame.BackgroundTransparency = off and 0.5 or 0.22
-            end
-        end
-        local refreshHealth = capsule(1, "HP", healthPresets, { colors = "esp_hpcolors", style = "esp_hpstyle", opacity = "esp_hpopacity",
-            presetSetting = "HealthPreset", styleSetting = "HealthBarStyle", opacitySetting = "HealthBarOpacity", barSetting = "HealthBar" })
-        local refreshMode = capsule(2, "MD", modePresets, { colors = "esp_modecolors", style = "esp_mdstyle", opacity = "esp_mdopacity",
-            presetSetting = "ModePreset", styleSetting = "ModeBarStyle", opacitySetting = "ModeBarOpacity", barSetting = "ModeBar" })
-        local shownKey
-        refreshControls = function()
-            local key = table.concat({ settings.HealthPreset, settings.HealthBarStyle, settings.HealthBarOpacity, tostring(settings.HealthBar),
-                settings.ModePreset, settings.ModeBarStyle, settings.ModeBarOpacity, tostring(settings.ModeBar) }, "|")
-            if key == shownKey then return end
-            shownKey = key
-            refreshHealth()
-            refreshMode()
-        end
-    end
-
-    local box, panel
-    local function drawPreview()
-        if not holder then return end
-        if panel and (panel.segments ~= clamp(math.floor(settings.HealthSegments + 0.5), 1, 10)
-            or panel.modeSegments ~= clamp(math.floor(settings.ModeSegments + 0.5), 1, 10)) then
-            box:Destroy()
-            box, panel = nil, nil
-        end
-        if not box then
-            box = Instance.new("Frame")
-            box.Name, box.BackgroundTransparency, box.Size, box.ZIndex = "Panel", 1, UDim2.fromOffset(300, 78), 5
-            box.AnchorPoint, box.Position = Vector2.new(0.5, 0), UDim2.new(0.5, 0, 0, 12)   -- the top part; the controls are below
-            box.Parent = holder
-            panel = esp.BuildPanel(box)
-        end
-        local char = character()
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        local mode, modeCap
-        if char and settings.ModeBar then mode, modeCap = esp.ModeInfo(char) end
-        esp.UpdatePanel(panel, {
-            display = LocalPlayer.DisplayName, user = LocalPlayer.Name,
-            health = hum and healthValue(hum) or nil, maxHealth = hum and healthMax(hum, healthValue(hum)) or 100,
-            downed = char ~= nil and char:FindFirstChild("stayonground") ~= nil,
-            mode = mode, modeCap = modeCap, distance = 42, dodge = esp.DodgeCooldown(LocalPlayer),
-        })
-    end
-    local function shown(gui)
-        while gui do
-            if gui:IsA("GuiObject") and not gui.Visible then return false end
-            if gui:IsA("LayerCollector") then return gui.Enabled end
-            gui = gui.Parent
-        end
-        return false
-    end
-    local last = 0
-    local function previewTick()
-        local now = os.clock()
-        if now - last < 1 / 15 then return end
-        last = now
-        drawPreview()
-        refreshControls()
-    end
-    if holder and Lib.Util.watchInView then
-        local connection
-        local function disconnect() if connection then connection:Disconnect() connection = nil end end
-        local stop = Lib.Util.watchInView(holder, function(visible)
-            disconnect()
-            if visible and hub.Running then
-                last = 0
-                connection = RunService.Heartbeat:Connect(function()
-                    if hub.Running then
-                        local ok, err = pcall(previewTick)
-                        if not ok then hubError("ESP preview", err) end
-                    end
-                end)
-            end
-        end)
-        hub.Cleanup[#hub.Cleanup + 1] = function() stop() disconnect() end
-    else
-        hubConnect(RunService.Heartbeat, function() if holder and shown(holder) then previewTick() end end)
-    end
-end
+EspKit.Preview(PreviewCard, { Settings = settings, Renderer = esp, Read = function()
+    local char = character()
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local mode, capacity
+    if char and settings.ModeBar then mode, capacity = esp.ModeInfo(char) end
+    return { display = LocalPlayer.DisplayName, user = LocalPlayer.Name,
+        health = hum and healthValue(hum) or nil, maxHealth = hum and healthMax(hum, healthValue(hum)) or 100,
+        downed = char ~= nil and char:FindFirstChild("stayonground") ~= nil,
+        mode = mode, modeCap = capacity, distance = 42, dodge = esp.DodgeCooldown(LocalPlayer) }
+end, Controls = {
+    { Label = "HP", Presets = healthPresets, Keys = { colors = "esp_hpcolors", style = "esp_hpstyle", opacity = "esp_hpopacity",
+        presetSetting = "HealthPreset", styleSetting = "HealthBarStyle", opacitySetting = "HealthBarOpacity", barSetting = "HealthBar" } },
+    { Label = "MD", Presets = modePresets, Keys = { colors = "esp_modecolors", style = "esp_mdstyle", opacity = "esp_mdopacity",
+        presetSetting = "ModePreset", styleSetting = "ModeBarStyle", opacitySetting = "ModeBarOpacity", barSetting = "ModeBar" } },
+} })
 
 do
 local ModeCard = ElementTabs.Mode
@@ -1995,100 +1321,27 @@ end })
 
 -- Sky: a small picture of the sky at the chosen hour (the game's own hour while Custom time is off)
 local SkyCard = World:Card({ Title = "Sky · Ambient", Icon = "sun", Side = "Right" })
-local skyCanvas = SkyCard:Canvas({ Height = 74 })
-local drawSky
-do
-    -- sky colours over the day: { hour, top, bottom }
-    local keys = {
-        { 0, rgb(0.04, 0.06, 0.16), rgb(0.1, 0.13, 0.28) }, { 5, rgb(0.15, 0.2, 0.4), rgb(0.95, 0.6, 0.4) },
-        { 7, rgb(0.45, 0.66, 0.9), rgb(0.85, 0.9, 0.95) }, { 12, rgb(0.29, 0.56, 0.89), rgb(0.75, 0.88, 1) },
-        { 17, rgb(0.36, 0.56, 0.85), rgb(1, 0.85, 0.63) }, { 19, rgb(0.23, 0.25, 0.48), rgb(0.95, 0.48, 0.29) },
-        { 21, rgb(0.08, 0.1, 0.23), rgb(0.29, 0.23, 0.42) }, { 24, rgb(0.04, 0.06, 0.16), rgb(0.1, 0.13, 0.28) },
-    }
-    local function at(hour)
-        hour = hour % 24
-        for i = 1, #keys - 1 do
-            local a, b = keys[i], keys[i + 1]
-            if hour >= a[1] and hour <= b[1] then
-                local t = (hour - a[1]) / (b[1] - a[1])
-                return a[2]:Lerp(b[2], t), a[3]:Lerp(b[3], t)
-            end
-        end
-        return keys[1][2], keys[1][3]
-    end
-    local frame = skyCanvas.Frame
-    local parts = {}
-    if frame then
-        parts.sky = Instance.new("Frame")
-        parts.sky.BorderSizePixel, parts.sky.Size, parts.sky.BackgroundColor3 = 0, UDim2.fromScale(1, 1), Color3.new(1, 1, 1)
-        parts.gradient = Instance.new("UIGradient")
-        parts.gradient.Rotation = 90
-        parts.gradient.Parent = parts.sky
-        parts.sky.Parent = frame
-        parts.body = Instance.new("Frame")                         -- the sun by day, the moon by night
-        parts.body.AnchorPoint, parts.body.Size, parts.body.BorderSizePixel = Vector2.new(0.5, 0.5), UDim2.fromOffset(12, 12), 0
-        local round = Instance.new("UICorner")
-        round.CornerRadius = UDim.new(1, 0)
-        round.Parent = parts.body
-        parts.body.Parent = frame
-        parts.ground = Instance.new("Frame")                        -- the ground, tinted by the ambient colour
-        parts.ground.BorderSizePixel, parts.ground.AnchorPoint = 0, Vector2.new(0, 1)
-        parts.ground.Position, parts.ground.Size = UDim2.fromScale(0, 1), UDim2.new(1, 0, 0, 14)
-        parts.ground.Parent = frame
-        parts.label = Instance.new("TextLabel")
-        parts.label.BackgroundTransparency, parts.label.Position, parts.label.Size = 1, UDim2.fromOffset(8, 5), UDim2.new(1, -16, 0, 14)
-        parts.label.TextXAlignment, parts.label.TextSize, parts.label.Font = Enum.TextXAlignment.Left, 11, Enum.Font.GothamMedium
-        parts.label.TextColor3, parts.label.TextStrokeTransparency = Color3.new(1, 1, 1), 0.6
-        parts.label.Parent = frame
-    end
-    function drawSky()
-        local visible = Lib.Util.inView or Lib.Util.shown
-        if not parts.sky or not visible(frame) then return end
-        local hour = settings.CustomTime and settings.ClockTime or (tonumber(Lighting.ClockTime) or 12)
-        local top, bottom = at(hour)
-        parts.gradient.Color = ColorSequence.new(top, bottom)
-        local day = hour >= 6 and hour < 18
-        local t = day and (hour - 6) / 12 or ((hour + 6) % 24) / 12      -- 0..1 across the sky
-        parts.body.Position = UDim2.new(0.08 + t * 0.84, 0, 0.75 - math.sin(t * math.pi) * 0.55, 0)
-        parts.body.BackgroundColor3 = day and rgb(1, 0.86, 0.45) or rgb(0.9, 0.92, 1)
-        local ambient = settings.CustomAmbient and settings.Ambient or Lighting.Ambient
-        parts.ground.BackgroundColor3 = rgb(0.16, 0.24, 0.12):Lerp(ambient, 0.35)
-        local h, m = math.floor(hour), math.floor((hour % 1) * 60 + 0.5)
-        if m == 60 then h, m = h + 1, 0 end
-        parts.label.Text = string.format("%02d:%02d · %s%s", h % 24, m, day and "Day" or "Night", settings.CustomTime and "" or " (game)")
-    end
-end
+local skyPreview = SkyCard:SkyPreview({ Height = 74, Read = function()
+    return { Hour = settings.CustomTime and settings.ClockTime or Lighting.ClockTime,
+        Ambient = settings.CustomAmbient and settings.Ambient or Lighting.Ambient, FromGame = not settings.CustomTime }
+end })
+local function drawSky() skyPreview:Update() end
 local function skySet(key) return function(v) settings[key] = v drawSky() end end
 SkyCard:Toggle({ Title = "Custom time", Flag = "w_customtime", Default = false, Callback = skySet("CustomTime"),
     Slider = { Flag = "w_clock", Min = 0, Max = 24, Step = 0.5, Default = 14, Suffix = " h", Callback = skySet("ClockTime") } })
-loop("Sky preview", 2, function() if not settings.CustomTime then drawSky() end end)
-if skyCanvas.Frame and Lib.Util.watchInView then
-    hub.Cleanup[#hub.Cleanup + 1] = Lib.Util.watchInView(skyCanvas.Frame, function(visible)
-        if visible and hub.Running then drawSky() end
-    end)
-end
 drawSky()
 
 SkyCard:Divider({ Title = "Ambient" })
 local AmbientCard = SkyCard
 AmbientCard:Toggle({ Title = "Custom ambient", Flag = "w_customamb", Default = false, Callback = skySet("CustomAmbient") })
-local ambientSwatches, ambientPicker
-local ambientSyncing = false
-ambientSwatches = AmbientCard:Swatches({ Title = "Color", Style = "Dots", Default = "Grey", DependsOn = { Flag = "w_customamb", Reason = "" }, Items = {
+AmbientCard:ColorChoice({
+    Swatches = { Title = "Color", Style = "Dots", Default = "Grey", DependsOn = { Flag = "w_customamb", Reason = "" }, Items = {
     { "Grey", Color3.fromRGB(180, 180, 180) }, { "Warm", Color3.fromRGB(255, 217, 160) }, { "Cold", Color3.fromRGB(160, 196, 255) },
     { "Violet", Color3.fromRGB(192, 160, 255) }, { "Green", Color3.fromRGB(160, 255, 192) },
-}, Custom = function(open) if ambientPicker and ambientPicker.SetOpen then ambientPicker:SetOpen(open) end end,
-    Callback = function(color) if ambientPicker and not ambientSyncing then ambientPicker:Set(color) end end })
-ambientPicker = AmbientCard:ColorPicker({ Title = "Custom color", Flag = "w_ambient", Default = settings.Ambient, DependsOn = { Flag = "w_customamb", Reason = "" },
-    Callback = function(c)
-        settings.Ambient = c
-        if ambientSwatches then
-            ambientSyncing = true
-            pcall(ambientSwatches.Set, ambientSwatches, c, true)
-            ambientSyncing = false
-        end
-        drawSky()
-    end })
+} },
+    Picker = { Title = "Custom color", Flag = "w_ambient", Default = settings.Ambient, DependsOn = { Flag = "w_customamb", Reason = "" } },
+    Callback = function(c) settings.Ambient = c drawSky() end,
+})
 end
 
 ----- Movement -----
@@ -2520,125 +1773,20 @@ end
 local Server = Tabs.Server
 local SrvCard = Server:Card({ Title = "Servers", Icon = "server", Desc = "Pick by player count and ping" })
 
--- ServerList: not part of the lib, drawn by hand into the card body (bound to theme colours)
-local util = Lib.Util
-local theme = Lib.Theme
--- the list scrolls inside the card: its height is set so the card ends on the same line as Options + Job ID beside it
-local srvBox = util.create("ScrollingFrame", { Name = "ServerList", BackgroundTransparency = 1, BorderSizePixel = 0,
-    Size = UDim2.new(1, 0, 0, 160), CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
-    ScrollingDirection = Enum.ScrollingDirection.Y, ScrollBarThickness = 2, ScrollBarImageTransparency = 0.4,
-    VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar, ElasticBehavior = Enum.ElasticBehavior.Never,
-    LayoutOrder = SrvCard:_order(), Parent = SrvCard.body })
-theme.bind(srvBox, "ScrollBarImageColor3", "muted")
--- rows go in an inner frame (a UIPadding on a ScrollingFrame sizes its children from the unpadded width);
--- the 1 px inset keeps the row outlines from being clipped at the edges
-local srvList = util.create("Frame", { Name = "Rows", BackgroundTransparency = 1, Position = UDim2.fromOffset(1, 1),
-    Size = UDim2.new(1, -2, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, Parent = srvBox })
-util.list(srvList, 5)
-local srvRows, srvCache, srvSort = {}, {}, "Asc"
-local maxServers = 40
-
-local function pingLevel(ms)
-    if ms < 80 then return 4 elseif ms < 150 then return 3 elseif ms < 250 then return 2 end
-    return 1
-end
-local function myPing()
-    local ok, p = pcall(function() return LocalPlayer:GetNetworkPing() * 2000 end)   -- one way → round trip
-    return ok and floor(p) or 0
-end
-
-local function srvRow(order, s, current)
-    local row = util.create("Frame", { Name = "Server", Size = UDim2.new(1, 0, 0, 32), BorderSizePixel = 0, LayoutOrder = order, Parent = srvList })
-    theme.bind(row, "BackgroundColor3", "input")
-    util.corner(row, 8)
-    theme.bind(util.stroke(row), "Color", current and "edge" or "line")
-    local id = util.label(row, "#" .. string.sub(s.id or "", 1, 6), 10, { Position = UDim2.new(0, 9, 0, 0), Size = UDim2.new(0.2, -4, 1, 0) })
-    theme.bind(id, "TextColor3", current and "heading" or "text")
-    local pct = (s.maxPlayers or 0) > 0 and math.clamp((s.playing or 0) / s.maxPlayers, 0, 1) or 0
-    local bar = util.create("Frame", { AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0.2, 4, 0.5, 0), Size = UDim2.new(0.17, 0, 0, 4), BorderSizePixel = 0, Parent = row })
-    theme.bind(bar, "BackgroundColor3", "buttonEdge")
-    util.corner(bar, 2)
-    local fill = util.create("Frame", { Size = UDim2.new(pct, 0, 1, 0), BorderSizePixel = 0, Parent = bar })
-    theme.bind(fill, "BackgroundColor3", "accent")
-    util.corner(fill, 2)
-    local cnt = util.label(row, ("%d/%d"):format(s.playing or 0, s.maxPlayers or 0), 9, { Position = UDim2.new(0.39, 4, 0, 0), Size = UDim2.new(0.12, 0, 1, 0) })
-    theme.bind(cnt, "TextColor3", "muted")
-    local ms = floor(s.ping or 0)
-    local lvl = pingLevel(ms)
-    for k = 1, 4 do
-        local b = util.create("Frame", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0.52, (k - 1) * 4, 0.5, 6), Size = UDim2.fromOffset(2.5, 2 + k * 2), BorderSizePixel = 0, Parent = row })
-        theme.bind(b, "BackgroundColor3", k <= lvl and (lvl >= 3 and "success" or "warning") or "buttonEdge")
-        util.corner(b, 1)
-    end
-    local pl = util.label(row, ms > 0 and (ms .. " ms") or "-", 9, { Position = UDim2.new(0.52, 20, 0, 0), Size = UDim2.new(0.16, 0, 1, 0) })
-    theme.bind(pl, "TextColor3", "muted")
-    local btn = util.create("TextButton", { Text = current and "Rejoin" or "Join", TextSize = 9, Font = Enum.Font.GothamMedium, AutoButtonColor = false,
-        AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -6, 0.5, 0), Size = UDim2.fromOffset(54, 20), BorderSizePixel = 0, Parent = row })
-    theme.bind(btn, "BackgroundColor3", "buttonEdge")
-    theme.bind(btn, "TextColor3", "heading")
-    util.corner(btn, 6)
-    btn.MouseEnter:Connect(function() theme.tweenTo(btn, "BackgroundColor3", "hover", 0.1) end)
-    btn.MouseLeave:Connect(function() theme.tweenTo(btn, "BackgroundColor3", "buttonEdge", 0.1) end)
-    btn.Activated:Connect(function()
+local servers = SrvCard:ServerList({
+    Fetch = fetchServers,
+    Current = function()
+        local ok, ping = pcall(function() return LocalPlayer:GetNetworkPing() * 2000 end)
+        return { id = game.JobId, playing = #Players:GetPlayers(), maxPlayers = Players.MaxPlayers, ping = ok and math.floor(ping) or 0 }
+    end,
+    OnJoin = function(server, current)
         if current then rejoin() return end
-        notify("Server", ("Joining a server with %d/%d players"):format(s.playing or 0, s.maxPlayers or 0), "log-in")
-        TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, LocalPlayer)
-    end)
-    return { row = row, cnt = cnt, fill = fill, pl = pl }
-end
-
-local srvCurrent
-local function drawServers()
-    for _, r in ipairs(srvRows) do r.row:Destroy() end
-    table.clear(srvRows)
-    local list = table.clone(srvCache)
-    if srvSort == "Smallest" then table.sort(list, function(a, b) return (a.playing or 0) < (b.playing or 0) end)
-    elseif srvSort == "Ping" then table.sort(list, function(a, b) return (a.ping or 9999) < (b.ping or 9999) end) end
-    for i = 1, math.min(#list, maxServers) do srvRows[#srvRows + 1] = srvRow(10 + i, list[i], false) end
-    SrvCard:SetDesc(#srvCache > 0 and ("Servers: %d · %s"):format(#srvCache, srvSort == "Smallest" and "emptiest first" or srvSort == "Ping" and "lowest ping first" or "default order")
-        or "No servers found · press Refresh")
-end
-local srvBusy = false
-local function refreshServers()
-    if srvBusy then return end
-    srvBusy = true
-    SrvCard:SetDesc("Loading…")
-    task.spawn(function()
-        local ok, list = pcall(fetchServers)
-        srvBusy = false
-        if not Running then return end
-        srvCache = ok and list or {}
-        local drawn, err = pcall(drawServers)
-        if not drawn then hubError("Server list", err) end
-    end)
-end
-srvCurrent = srvRow(1, { id = game.JobId, playing = #Players:GetPlayers(), maxPlayers = Players.MaxPlayers, ping = myPing() }, true)
-
-local srvBtns = SrvCard:Row()
-srvBtns:Button({ Title = "Refresh", Icon = "refresh-cw", Cooldown = 3, Callback = refreshServers })
-srvBtns:Button({ Title = "Emptiest", Icon = "shuffle", Callback = function() srvSort = "Smallest" drawServers() end })
-srvBtns:Button({ Title = "Lowest ping", Icon = "wifi", Callback = function() srvSort = "Ping" drawServers() end })
-SrvCard:Button({ Title = "Random hop", Icon = "shuffle", Style = "Ghost", Cooldown = 5, Callback = function() serverHop("Random") end })
-if Server.FitHeight then Server:FitHeight(SrvCard, srvBox, { Min = 110, Fallback = 220 }) end
-if Lib.Util.watchInView then
-    local requested = false
-    hub.Cleanup[#hub.Cleanup + 1] = Lib.Util.watchInView(srvBox, function(visible)
-        if visible and Running and not requested then requested = true refreshServers() end
-    end)
-else
-    task.delay(1, function() if Running then refreshServers() end end)
-end
-
--- the "you are here" row: player count and your ping
-local function updateCurrentServer()
-    local n, m = #Players:GetPlayers(), Players.MaxPlayers
-    srvCurrent.cnt.Text = ("%d/%d"):format(n, m)
-    srvCurrent.fill.Size = UDim2.new(m > 0 and n / m or 0, 0, 1, 0)
-    local p = myPing()
-    srvCurrent.pl.Text = p > 0 and (p .. " ms") or "-"
-end
--- The server row has its own visibility gate; the Players table may be below the viewport.
-loop("Current server", 2, whenVisible(srvCurrent.row, updateCurrentServer))
+        notify("Server", ("Joining a server with %d/%d players"):format(server.playing or 0, server.maxPlayers or 0), "log-in")
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, server.id, LocalPlayer)
+    end,
+    OnHop = function() serverHop("Random") end,
+})
+if Server.FitHeight then Server:FitHeight(SrvCard, servers.Frame, { Min = 110, Fallback = 220 }) end
 
 local Opt = Server:Card({ Title = "Options", Icon = "settings-2", Side = "Right" })
 Opt:ListItem({ Title = "Staff alert", Icon = "shield-alert", Toggle = true, Flag = "s_staff", Default = false, Callback = function(on)
@@ -2696,20 +1844,6 @@ local function safe(tag, fn, ...)
     local ok, err = pcall(fn, ...)
     if not ok then hubError(tag, err) end                       -- reports the same error at most once every 10 s
     return ok
-end
-
--- A deadline-based 25 Hz target: work time is not added to the next interval.
--- Frame scheduling still limits the observable rate on low-FPS clients.
-do
-    local period, nextRefresh = 1 / 25, 0
-    connect(RunService.Heartbeat, function()
-        if not Running then return end
-        local now = os.clock()
-        if now < nextRefresh then return end
-        if nextRefresh == 0 then nextRefresh = now end
-        nextRefresh = nextRefresh + (math.floor((now - nextRefresh) / period) + 1) * period
-        safe("ESP", esp.UpdatePanels)
-    end)
 end
 
 connect(RunService.RenderStepped, function()
@@ -2777,7 +1911,6 @@ env.QustahShindoCore = {
         Running = false
         pcall(hubStop)                                           -- farm / spin / player loops and the platform
         for _, c in ipairs(Connections) do pcall(function() c:Disconnect() end) end
-        pcall(esp.DestroyPanels)
         for _, o in pairs(Global.Obj) do Render.remove(o) end
         stopNoClip()
         restoreWorld()
@@ -3075,7 +2208,7 @@ do
 		bossBar:Set(bReady)
 	end
 	pcall(updateCounts)
-	loop("Farm counts", 2, whenVisible(BossSet.frame, updateCounts))
+	cardLoop("Farm counts", BossSet, 2, updateCounts)
 	-- Boss NPCs may load later (distant ones): the lists refresh by themselves when a missiongiver appears or disappears
 	local pending = false
 	local function queueRefresh(obj)
@@ -3336,13 +2469,13 @@ do
 	pcall(function()
 		if isfile and readfile and isfile(resetFile) then resetAt = tonumber(readfile(resetFile)) end
 	end)
-	loop("Daily countdown", 1, function()
+	loop("Daily countdown", 1, whenVisible(nextReset.Row or scheduleCard.frame, function()
 		local target = resetAt or 0
 		local left = (target - os.time() % 86400) % 86400
 		if left == 0 then left = 86400 end
 		nextReset:Set(string.format("%02d:%02d:%02d", math.floor(left / 3600), math.floor(left % 3600 / 60), left % 60)
 			.. (resetAt and " · seen" or " · UTC"))
-	end)
+	end))
 	-- daily quest type -> Auto daily toggle
 	local dailyFlags = { punch = "dl_m1", rush = "dl_rush", chakra = "dl_chi", treejump = "dl_tree", fightboss = "dl_boss" }
 	local dailyState = { dl_m1 = "PunchD", dl_rush = "Rush", dl_chi = "Chi", dl_tree = "TreeD", dl_boss = "DailyBoss" }   -- flag -> farm field
@@ -3430,13 +2563,26 @@ if Tabs.Spin then                                                 -- main menu o
 		On = { Element = false, Bloodline = false, Kenjutsu = false, Race = false },
 		ResetAt = 0, AutoSave = true, Delay = 0.25,
 	}
-	local function persist()                                    -- keep the selections across rejoins
+	local savePending, saveRevision = false, 0
+	local function persist(deferred)                            -- slider changes share one write per 0.3 s
 		if not writefile then return end
-		pcall(function()
+		if deferred then
+			if savePending then return end
+			savePending, saveRevision = true, saveRevision + 1
+			local revision = saveRevision
+			task.delay(0.3, function()
+				if savePending and saveRevision == revision then persist() end
+			end)
+			return
+		end
+		savePending, saveRevision = false, saveRevision + 1
+		local ok, err = pcall(function()
 			if makefolder and isfolder and not isfolder("QustahShindo") then makefolder("QustahShindo") end
 			writefile(saveFile, HttpService:JSONEncode(infSpin))
 		end)
+		if not ok then hubError("Inf Spin save", err) end
 	end
+	hub.Cleanup[#hub.Cleanup + 1] = function() if savePending then persist() end end
 	local fromFile                                               -- state read from the json (restored after AutoLoad)
 	pcall(function()
 		if isfile and isfile(saveFile) then
@@ -3656,9 +2802,9 @@ if Tabs.Spin then                                                 -- main menu o
 
 	local Set = InfPage:Card({ Title = "Settings", Icon = "settings-2", Wide = "Bottom" })
 	Set:Slider({ Title = "Reset when spins reach", Desc = "Rolls back the save and rejoins when spins drop to this", Flag = "is_reset", Min = 0, Max = 100,
-		Default = infSpin.ResetAt, Callback = function(v) infSpin.ResetAt = v persist() end })
+		Default = infSpin.ResetAt, Callback = function(v) infSpin.ResetAt = v persist(true) end })
 	Set:Slider({ Title = "Spin delay", Flag = "is_delay", Min = 0.1, Max = 2, Step = 0.05, Default = infSpin.Delay, Suffix = " s",
-		Callback = function(v) infSpin.Delay = v persist() end })
+		Callback = function(v) infSpin.Delay = v persist(true) end })
 	Set:Toggle({ Title = "Save when done", Desc = "Saves and goes to My Home when you get what you want", Flag = "is_autosave", Default = infSpin.AutoSave,
 		Callback = function(v) infSpin.AutoSave = v persist() end })
 	local row = Set:Row()
@@ -3772,14 +2918,14 @@ if Tabs.Spin then                                                 -- main menu o
 		end
 		return #list > 0 and table.concat(list, ", ") or "-"
 	end
-	loop("Spins", 1, function()
+	loop("Spins", 1, whenVisible(SpinsCard.frame, function()
 		local s = statz()
 		if not s then return end
 		local spins = s:FindFirstChild("spins")
 		spinsInfo:Set(spins and tostring(spins.Value) or "-")
 		slotInfo:Set(join(s, "kg"))
 		elemInfo:Set(join(s, "element"))
-	end)
+	end))
 	Window:SetModule("Auto Spin RELL", env.RELL_RUNNING and "On" or "Off", nil, { Icon = "dices", Tab = "Spin" })
 end
 
@@ -4205,27 +3351,17 @@ do
 		if hub.QuickTiles then hub.QuickTiles:SetTileVisible("Back", true) end
 	end
 	local here = teleportData[game.PlaceId] or {}
-	local names, byName = {}, {}
-	for _, p in ipairs(here) do names[#names + 1] = p[1] byName[p[1]] = p end
+	local names = {}
+	for _, p in ipairs(here) do names[#names + 1] = p[1] end
 	if #names > 0 then
 		-- a searchable list: four places show at once, the rest scroll; each row shows how far it is and has a Go button
 		local places = teleportsPage:Card({ Title = "Locations", Icon = "map-pin", Desc = #names .. " places on this map" })
-		local function distanceText(p)
-			local r = rootPart()
-			if not r then return nil end
-			local d = (r.Position - Vector3.new(p[2], p[3], p[4])).Magnitude
-			return d >= 1000 and string.format("%.1fk studs", d / 1000) or string.format("%d studs", math.floor(d + 0.5))
-		end
-		local items = {}
-		for _, p in ipairs(here) do items[#items + 1] = { Title = p[1], Desc = distanceText(p), Icon = "map-pin" } end
-		local placeList = places:ItemList({ Items = items, Button = "Go", Rows = 4, Placeholder = "Search " .. #names .. " places",
-			Empty = "No place with that name", Callback = function(item)
-				local p = byName[item.Title]
-				if p then teleportFromPage(CFrame.new(p[2], p[3], p[4])) end
-			end })
-		loop("Teleport distances", 2, whenVisible(placeList.Row, function()                    -- distances follow you around
-			for _, p in ipairs(here) do placeList:SetDesc(p[1], distanceText(p)) end
-		end))
+		local locations = {}
+		for _, p in ipairs(here) do locations[#locations + 1] = { Title = p[1], Position = Vector3.new(p[2], p[3], p[4]) } end
+		places:LocationList({ Items = locations, Placeholder = "Search " .. #names .. " places", Empty = "No place with that name",
+			Origin = function() local r = rootPart() return r and r.Position end,
+			Callback = function(item) teleportFromPage(CFrame.new(item.Position)) end,
+		})
 	end
 
 	-- each spot returns the CFrame to teleport to, or nil when it is not on this map
@@ -4305,7 +3441,7 @@ do
 		quickTiles:SetTileVisible("Back", hub.TeleportBack ~= nil)
 	end
 	refreshSpots()
-	loop("Teleport spots", 5, refreshSpots)
+	cardLoop("Teleport spots", quick, 5, refreshSpots)
 
 	-- AFK spots only exist in My Home
 	if placeType == "home" then
@@ -4652,71 +3788,14 @@ end
 task.delay(4, function() if hub.Running then refreshLists(true) end end)    -- if the menu loads late, read the lists once more
 end
 
------ Lock icon -----
--- While the setting it depends on is off, the row is greyed out; only a small lock is shown next to the title (no text).
--- Rows on screen follow their title (text / position changes); a flag change repaints them once.
-do
-	local marks = {}
-	for _, el in pairs(Window.flags or {}) do
-		local row = type(el) == "table" and el.Row
-		local title = row and row:FindFirstChild("Title")
-		if title then
-			local ok, img = pcall(function()
-				return Lib.Icons.Image("lock", { Size = UDim2.fromOffset(10, 10), Color = Color3.fromRGB(150, 155, 168) })
-			end)
-			if ok and img then
-				img.AnchorPoint, img.ZIndex, img.Visible, img.Parent = Vector2.new(0, 0.5), 23, false, row
-				local mark = { row = row, visible = false }
-				function mark.paint()
-					local show = el._depLocked == true and title.Parent ~= nil
-					img.Visible = show
-					if show then
-						img.Position = UDim2.fromOffset(
-							title.AbsolutePosition.X - row.AbsolutePosition.X + title.TextBounds.X + 5,
-							title.AbsolutePosition.Y - row.AbsolutePosition.Y + title.AbsoluteSize.Y / 2)
-					end
-				end
-				local links = {}
-				local function clear()
-					for _, c in ipairs(links) do c:Disconnect() end
-					table.clear(links)
-				end
-				local stop = Lib.Util.watchInView(row, function(visible)
-					clear()
-					mark.visible = visible and hub.Running
-					if mark.visible then
-						mark.paint()
-						for _, spec in ipairs({ { title, "TextBounds" }, { title, "AbsolutePosition" }, { title, "AbsoluteSize" }, { row, "AbsolutePosition" } }) do
-							links[#links + 1] = spec[1]:GetPropertyChangedSignal(spec[2]):Connect(mark.paint)
-						end
-					else img.Visible = false end
-				end)
-				marks[#marks + 1] = mark
-				hub.Cleanup[#hub.Cleanup + 1] = function() stop() clear() end
-			end
-		end
-	end
-	-- The dependents list runs from its end, so this runs before the rows' own DependsOn checks: the repaint waits a
-	-- step to see the new lock states, and several flag changes in a row share one repaint.
-	local queued = false
-	Window._dependents = Window._dependents or {}
-	Window._dependents[#Window._dependents + 1] = function()
-		if not hub.Running then return false end
-		if not queued then
-			queued = true
-			task.defer(function()
-				queued = false
-				for _, mark in ipairs(marks) do
-					if mark.visible and mark.row.Parent then mark.paint() end
-				end
-			end)
-		end
-		return true
-	end
-end
+----- Dependency icons -----
+hub.Cleanup[#hub.Cleanup + 1] = Lib.Util.dependencyIcons(Window)
 
 ----- Startup -----
 Window:SettingsTab({ Compact = true })
 Window.Config:LoadAutoLoad()
-for _, fn in ipairs(hub.AfterAutoLoad or {}) do pcall(fn) end
+for index, fn in ipairs(hub.AfterAutoLoad or {}) do
+	local ok, err = pcall(fn)
+	if not ok then hubError("AfterAutoLoad " .. index, err) end
+end
 Window:Notify({ Title = "Qustāh Shindo", Content = "Loaded · " .. placeName() .. " · RShift to toggle", Icon = "sparkles" })
