@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V2.08
+-- Qustāh · Shindo Life · V2.09
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -76,8 +76,42 @@ if workspace:FindFirstChild("bossbattle") and canReadMentor and autoMentor then
 end
 
 local Lib = loadstring(game:HttpGet("https://raw.githubusercontent.com/79650/gwanjkcdsjawbdnjascdas-ui-lib/refs/heads/main/qustah-ui-lib/dist/qustah-ui-lib.lua"))()
--- The ESP (bar presets, the panels, the menu preview) lives in its own file next to Auto Spin RELL
-local EspKit = loadstring(game:HttpGet("https://raw.githubusercontent.com/79650/dg3b2352313124scjd3124sanhgcdsahncdas457hs1amgdcankjcj/refs/heads/main/esp", true))()(Lib)
+----- Shindo files -----
+-- The ESP (bar presets, the panels, the menu preview) and the teleport locations live in their own raw files, next
+-- to Auto Spin RELL. A file that does not load leaves the hub working without it: the ESP becomes a stub (no panels,
+-- a notice on its page), the Locations card stays empty, and the error is reported in Settings › Info.
+local shindoFiles = "https://raw.githubusercontent.com/79650/dg3b2352313124scjd3124sanhgcdsahncdas457hs1amgdcankjcj/refs/heads/main/shindo/"
+local fileErrors = {}
+local function loadShindoFile(name, ...)
+    local args = table.pack(...)
+    local ok, result = pcall(function()
+        local chunk, err = loadstring(game:HttpGet(shindoFiles .. name, true))
+        if not chunk then error(err, 0) end
+        local value = chunk()
+        if type(value) == "function" then value = value(table.unpack(args, 1, args.n)) end
+        return value
+    end)
+    if ok and result ~= nil then return result end
+    fileErrors[name] = tostring(result)
+    return nil
+end
+local EspKit = loadShindoFile("esp.lua", Lib)
+if not EspKit then
+    local plain = Color3.new(1, 1, 1)
+    EspKit = {
+        Missing = true,
+        Palettes = { Mode = {}, Health = {}, ColorAt = function() return plain end },
+        Create = function(cfg)
+            local state = cfg.State
+            function state.DropAll() end
+            function state:Destroy() end
+            return state
+        end,
+        Preview = function(card)
+            card:Notice({ Kind = "warning", Title = "ESP could not be loaded", Desc = "Re-run the hub; the details are in Settings › Info", Icon = "triangle-alert" })
+        end,
+    }
+end
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -486,7 +520,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V2.08",
+	Version = "V2.09",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -496,6 +530,15 @@ Window = Lib:CreateWindow({
 	ResetButtons = false,                                         -- no reset icons for now (an element can ask for one with Reset = true)
 	OnClose = function() if unloadThis then unloadThis() end end,
 })
+-- a raw file that did not load (see "Shindo files"): reported once, here and after each later download
+local function reportFileErrors()
+    for name, err in pairs(fileErrors) do
+        hubError("File " .. name, err, "Download")
+        notify("Qustāh Shindo", name .. " could not be loaded; the hub runs without it", "triangle-alert", "warning")
+    end
+    table.clear(fileErrors)
+end
+reportFileErrors()
 
 Window:DashboardTab({ Info = {
 	{ "Location", placeName() },
@@ -624,7 +667,7 @@ local function healthValue(hum)
 end
 local function healthMax(hum, health) return math.max(tonumber(hum.MaxHealth) or 1, health or 0, 1) end
 local function isAlive(hum) return hum and healthValue(hum) > 0 end
--- Bar colour presets (Visuals › Style): three stops each, from empty through the middle to full. A preset's colour
+-- Bar colour presets (picked on the ESP preview): three stops each, from empty through the middle to full. A preset's colour
 -- at p (0..1) is read along its stops; the bars show the stops as a gradient (the ESP module).
 local modePresets, healthPresets = EspKit.Palettes.Mode, EspKit.Palettes.Health
 local presetAt = EspKit.Palettes.ColorAt
@@ -635,7 +678,7 @@ local function toScreen(pos)
     local v, on = Camera:WorldToViewportPoint(pos)
     return vec2(v.X, v.Y), on, v.Z
 end
--- health bar colour by the chosen preset (Visuals › Style › Health bar colors); "Classic" goes red → yellow → green
+-- health bar colour by the chosen preset (picked on the ESP preview); "Classic" goes red → yellow → green
 local function healthColor(p)
     return presetAt(healthPresets[settings.HealthPreset] or healthPresets.Classic, p)
 end
@@ -1204,7 +1247,6 @@ end
 do
 local Visuals = Tabs.Visuals
 local EspPage = Visuals:Page("ESP")
-local StylePage = Visuals:Page("Style")
 
 -- Card tabs: ESP (Range / Performance), Elements (Text / Health / Mode) on the left; Preview and Chams (Fill / Outline)
 -- on the right; Target pins below.
@@ -1284,19 +1326,15 @@ ChamsTabs.Fill:ColorPicker({ Title = "Fill color", Flag = "esp_chamscolor", Defa
 ChamsTabs.Outline:ColorPicker({ Title = "Outline color", Flag = "esp_chamsout", Default = white, DependsOn = { Flag = "esp_chams", Reason = "" }, Callback = set("ChamsOutline") })
 
 
--- Bar colours: Health and Mode share one card with separate tabs.
-local BarColors = StylePage:Card({ Title = "Bar colors", Icon = "palette", Side = "Left" })
-local ColorTabs = BarColors:Tabs({ "Health", "Mode" })
-local HealthColors = ColorTabs.Health
-HealthColors:Segment({ Title = "Bar style", Flag = "esp_hpstyle", Items = { "Smooth", "Stripes" }, Default = "Smooth", Callback = set("HealthBarStyle") })
-HealthColors:Slider({ Title = "Opacity", Flag = "esp_hpopacity", Min = 10, Max = 100, Default = 100, Suffix = "%", Callback = function(v) settings.HealthBarOpacity = v / 100 end })
-HealthColors:Swatches({ Title = "From empty to full", Flag = "esp_hpcolors", Default = "Ice", Columns = 2, Items = healthPresets,
-    Callback = function(_, name) settings.HealthPreset = name end })
-local ModeColors = ColorTabs.Mode
-ModeColors:Segment({ Title = "Bar style", Flag = "esp_mdstyle", Items = { "Smooth", "Stripes" }, Default = "Stripes", Callback = set("ModeBarStyle") })
-ModeColors:Slider({ Title = "Opacity", Flag = "esp_mdopacity", Min = 10, Max = 100, Default = 100, Suffix = "%", Callback = function(v) settings.ModeBarOpacity = v / 100 end })
-ModeColors:Swatches({ Title = "From empty to full", Flag = "esp_modecolors", Default = "Aurora", Columns = 2, Items = modePresets,
-    Callback = function(_, name) settings.ModePreset = name end })
+local function clampOpacity(v) return math.clamp(tonumber(v) or 100, 10, 100) / 100 end   -- percent → 0.1 .. 1
+-- Bar colours, styles and opacity: set from the capsules on the ESP preview. They have no row of their own in the
+-- menu (Window:Value), but are saved with profiles under the same flags as before.
+Window:Value({ Flag = "esp_hpcolors", Default = "Ice", Callback = set("HealthPreset") })
+Window:Value({ Flag = "esp_hpstyle", Default = "Smooth", Callback = set("HealthBarStyle") })
+Window:Value({ Flag = "esp_hpopacity", Default = 100, Callback = function(v) settings.HealthBarOpacity = clampOpacity(v) end })
+Window:Value({ Flag = "esp_modecolors", Default = "Aurora", Callback = set("ModePreset") })
+Window:Value({ Flag = "esp_mdstyle", Default = "Stripes", Callback = set("ModeBarStyle") })
+Window:Value({ Flag = "esp_mdopacity", Default = 100, Callback = function(v) settings.ModeBarOpacity = clampOpacity(v) end })
 end
 
 ----- World -----
@@ -3123,211 +3161,8 @@ do
 end
 
 ----- Teleport -----
-local teleportData = {
-    [4601350809] = {
-        { "Kage Office", 11984, 991, -17752 },
-        { "The Top of Kage Office", 11980, 1130, -17770 },
-        { "Obelisk Small Round Structure", 11670, 730, -17600 },
-        { "Arena Auditorium", 11975, 657, -15950 },
-        { "Shikai Forest (X)", 13593.5, 515, -15769 },
-        { "Ryuji Cave (X)", 13863.5, 713, -17094 },
-        { "Ryuji Cave Entrance 1", 13790.7, 526.5, -16774 },
-        { "Ryuji Cave Entrance 2", 13854.7, 518.8, -16967.5 },
-        { "Ryuji Cave Laboratory", 13712, 537, -16903.5 },
-        { "Cobra Place", 13781, 426, -16740 },
-        { "Shindai Valley (X)", 14383.5, 518, -17560 },
-        { "House Outside the Village", 15405, 498, -16150 },
-        { "Tree Top 1", 11858, 970, -16385 },
-        { "Tree Top 2", 12195, 1036, -17110 },
-        { "Tree Top 3", 12670, 925, -17222 },
-        { "Tree Top 4", 12470, 873, -16410 },
-        { "Tree Top 5", 13023, 844, -16741 },
-        { "Obelisk Bridge 1", 11670, 849, -16505 },
-        { "Obelisk Bridge 2", 11670, 849, -17147 },
-        { "Obelisk Bridge 3", 11830, 849, -17455 },
-        { "Obelisk Bridge 4", 12295, 865, -17743 },
-        { "Obelisk Bridge 5", 12475, 849, -17455 },
-        { "Water Area 1", 12752, 845, -16722 },
-        { "Water Area 2", 14441, 471, -16648 },
-        { "Water Area 3", 15325, 471, -16700 },
-    },
-    [4601350656] = {
-        { "Kage Office", 18020, 944, -19220 },
-        { "The Back of Kage Office", 18085, 884, -19615 },
-        { "Arena Auditorium", 17255, 668, -18197 },
-        { "Nimbus Bridge", 16660, 724, -18780 },
-        { "Samurai Bridge (X)", 15635, 597, -17740 },
-        { "Snow Area", 14655, 779, -18915 },
-        { "Sovereign Summit (X)", 14047, 633, -19355 },
-        { "Sovereign Summit Entrance 1", 14046, 641, -19162 },
-        { "Sovereign Summit Entrance 2", 14148, 640, -19404 },
-        { "Water Area 1", 15785, 488, -18645 },
-        { "Water Area 2", 13690, 618, -18225 },
-        { "Water Area 3", 15512, 471, -16455 },
-    },
-    [4601350214] = {
-        { "Ember Gate 1", 18200, 657, -15810 },
-        { "Ember Gate 2", 18405, 657, -16165 },
-        { "Ember Gate 3", 18407, 657, -15457 },
-        { "Ember Bridge", 18525, 658, -15810 },
-        { "Kage Office", 18900, 691, -15805 },
-        { "Academy Rooftop", 18757, 710, -16130 },
-        { "Ember Military Police Force", 18881, 678, -15995 },
-        { "Arena Auditorium", 18014, 678, -15527 },
-        { "Ember Hideout", 19500, 726, -15870 },
-        { "Houses Outside the Village", 17485, 624, -16357 },
-        { "Mount Maki (X)", 17424, 934, -17003 },
-        { "Flat Area 1", 16990, 594, -15330 },
-        { "Flat Area 2", 18358, 652, -15115 },
-        { "Water Area 1", 17085, 568, -16100 },
-        { "Water Area 2", 18407, 631, -16700 },
-        { "Water Area 3", 18223, 650, -14283 },
-        { "Tree Top 1", 18700, 788, -15934 },
-        { "Tree Top 2", 18199, 826, -15471 },
-        { "Tree Top 3", 18364, 848, -16272 },
-    },
-    [4601350760] = {
-        { "Kage Office", 16275, 821, -10925 },
-        { "Entrance of Haze Village", 16781, 661, -12080 },
-        { "Arena Auditorium", 17185, 677, -10525 },
-        { "Temple Structure", 16195, 666, -11830 },
-        { "Great Narumaki Bridge (X)", 16230, 661, -13020 },
-        { "Tree Top (Kage Office)", 16260, 968, -10900 },
-        { "Tree Top 1", 16682, 849, -11226 },
-        { "Tree Top 2", 17228, 930, -10840 },
-        { "Tree Top 3", 16867, 812, -12232 },
-        { "Tree Top 4", 16416, 768, -13180 },
-        { "Tree Top 5", 16320, 842, -14157 },
-        { "Tree Top 6", 17972, 907, -13836 },
-        { "Zabuza & Haku's Grave Easter Egg", 16378, 802, -12477 },
-        { "Secret Place (Atlantis???)", 15851, 488, -11598 },
-    },
-    [4601350394] = {
-        { "Kage Office", 12845, 297, -12945 },
-        { "That 1 House that's on the High Ground", 12910, 321, -13210 },
-        { "Arena Auditorium", 12680, 255, -13930 },
-        { "Bridge 1", 12835, 331, -13735 },
-        { "Bridge 2", 12885, 370, -14210 },
-        { "Bridge 3", 13700, 408, -14355 },
-        { "Sand Area 1", 13195, 245, -13840 },
-        { "Sand Area 2", 13075, 400, -15025 },
-        { "Sand Area 3", 13690, 400, -14930 },
-        { "Grass Area", 14890, 497, -15760 },
-        { "House Outside the Village", 15410, 498, -16145 },
-        { "Summoning Jutsu Easter Egg", 14415.5, 688, -15799.5 },
-        { "Secret Underground Structure", 13744, 303, -14704 },
-    },
-    [5451405681] = {
-        { "Vinland Gate 1", 21035, 647, -11490 },
-        { "Vinland Gate 2", 19436, 647, -12445 },
-        { "Vinland Gate 3", 18560, 647, -11460 },
-        { "Kage Office", 19705, 1109, -11190 },
-        { "The Top of Kage Office", 19707.5, 1266, -11175 },
-        { "Small Park Under the Kage Office", 19645, 871, -11265 },
-        { "Top of the Mountain", 19735, 1378, -10115 },
-        { "Shikai Forest (X)", 19164, 659, -13335 },
-        { "Main Pipe 1 (head)", 20725, 722, -13635 },
-        { "Main Pipe 1 (end)", 20395, 959, -11930 },
-        { "Main Pipe 2 (head)", 19365, 722, -13647 },
-        { "Main Pipe 2 (end)", 19368.8, 691, -12205 },
-    },
-    [5431071837] = {
-        { "That 1 Rock in the Middle", 19688, 698, -11544 },
-        { "The River", 19750, 652, -11910 },
-        { "Under the Map 1", 19750, 652, -11550 },
-        { "Under the Map 2", 19750, 652, -12250 },
-        { "Hill Area 1", 20450, 772, -10910 },
-        { "Hill Area 2", 19260, 782, -10865 },
-        { "Hill Area 3", 19300, 935, -12780 },
-        { "Hill Area 4", 19630, 837, -12805 },
-        { "Outside the Map 1", 21300, 652, -13600 },
-        { "Outside the Map 2", 18100, 652, -13600 },
-        { "Outside the Map 3", 18100, 652, -10300 },
-        { "Outside the Map 4", 21430, 652, -10300 },
-    },
-    [5447073001] = {
-        { "Top of the Building", 19930, 963, -12185 },
-        { "DES Exams", 20265, 331, -12347 },
-        { "Bridge 1", 19370, 680, -11907 },
-        { "Bridge 2", 20730, 680, -12030 },
-        { "Bridge 3", 20745, 677, -11690 },
-    },
-    [6901575446] = {
-        { "Entrance of Tempest", 19660, 648, -11612 },
-        { "Tempest Training Field", 19275, 662, -11655 },
-    },
-    [6986372023] = {
-        { "Blaze Gate 1", 19467, 670, -10903 },
-        { "Blaze Gate 2", 19550, 670, -11360 },
-        { "Blaze Gate 3", 19824, 670, -11893 },
-        { "Blaze Gate 4", 19513, 670, -12417 },
-        { "Blaze Gate 5", 19255, 670, -12818 },
-        { "Bridge 1", 19230, 657, -11283 },
-        { "Bridge 2", 18950, 657, -11830 },
-        { "Bridge 3", 19055, 657, -12370 },
-        { "Kage Office", 18280, 741, -12000 },
-        { "Small Pond", 18400, 665, -11490 },
-        { "Academy Rooftop", 18881, 763, -10957 },
-        { "Blaze Military Police Force", 18365, 694, -11750 },
-        { "Hospital", 18860, 670, -12612 },
-        { "Arena Auditorium", 18595, 690, -11532 },
-        { "Blaze Hideout", 18055, 298, -12222 },
-        { "Entrance of Blaze Hideout", 18309.8, 695, -12153 },
-        { "Forest of Embers (X)", 19980, 669, -12640 },
-        { "Top of the Building in Forest of Embers", 20505, 960, -13330 },
-        { "DES Exams (X)", 21203.7, 335, -13461.1 },
-    },
-    [5451398863] = {
-        { "In Front of The Bridge 1", 20645, 762, -13250 },
-        { "In Front of The Bridge 2", 20645, 762, -11050 },
-        { "On The Bridge 1", 20645, 762, -12945 },
-        { "On The Bridge 2", 20645, 762, -12250 },
-        { "On The Bridge 3", 20645, 762, -11345 },
-        { "On The Bridge 4", 20645, 729, -12945 },
-        { "On The Bridge 5", 20645, 729, -12250 },
-        { "On The Bridge 6", 20645, 729, -11345 },
-        { "Under The Bridge 1", 20645, 665, -11300 },
-        { "Under The Bridge 2", 20645, 656, -12250 },
-        { "Under The Bridge 3", 20645, 665, -13000 },
-        { "Houses", 20650, 767, -13645 },
-        { "Island 1", 20160, 779, -12000 },
-        { "Island 2", 21053, 761, -11645 },
-    },
-    [5451401540] = {
-        { "Statue 1", 19140, 1005, -11073 },
-        { "Statue 2", 18854, 1006, -11070 },
-        { "Under the Waterfall", 18980, 631, -11065 },
-        { "Flat Area 1", 18170, 643, -13270 },
-        { "Flat Area 2", 19365, 644, -12890 },
-        { "Flat Area 3", 18975, 684, -11790 },
-        { "Water Area 1", 19290, 812, -10565 },
-        { "Water Area 2", 18220, 812, -11125 },
-        { "Water Area 3", 18865, 631, -13410 },
-        { "Water Area 4", 18620, 631, -12750 },
-    },
-    [6602103757] = {
-        { "Pond 1", 21010, 649, -13075 },
-        { "Pond 2", 20470, 649, -13540 },
-        { "Pond 3", 21200, 649, -13667 },
-    },
-    [5255237254] = {
-        { "Bridge 1", 20345, 661, -12660 },
-        { "Bridge 2", 20165, 691, -11050 },
-        { "Water Pond", 21010, 670, -10800 },
-        { "Oil Pond 1", 20573, 651, -12328 },
-        { "Oil Pond 2", 18768, 651, -10870 },
-        { "Flat Area Outside the Map", 21565, 627, -11660 },
-    },
-    [5824792748] = {
-        { "Ryuji Cave Entrance", 18764, 916, -10865 },
-        { "Ryuji Cave Laboratory", 18900, 938, -10560 },
-        { "Snake Sage Place", 18982, 717, -10967 },
-        { "Cobra Place", 18780, 656, -11400 },
-        { "Open Area 1", 18745, 902, -11355 },
-        { "Open Area 2", 18725, 957, -10390 },
-        { "Open Area 3", 18737, 1040, -10670 },
-    },
-}
+local teleportData = loadShindoFile("teleports.lua") or {}
+reportFileErrors()
 do
 	-- Only what exists on the current map is shown: the Locations card needs saved spots for this place,
 	-- and each quick spot appears once its target is found (rechecked every few seconds, parts can stream in late).
