@@ -1,4 +1,4 @@
--- Qustāh · Shindo Life · V2.07
+-- Qustāh · Shindo Life · V2.08
 
 -- After a teleport the hub reloads itself from this raw link (queue_on_teleport)
 local rawLink = "https://raw.githubusercontent.com/79650/jewvjs-s-savhas-sh-sahsvsjebebs-wneve/refs/heads/main/QustahShindo.lua"
@@ -285,19 +285,13 @@ local function whenVisible(object, fn)
 	local function run(...)
 		if hub.Running and visible then return fn(...) end
 	end
-	if Lib.Util.watchInView then
-		hub.Cleanup[#hub.Cleanup + 1] = Lib.Util.watchInView(object, function(on)
-			visible = on
-			if on and hub.Running then
-				local ok, err = pcall(fn)
-				if not ok then hubError("Visible panel", err) end
-			end
-		end)
-	else
-		return function(...)
-			if hub.Running and Lib.Util.inView(object) then return fn(...) end
+	hub.Cleanup[#hub.Cleanup + 1] = Lib.Util.watchInView(object, function(on)
+		visible = on
+		if on and hub.Running then
+			local ok, err = pcall(fn)
+			if not ok then hubError("Visible panel", err) end
 		end
-	end
+	end)
 	return run
 end
 -- runs callback every interval seconds while the card is on screen
@@ -492,7 +486,7 @@ end
 ----- Window -----
 Window = Lib:CreateWindow({
 	Title = "Qustāh",
-	Version = "V2.07",
+	Version = "V2.08",
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -552,17 +546,9 @@ local FindFirstChild = game.FindFirstChild                      -- a plain call 
 
 local env = (getgenv and getgenv()) or _G
 
-local Running = true
-local Connections = {}
-local function connect(signal, fn)
-    local c = signal:Connect(fn)
-    Connections[#Connections + 1] = c
-    return c
-end
-
 local newcclosure = newcclosure or function(f) return f end
 local vec2, vec3, cframe, rgb = Vector2.new, Vector3.new, CFrame.new, Color3.new
-local floor, clamp = math.floor, math.clamp
+local floor = math.floor
 local black, white = rgb(0, 0, 0), rgb(1, 1, 1)
 
 ----- Settings -----
@@ -639,7 +625,7 @@ end
 local function healthMax(hum, health) return math.max(tonumber(hum.MaxHealth) or 1, health or 0, 1) end
 local function isAlive(hum) return hum and healthValue(hum) > 0 end
 -- Bar colour presets (Visuals › Style): three stops each, from empty through the middle to full. A preset's colour
--- at p (0..1) is read along its stops; the bars show the stops as a gradient (see esp.Gradient).
+-- at p (0..1) is read along its stops; the bars show the stops as a gradient (the ESP module).
 local modePresets, healthPresets = EspKit.Palettes.Mode, EspKit.Palettes.Health
 local presetAt = EspKit.Palettes.ColorAt
 local function modeColorFor(mode)
@@ -770,7 +756,7 @@ local function installNamecallHook()
     end
     local function redirect(self)
         local target = Silent.Target
-        if not (Running and settings.SA_Enabled and target and Camera and self == Camera) or checkcaller() then return end
+        if not (hub.Running and settings.SA_Enabled and target and Camera and self == Camera) or checkcaller() then return end
         local method = getnamecallmethod()
         if (method ~= "ScreenPointToRay" and method ~= "ViewportPointToRay") or not roll() then return end
         local direction = target.Position - Camera.CFrame.Position
@@ -787,8 +773,10 @@ local function installNamecallHook()
     return true
 end
 
------ ESP -----
-local esp = { Frame = 0 }
+----- FOV drawings -----
+-- Drawing objects of the FOV circle and the target line (Combat): created on first use, hidden when a frame does
+-- not use them. drawings.Frame counts the frames. (The overhead ESP is in its own file, see EspKit below.)
+local drawings = { Frame = 0 }
 
 local function use(e, key, kind)                                 -- objects are created on first use
     local o = e.Obj[key]
@@ -797,14 +785,14 @@ local function use(e, key, kind)                                 -- objects are 
         if not o then return nil end
         e.Obj[key] = o
     end
-    e.Stamp[key] = esp.Frame
+    e.Stamp[key] = drawings.Frame
     e.Vis[key] = true
     return o
 end
 -- Hides FOV / target-line drawings not used this frame; track visibility for executors without readable properties.
 local function hideUnused(e, all)
     for key, o in pairs(e.Obj) do
-        if e.Vis[key] and (all or e.Stamp[key] ~= esp.Frame) then
+        if e.Vis[key] and (all or e.Stamp[key] ~= drawings.Frame) then
             local ok = pcall(function() o.Visible = false end)
             e.Vis[key] = false
             if not ok then
@@ -814,12 +802,15 @@ local function hideUnused(e, all)
         end
     end
 end
-local function removeEntry(plr)
+-- a player who left: drop their Silent Aim caches (visibility ray, random part)
+local function forgetPlayer(plr)
     VisCache[plr] = nil
     RandomPick[plr] = nil
 end
 
------ ESP game adapters -----
+----- ESP -----
+-- The state table the ESP module fills (panels, selection); the game reads below are handed to it.
+local esp = {}
 function esp.ModeInfo(char)
     local combat = FindFirstChild(char, "combat")
     local mode = combat and FindFirstChild(combat, "mode")
@@ -991,8 +982,8 @@ hub.Cleanup[#hub.Cleanup + 1] = function()
     if originalZoom then LocalPlayer.CameraMaxZoomDistance = originalZoom originalZoom = nil end
 end
 
-connect(RunService.Stepped, function()
-    if not Running then return end
+hubConnect(RunService.Stepped, function()
+    if not hub.Running then return end
     local char = LocalPlayer.Character
     if settings.NoClip and char then
         if NoClip.character ~= char then NoClip.bind(char) end
@@ -1007,8 +998,8 @@ connect(RunService.Stepped, function()
     end
 end)
 
-connect(RunService.Heartbeat, function()
-    if not Running then return end
+hubConnect(RunService.Heartbeat, function()
+    if not hub.Running then return end
     if originalZoom and not settings.UnlockZoom then
         LocalPlayer.CameraMaxZoomDistance = originalZoom
         originalZoom = nil
@@ -1018,8 +1009,8 @@ connect(RunService.Heartbeat, function()
     end
 end)
 
-connect(UserInputService.InputBegan, function(input, processed)
-    if processed or not (Running and settings.ClickTP) then return end
+hubConnect(UserInputService.InputBegan, function(input, processed)
+    if processed or not (hub.Running and settings.ClickTP) then return end
     if input.UserInputType == Enum.UserInputType.MouseButton1 and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
         local _, _, root = getCharacter(LocalPlayer)
         local hit = Mouse.Hit
@@ -1039,7 +1030,7 @@ local function releaseIdle()
     table.clear(disabledIdle)
 end
 local function applyAntiAfk()
-    if not (Running and settings.AntiAfk) then releaseIdle() return end
+    if not (hub.Running and settings.AntiAfk) then releaseIdle() return end
     if fallbackIdle or #disabledIdle > 0 then return end
     if type(getconnections) == "function" then
         local ok, links = pcall(getconnections, LocalPlayer.Idled)
@@ -1057,7 +1048,7 @@ local function applyAntiAfk()
     end
     if #disabledIdle == 0 then
         fallbackIdle = LocalPlayer.Idled:Connect(function()
-            if not (Running and settings.AntiAfk) then return end
+            if not (hub.Running and settings.AntiAfk) then return end
             pcall(function()
                 VirtualUser:CaptureController()
                 VirtualUser:ClickButton2(Vector2.zero)
@@ -1104,11 +1095,11 @@ local function fetchServers()
 end
 local hopBusy = false
 local function serverHop(mode)
-    if not Running or hopBusy then return end
+    if not hub.Running or hopBusy then return end
     hopBusy = true
     local ok, err = pcall(function()
         local list = fetchServers()
-        if not Running then return end
+        if not hub.Running then return end
         if #list == 0 then
             notify("Server hop", "No suitable server found", "server-off", "warning")
             return
@@ -1124,7 +1115,7 @@ local function serverHop(mode)
             pick = list[math.random(1, #list)]
         end
         notify("Server hop", ("Joining a server with %d/%d players"):format(pick.playing or 0, pick.maxPlayers or 0), "shuffle")
-        if Running then TeleportService:TeleportToPlaceInstance(game.PlaceId, pick.id, LocalPlayer) end
+        if hub.Running then TeleportService:TeleportToPlaceInstance(game.PlaceId, pick.id, LocalPlayer) end
     end)
     -- Coalesce staff checks that finish just after the first request.
     task.delay(ok and 3 or 0, function() hopBusy = false end)
@@ -1135,7 +1126,7 @@ local function checkStaff(plr)
     if not (settings.StaffAlert and settings.StaffGroup > 0) or plr == LocalPlayer then return end
     task.spawn(function()
         local ok, rank = pcall(function() return plr:GetRankInGroup(settings.StaffGroup) end)
-        if not (Running and settings.StaffAlert and ok and rank and rank >= settings.StaffRank) then return end
+        if not (hub.Running and settings.StaffAlert and ok and rank and rank >= settings.StaffRank) then return end
         notify("Staff in game", ("%s (rank %d) joined the server"):format(plr.Name, rank), "shield-alert", "danger")
         if settings.StaffAction == "Hop" then serverHop("Random")
         elseif settings.StaffAction == "Leave" then LocalPlayer:Kick("Qustāh: staff joined, left the game") end
@@ -1229,7 +1220,7 @@ EspTabs.Range:Slider({ Title = "Nearest players", Desc = "Closest unpinned playe
 EspTabs.Performance:Toggle({ Title = "Distance throttle", Desc = "Far ESP updates less often", Flag = "esp_throttle", Default = false, Callback = set("DistanceThrottle") })
 EspTabs.Performance:Toggle({ Title = "Offscreen sleep", Desc = "Pauses ESP outside the screen", Flag = "esp_sleep", Default = false, Callback = set("OffscreenSleep") })
 
--- player info, health and mode: the overhead block (see "ESP overhead")
+-- player info, health and mode: what the overhead panel shows (drawn by the ESP module)
 local ElementTabs = EspPage:Card({ Title = "Elements", Icon = "layers", Side = "Left" }):Tabs({ "Text", "Health", "Mode" })
 do
 local InfoCard = ElementTabs.Text
@@ -1786,7 +1777,7 @@ local servers = SrvCard:ServerList({
     end,
     OnHop = function() serverHop("Random") end,
 })
-if Server.FitHeight then Server:FitHeight(SrvCard, servers.Frame, { Min = 110, Fallback = 220 }) end
+Server:FitHeight(SrvCard, servers.Frame, { Min = 110, Fallback = 220 })
 
 local Opt = Server:Card({ Title = "Options", Icon = "settings-2", Side = "Right" })
 Opt:ListItem({ Title = "Staff alert", Icon = "shield-alert", Toggle = true, Flag = "s_staff", Default = false, Callback = function(on)
@@ -1825,30 +1816,30 @@ Window:SetModule("ESP", settings.ESP_Enabled and "On" or "Off", nil, { Icon = "e
 Window:SetModule("Silent Aim", CanHook and "Off" or "Limited", not CanHook and "no hook" or nil, { Icon = "target", Tab = "Combat" })
 
 Window:OnKick(function()
-    if settings.AutoRejoin then task.delay(2, function() if Running and settings.AutoRejoin then rejoin() end end) end
+    if settings.AutoRejoin then task.delay(2, function() if hub.Running and settings.AutoRejoin then rejoin() end end) end
 end)
 
 ----- Loops -----
-connect(Workspace:GetPropertyChangedSignal("CurrentCamera"), function()
+hubConnect(Workspace:GetPropertyChangedSignal("CurrentCamera"), function()
     Camera = Workspace.CurrentCamera
 end)
-connect(Players.PlayerRemoving, function(plr)
-    removeEntry(plr)
+hubConnect(Players.PlayerRemoving, function(plr)
+    forgetPlayer(plr)
     if Spectating == plr then spectate(nil) end
 end)
-connect(Players.PlayerAdded, checkStaff)
+hubConnect(Players.PlayerAdded, checkStaff)
 
--- Every part runs in its own pcall: an error in one player's ESP does not freeze the FOV, other players or the world.
--- (Previously a single ESP error stopped the rest of the frame, including the FOV circle.)
+-- Each part of the frame runs in its own pcall: an error in the FOV drawings does not stop the world settings or
+-- spectating, and the other way round. (The ESP panels have their own 25 Hz loop in the ESP module.)
 local function safe(tag, fn, ...)
     local ok, err = pcall(fn, ...)
     if not ok then hubError(tag, err) end                       -- reports the same error at most once every 10 s
     return ok
 end
 
-connect(RunService.RenderStepped, function()
-    if not Running then return end
-    esp.Frame += 1
+hubConnect(RunService.RenderStepped, function()
+    if not hub.Running then return end
+    drawings.Frame += 1
     if not Camera then
         Silent.Target = nil
         hideUnused(Global, true)
@@ -1891,13 +1882,12 @@ do
         end)
     end
     local row = playerTable.Row
-    local seen = Lib.Util.inView or Lib.Util.shown
-    local function visible() return not (row and seen) or seen(row) end
-    if row and Lib.Util.watchInView then
-        hub.Cleanup[#hub.Cleanup + 1] = Lib.Util.watchInView(row, function(shown) if shown and Running then refreshPlayerTable() end end)
+    local function visible() return not row or Lib.Util.inView(row) end
+    if row then
+        hub.Cleanup[#hub.Cleanup + 1] = Lib.Util.watchInView(row, function(shown) if shown and hub.Running then refreshPlayerTable() end end)
     end
     task.spawn(function()
-        while Running do
+        while hub.Running do
             if visible() then refreshPlayerTable() end
             task.wait(2)
         end
@@ -1907,10 +1897,8 @@ end
 ----- Unload -----
 env.QustahShindoCore = {
     Unload = function()
-        if not Running then return end
-        Running = false
-        pcall(hubStop)                                           -- farm / spin / player loops and the platform
-        for _, c in ipairs(Connections) do pcall(function() c:Disconnect() end) end
+        if not hub.Running then return end
+        pcall(hubStop)                                           -- loops, events, cleanups and the platform; hub.Running = false
         for _, o in pairs(Global.Obj) do Render.remove(o) end
         stopNoClip()
         restoreWorld()
