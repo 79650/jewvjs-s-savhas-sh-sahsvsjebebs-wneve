@@ -75,7 +75,8 @@ if workspace:FindFirstChild("bossbattle") and canReadMentor and autoMentor then
 	return
 end
 
-local Lib = loadstring(game:HttpGet("https://raw.githubusercontent.com/79650/gwanjkcdsjawbdnjascdas-ui-lib/refs/heads/main/qustah-ui-lib/dist/qustah-ui-lib.lua"))()
+-- the query string skips executor and CDN caches, so a fresh start always gets the latest lib (and its icon sheet)
+local Lib = loadstring(game:HttpGet("https://raw.githubusercontent.com/79650/gwanjkcdsjawbdnjascdas-ui-lib/refs/heads/main/qustah-ui-lib/dist/qustah-ui-lib.lua?t=" .. tostring(os.time()), true))()
 ----- Shindo files -----
 -- The ESP (bar presets, the panels, the menu preview) and the teleport locations live in their own raw files, next
 -- to Auto Spin RELL. A file that does not load leaves the hub working without it: the ESP becomes a stub (no panels,
