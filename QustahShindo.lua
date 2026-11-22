@@ -2906,12 +2906,12 @@ if Tabs.Spin then                                                 -- main menu o
 		env.RELL_BOOT_CANCEL = true
 		if env.RELLStop then env.RELLStop() end
 	end
-	local RellCard = RellPage:Card({ Title = "Auto Spin RELL", Icon = "dices", Desc = "Spins bloodlines until you get RELL" })
+	local RellCard = RellPage:Card({ Title = "Auto Spin RELL", Icon = "frog", Desc = "Spins bloodlines until you get RELL" })
 	RellCard:Button({ Title = "Open Auto Spin RELL", Icon = "app-window", Style = "Primary", Callback = function()
 		if placeType ~= "menu" then
 			return notify("Auto Spin RELL", "Only works in the main menu (now: " .. placeName() .. ")", "triangle-alert", "warning")
 		end
-		if openRell() then Window:SetModule("Auto Spin RELL", "On", nil, { Icon = "dices", Tab = "Spin" }) end
+		if openRell() then Window:SetModule("Auto Spin RELL", "On", nil, { Icon = "frog", Tab = "Spin" }) end
 	end })
 	RellCard:Slider({ Title = "Spin delay", Flag = "rell_delay", Min = 0.3, Max = 3, Step = 0.1, Default = 1, Suffix = " s",
 		Callback = function(v) env.RELL_DELAY = v end })
@@ -2927,7 +2927,7 @@ if Tabs.Spin then                                                 -- main menu o
 		queuePermission(rellStopFile, false)
 		local g = LocalPlayer.PlayerGui:FindFirstChild("QustahRELL")
 		if g then g:Destroy() end
-		Window:SetModule("Auto Spin RELL", "Off", nil, { Icon = "dices", Tab = "Spin" })
+		Window:SetModule("Auto Spin RELL", "Off", nil, { Icon = "frog", Tab = "Spin" })
 		notify("Auto Spin RELL", "Stopped, won't run on the next rejoin", "circle-stop")
 	end })
 
@@ -2952,7 +2952,7 @@ if Tabs.Spin then                                                 -- main menu o
 		slotInfo:Set(join(s, "kg"))
 		elemInfo:Set(join(s, "element"))
 	end))
-	Window:SetModule("Auto Spin RELL", env.RELL_RUNNING and "On" or "Off", nil, { Icon = "dices", Tab = "Spin" })
+	Window:SetModule("Auto Spin RELL", env.RELL_RUNNING and "On" or "Off", nil, { Icon = "frog", Tab = "Spin" })
 end
 
 ----- Player: Shindo -----
