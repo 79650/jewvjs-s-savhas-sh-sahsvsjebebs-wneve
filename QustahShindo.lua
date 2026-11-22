@@ -2822,7 +2822,7 @@ if Tabs.Spin then                                                 -- main menu o
 		return dd
 	end
 	local ddE = category(InfPage, "Left", "Elements", "flame", "Elements", elementList, "ElemSlots", { "1", "2", "3", "4" }, "is_elem_on", "Element")
-	local ddB = category(InfPage, "Right", "Bloodlines", "dna", "Bloodlines", bloodlineList, "BlSlots", { "1", "2", "3", "4" }, "is_bl_on", "Bloodline")
+	local ddB = category(InfPage, "Right", "Bloodlines", "droplet", "Bloodlines", bloodlineList, "BlSlots", { "1", "2", "3", "4" }, "is_bl_on", "Bloodline")
 	local ddK = category(InfPage, "Left", "Kenjutsu", "sword", "Kenjutsu", kenjutsuList, "KenSlots", { "1", "2" }, "is_ken_on", "Kenjutsu", "Each spin costs 10 spins")
 	local ddR = category(InfPage, "Right", "Race", "user-round", "Races", raceList, nil, nil, "is_race_on", "Race", "Costs RELL Coins, not reset")
 
@@ -3538,7 +3538,7 @@ for i = 1, 4 do
 	end })
 end
 
-local Blood = Loadout:Card({ Title = "Bloodline", Icon = "dna", Side = "Right", Desc = "Change bloodline slots" })
+local Blood = Loadout:Card({ Title = "Bloodline", Icon = "droplet", Side = "Right", Desc = "Change bloodline slots" })
 dropdowns.bloodline = Blood:Dropdown({ Title = "Bloodline", Flag = "ld_bl", Items = itemsOf("bloodline"), Search = true, Callback = pickSet("bloodline") })
 local blRow = Blood:Row({ Gap = 4 })
 for i = 1, 4 do
@@ -3597,7 +3597,7 @@ for i = 1, 4 do
 	end })
 end
 
-local Rare = Shop:Card({ Title = "Limited bloodlines", Icon = "dna", Desc = "RC Genkai shop" })
+local Rare = Shop:Card({ Title = "Limited bloodlines", Icon = "droplet", Desc = "RC Genkai shop" })
 dropdowns.limited = Rare:Dropdown({ Title = "Limited bloodline", Flag = "rc_rare", Items = itemsOf("limited"), Search = true, Callback = pickSet("limited") })
 local rareRow = Rare:Row({ Gap = 4 })
 for i = 1, 3 do
