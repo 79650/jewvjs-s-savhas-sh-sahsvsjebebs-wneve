@@ -527,7 +527,6 @@ Window = Lib:CreateWindow({
 	ToggleKey = Enum.KeyCode.RightShift,
 	Size = Vector2.new(600, 440),
 	PageTabs = "Header",                                          -- page names sit in the title row, like Dashboard / Settings
-	AccentGlow = true,                                            -- (default settings: gg.json)
 	ResetButtons = false,                                         -- no reset icons for now (an element can ask for one with Reset = true)
 	OnClose = function() if unloadThis then unloadThis() end end,
 })
