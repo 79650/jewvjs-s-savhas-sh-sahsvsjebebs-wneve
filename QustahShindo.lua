@@ -525,7 +525,7 @@ Window = Lib:CreateWindow({
 	Folder = "QustahShindo",
 	Tags = { "SHINDO" },
 	ToggleKey = Enum.KeyCode.RightShift,
-	Size = Vector2.new(600, 440),
+	Size = Vector2.new(850, 500),
 	PageTabs = "Header",                                          -- page names sit in the title row, like Dashboard / Settings
 	Blur = true,                                                  -- blurs the game while the menu is open (Settings › Window › Look)
 	ResetButtons = false,                                         -- no reset icons for now (an element can ask for one with Reset = true)
