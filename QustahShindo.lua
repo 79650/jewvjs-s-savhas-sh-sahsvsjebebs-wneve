@@ -1767,7 +1767,7 @@ Basic:Toggle({ Title = "NoClip", Flag = "p_noclip", Default = false, Callback = 
 Basic:Toggle({ Title = "Click TP", Flag = "p_clicktp", Default = false, Callback = set("ClickTP") })
 
 -- Puppet Jump and Wider dash: their on / off switch sits in the card header
-local Puppet = moveTab:Card({ Title = "Puppet Jump", Icon = "zap", Side = "Right" })
+local Puppet = moveTab:Card({ Title = "Puppet Jump", Icon = "rabbit", Side = "Right" })
 Puppet:HeaderSwitch({ Flag = "mv_puppet", Default = false, Callback = moveToggle("puppet") })
 Puppet:Slider({ Title = "Speed", Flag = "mv_puppetspeed", Min = 50, Max = 400, Default = 200, DependsOn = { Flag = "mv_puppet", Reason = "" },
     Callback = function(v) moveCfg.PuppetSpeed = v end })
