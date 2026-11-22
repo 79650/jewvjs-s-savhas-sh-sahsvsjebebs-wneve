@@ -83,7 +83,8 @@ local Lib = loadstring(game:HttpGet("https://raw.githubusercontent.com/79650/gwa
 -- a notice on its page), the Locations card stays empty, and the error is reported in Settings › Info.
 local shindoFiles = "https://raw.githubusercontent.com/79650/dg3b2352313124scjd3124sanhgcdsahncdas457hs1amgdcankjcj/refs/heads/main/shindo/"
 local fileErrors = {}
-local function loadShindoFile(name, ...)
+-- valid(value) says whether the file returned what the hub needs; anything else counts as a failed download
+local function loadShindoFile(name, valid, ...)
     local args = table.pack(...)
     local ok, result = pcall(function()
         local chunk, err = loadstring(game:HttpGet(shindoFiles .. name, true))
@@ -92,11 +93,13 @@ local function loadShindoFile(name, ...)
         if type(value) == "function" then value = value(table.unpack(args, 1, args.n)) end
         return value
     end)
-    if ok and result ~= nil then return result end
-    fileErrors[name] = tostring(result)
+    if ok and result ~= nil and valid(result) then return result end
+    fileErrors[name] = ok and ("returned " .. typeof(result) .. " instead of the module") or tostring(result)
     return nil
 end
-local EspKit = loadShindoFile("esp.lua", Lib)
+local EspKit = loadShindoFile("esp.lua", function(kit)
+    return type(kit) == "table" and type(kit.Create) == "function" and type(kit.Preview) == "function" and type(kit.Palettes) == "table"
+end, Lib)
 if not EspKit then
     local plain = Color3.new(1, 1, 1)
     EspKit = {
@@ -235,7 +238,8 @@ local function realName(inst)
 end
 local function labelFor(code, inst)
 	if Names.label[code] then return Names.label[code] end
-	local n = realName(inst) or code
+	local n = realName(inst)
+	if not n then return code end                               -- REALNAME not there yet: show the code, cache nothing
 	if Names.code[n] and Names.code[n] ~= code then n = n .. " (" .. code .. ")" end   -- two entries with the same display name
 	Names.label[code], Names.code[n] = n, code
 	return n
@@ -280,14 +284,14 @@ end
 
 local Window, unloadThis
 -- Hub loops: all of them stop on Unload, an error in one iteration does not kill the loop, and errors are reported to Settings › Info.
-local hub = { Running = true, Conns = {}, Err = {}, Cleanup = {} }
+local hub = { Running = true, Conns = {}, Cleanup = {} }
 local function hubError(tag, err, context)
 	local now, message = os.clock(), tostring(err)
 	hub.ErrorRecords = hub.ErrorRecords or {}
 	local key = tag .. "\0" .. (message:match("[^\r\n]+") or message)
 	local record = hub.ErrorRecords[key]
 	if not record then record = { Count = 0, LastReport = -math.huge } hub.ErrorRecords[key] = record end
-	record.Count, record.Last = record.Count + 1, now
+	record.Count = record.Count + 1
 	if now - record.LastReport < 10 then return end
 	record.LastReport = now
 	local detail = { Module = tag, Operation = context or "Update", RepeatCount = record.Count }
@@ -1297,7 +1301,7 @@ local function fetchServers()
     return list
 end
 local hopBusy = false
-local function serverHop(mode)
+local function serverHop()                                        -- a random server with room (the server list sorts by itself)
     if not hub.Running or hopBusy then return end
     hopBusy = true
     local ok, err = pcall(function()
@@ -1307,16 +1311,7 @@ local function serverHop(mode)
             notify("Server hop", "No suitable server found", "server-off", "warning")
             return
         end
-        local pick
-        if mode == "Smallest" then
-            table.sort(list, function(a, b) return (a.playing or 0) < (b.playing or 0) end)
-            pick = list[1]
-        elseif mode == "Lowest ping" then
-            table.sort(list, function(a, b) return (a.ping or 9999) < (b.ping or 9999) end)
-            pick = list[1]
-        else
-            pick = list[math.random(1, #list)]
-        end
+        local pick = list[math.random(1, #list)]
         notify("Server hop", ("Joining a server with %d/%d players"):format(pick.playing or 0, pick.maxPlayers or 0), "shuffle")
         if hub.Running then TeleportService:TeleportToPlaceInstance(game.PlaceId, pick.id, LocalPlayer) end
     end)
@@ -1331,7 +1326,7 @@ local function checkStaff(plr)
         local ok, rank = pcall(function() return plr:GetRankInGroup(settings.StaffGroup) end)
         if not (hub.Running and settings.StaffAlert and ok and rank and rank >= settings.StaffRank) then return end
         notify("Staff in game", ("%s (rank %d) joined the server"):format(plr.Name, rank), "shield-alert", "danger")
-        if settings.StaffAction == "Hop" then serverHop("Random")
+        if settings.StaffAction == "Hop" then serverHop()
         elseif settings.StaffAction == "Leave" then LocalPlayer:Kick("Qustāh: staff joined, left the game") end
     end)
 end
@@ -1414,7 +1409,7 @@ local General = EspPage:Card({ Title = "ESP", Icon = "scan-eye", Side = "Left" }
 General:Toggle({ Title = "ESP enabled", Flag = "esp_enabled", Default = true, Bindable = true,
     Callback = function(on)
         settings.ESP_Enabled = on
-        Window:SetModule("ESP", on and "On" or "Off", nil, { Icon = "eye", Tab = "Visuals" })
+        Window:SetModule("ESP", EspKit.Missing and "Unavailable" or (on and "On" or "Off"), nil, { Icon = "eye", Tab = "Visuals" })
     end })
 local EspTabs = General:Tabs({ "Range", "Performance" })
 EspTabs.Range:Slider({ Title = "Range", Flag = "esp_maxdist", Min = 100, Max = 5000, Default = 2500, Step = 50, Suffix = " studs", Callback = set("ESP_MaxDist") })
@@ -1969,7 +1964,7 @@ local servers = SrvCard:ServerList({
         notify("Server", ("Joining a server with %d/%d players"):format(server.playing or 0, server.maxPlayers or 0), "log-in")
         TeleportService:TeleportToPlaceInstance(game.PlaceId, server.id, LocalPlayer)
     end,
-    OnHop = function() serverHop("Random") end,
+    OnHop = function() serverHop() end,
 })
 Server:FitHeight(SrvCard, servers.Frame, { Min = 110, Fallback = 220 })
 
@@ -2006,7 +2001,7 @@ local playerTable = PlayersCard:Table({ Height = 150, Search = true,
     end })
 
 ----- Settings + startup -----
-Window:SetModule("ESP", settings.ESP_Enabled and "On" or "Off", nil, { Icon = "eye", Tab = "Visuals" })
+Window:SetModule("ESP", EspKit.Missing and "Unavailable" or (settings.ESP_Enabled and "On" or "Off"), nil, { Icon = "eye", Tab = "Visuals" })
 Window:SetModule("Silent Aim", CanHook and "Off" or "Limited", not CanHook and "no hook" or nil, { Icon = "target", Tab = "Combat" })
 
 Window:OnKick(function()
@@ -3319,7 +3314,7 @@ do
 end
 
 ----- Teleport -----
-local teleportData = loadShindoFile("teleports.lua") or {}
+local teleportData = loadShindoFile("teleports.lua", function(data) return type(data) == "table" end) or {}
 reportFileErrors()
 do
 	-- Only what exists on the current map is shown: the Locations card needs saved spots for this place,
@@ -3659,7 +3654,7 @@ local function itemsOf(key)                    -- alphabetically sorted name lis
 	return #out > 0 and out or emptyList
 end
 
-local picks = { element = nil, bloodline = nil, kenjutsu = nil, style = nil, cloth = nil, limited = nil }
+local picks = {}                                -- element, bloodline, kenjutsu, style, cloth, limited: the chosen code name
 local dropdowns = {}
 local function pickSet(key) return function(v) picks[key] = (v ~= "-" and v ~= nil) and toCode(v) or nil end end
 local function need(key, label)
