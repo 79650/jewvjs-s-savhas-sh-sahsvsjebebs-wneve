@@ -1200,9 +1200,9 @@ if not CanHook then saToggle:Lock("Executor doesn't support hooks") end
 Aim:Slider({ Title = "Hit chance", Flag = "sa_hitchance", Min = 0, Max = 100, Default = 100, Suffix = "%", Callback = set("SA_HitChance") })
 Aim:Segment({ Title = "Target part", Flag = "sa_part", Items = { "Head", "Torso", "Random", "Closest" }, Default = "Head", Wide = true, Callback = set("SA_Part") })
 Aim:Dropdown({ Title = "Priority", Flag = "sa_priority", Default = "Mouse", Items = {
-    { Title = "Mouse", Icon = "mouse-pointer", Desc = "Closest to cursor" },
-    { Title = "Distance", Icon = "ruler", Desc = "Closest to you" },
-    { Title = "Health", Icon = "heart", Desc = "Lowest health" },
+    { Title = "Mouse", Desc = "Closest to cursor" },
+    { Title = "Distance", Desc = "Closest to you" },
+    { Title = "Health", Desc = "Lowest health" },
 }, Callback = set("SA_Priority") })
 Aim:Toggle({ Title = "Inf range", Desc = "Hits the target at any distance (Parvus method)", Flag = "sa_infrange", Default = false,
     DependsOn = { Flag = "sa_enabled", Mode = "Hide", Reason = "" }, Callback = set("SA_InfRange") })
@@ -1344,10 +1344,6 @@ local Light = World:Card({ Title = "Lighting", Icon = "lightbulb" })
 Light:Toggle({ Title = "Fullbright", Flag = "w_fullbright", Default = false, Callback = set("Fullbright") })
 Light:Toggle({ Title = "No fog", Flag = "w_nofog", Default = false, Callback = set("NoFog") })
 Light:Toggle({ Title = "No shadows", Flag = "w_noshadows", Default = false, Callback = set("NoShadows") })
-Light:Button({ Title = "Restore lighting", Icon = "rotate-ccw", Style = "Ghost", Callback = function()
-    for _, flag in ipairs({ "w_fullbright", "w_nofog", "w_noshadows", "w_customtime", "w_customamb" }) do Window:SetFlag(flag, false) end
-    restoreWorld()
-end })
 
 -- Sky: a small picture of the sky at the chosen hour (the game's own hour while Custom time is off)
 local SkyCard = World:Card({ Title = "Sky · Ambient", Icon = "sun", Side = "Right" })
@@ -2455,7 +2451,7 @@ do
 
 	----- Daily -----
 	local autoDailyCard = DailyPage:Card({ Title = "Auto daily", Icon = "repeat", Side = "Left" })
-	autoDailyCard:HeaderButton({ Title = "Claim all", Icon = "gift", Callback = function()      -- claims every daily and main mission
+	autoDailyCard:HeaderButton({ Title = "Claim all", Callback = function()      -- claims every daily and main mission
 		local st = statz()
 		local m = st and st:FindFirstChild("mission")
 		if m then
@@ -2908,11 +2904,22 @@ if Tabs.Spin then                                                 -- main menu o
 		if env.RELLStop then env.RELLStop() end
 	end
 	local RellCard = RellPage:Card({ Title = "Auto Spin RELL", Icon = "frog", Desc = "Spins bloodlines until you get RELL" })
-	RellCard:Button({ Title = "Open Auto Spin RELL", Icon = "app-window", Style = "Primary", Callback = function()
+	-- Open and Stop side by side; Stop has a red record dot
+	local rellRow = RellCard:Row({ Widths = { 2, 1 } })
+	rellRow:Button({ Title = "Open Auto Spin RELL", Style = "Primary", Callback = function()
 		if placeType ~= "menu" then
 			return notify("Auto Spin RELL", "Only works in the main menu (now: " .. placeName() .. ")", "triangle-alert", "warning")
 		end
 		if openRell() then Window:SetModule("Auto Spin RELL", "On", nil, { Icon = "frog", Tab = "Spin" }) end
+	end })
+	rellRow:Button({ Title = "Stop", Icon = "record", Style = "Danger", Callback = function()
+		env.RELL_BOOT_CANCEL = true
+		if env.RELLStop then env.RELLStop() end
+		queuePermission(rellStopFile, false)
+		local g = LocalPlayer.PlayerGui:FindFirstChild("QustahRELL")
+		if g then g:Destroy() end
+		Window:SetModule("Auto Spin RELL", "Off", nil, { Icon = "frog", Tab = "Spin" })
+		notify("Auto Spin RELL", "Stopped, won't run on the next rejoin", "circle-stop")
 	end })
 	RellCard:Slider({ Title = "Spin delay", Flag = "rell_delay", Min = 0.3, Max = 3, Step = 0.1, Default = 1, Suffix = " s",
 		Callback = function(v) env.RELL_DELAY = v end })
@@ -2922,15 +2929,6 @@ if Tabs.Spin then                                                 -- main menu o
 			queuePermission(rellStopFile, on and env.RELL_RUNNING == true)
 			if on and env.RELL_RUNNING and env.RELLQueue then env.RELLQueue() end
 		end })
-	RellCard:Button({ Title = "Stop", Icon = "circle-stop", Style = "Danger", Callback = function()
-		env.RELL_BOOT_CANCEL = true
-		if env.RELLStop then env.RELLStop() end
-		queuePermission(rellStopFile, false)
-		local g = LocalPlayer.PlayerGui:FindFirstChild("QustahRELL")
-		if g then g:Destroy() end
-		Window:SetModule("Auto Spin RELL", "Off", nil, { Icon = "frog", Tab = "Spin" })
-		notify("Auto Spin RELL", "Stopped, won't run on the next rejoin", "circle-stop")
-	end })
 
 	local SpinsCard = RellPage:Card({ Title = "Spins", Icon = "gauge", Side = "Right" })
 	local spinsInfo = SpinsCard:Info({ Title = "Spins left", Value = "-" })
@@ -3611,9 +3609,6 @@ end
 
 task.delay(4, function() if hub.Running then refreshLists(true) end end)    -- if the menu loads late, read the lists once more
 end
-
------ Dependency icons -----
-hub.Cleanup[#hub.Cleanup + 1] = Lib.Util.dependencyIcons(Window)
 
 ----- Startup -----
 Window:SettingsTab({ Compact = true })
